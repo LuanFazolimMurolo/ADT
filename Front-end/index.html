@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>ADT Web Control</title>
+<style>
+    html, body {
+        margin: 0;
+        height: 100%;
+    }
+    #btn {
+        width: 100%;
+        height: 100%;
+        font-size: 80px;
+        border: none;
+        color: white;
+        cursor: pointer;
+    }
+    .true  { background: #d32f2f; }
+    .false { background: #2e7d32; }
+</style>
+</head>
+<body>
+
+<button id="btn">▶</button>
+
+<script>
+
+const SERVER = "http://72.60.14.243:5000";
+const btn = document.getElementById("btn");
+
+function render(estado) {
+    const ativo = estado?.botoes?.btc ?? false;
+    btn.className = ativo ? "true" : "false";
+    btn.textContent = ativo ? "⏹" : "▶";
+}
+
+async function lerEstado() {
+    const r = await fetch(`${SERVER}/estado`, { cache: "no-store" });
+    const estado = await r.json();
+    render(estado);
+}
+
+btn.onclick = async () => {
+    await fetch(`${SERVER}/estado`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            botoes: {
+                btc: btn.textContent === "▶"  // alterna
+            }
+        })
+    });
+
+    await lerEstado();
+};
+
+setInterval(lerEstado, 1000);
+lerEstado();
+</script>
+
+</body>
+</html>
