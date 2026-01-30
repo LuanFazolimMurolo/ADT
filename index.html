@@ -1,105 +1,52 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <title>ADT Web Control</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-        }
-
-        #btn {
-            width: 100%;
-            height: 100%;
-            font-size: 80px;
-            border: none;
-            color: white;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-
-        .false {
-            background-color: #2e7d32; 
-        }
-
-        .false:hover {
-            background-color: #1b5e20;
-        }
-
-        .true {
-            background-color: #d32f2f; 
-        }
-
-        .true:hover {
-            background-color: #b71c1c;
-        }
-    </style>
+<meta charset="UTF-8">
+<title>ADT Web Control</title>
+<style>
+    html, body {
+        margin: 0;
+        height: 100%;
+    }
+    #btn {
+        width: 100%;
+        height: 100%;
+        font-size: 80px;
+        border: none;
+        color: white;
+        cursor: pointer;
+    }
+    .true  { background: #d32f2f; }
+    .false { background: #2e7d32; }
+</style>
 </head>
 <body>
 
-<button id="btn" class="false">▶</button>
+<button id="btn">▶</button>
 
 <script>
-    const SERVER_URL = "http://72.60.14.243:5000/estado";
-    let estadoAtual = false;
+const SERVER = "http://72.60.14.243:5000";
+const btn = document.getElementById("btn");
 
-    const btn = document.getElementById("btn");
+function render(estado) {
+    const ativo = estado?.botoes?.btc ?? false;
+    btn.className = ativo ? "true" : "false";
+    btn.textContent = ativo ? "⏹" : "▶";
+}
 
-    // Atualiza visual
-    function atualizarBotao() {
-        if (estadoAtual) {
-            btn.className = "true";
-            btn.textContent = "⏸"; // quando está true
-        } else {
-            btn.className = "false";
-            btn.textContent = "▶"; // quando está false
-        }
-    }
+async function lerEstado() {
+    const r = await fetch(`${SERVER}/estado`, { cache: "no-store" });
+    const estado = await r.json();
+    render(estado);
+}
 
-    // Lê estado do servidor
-    async function lerEstado() {
-        try {
-            const res = await fetch(SERVER_URL);
-            const data = await res.json();
+btn.onclick = async () => {
+    await fetch(`${SERVER}/toggle/btc`, { method: "POST" });
+    await lerEstado();
+};
 
-            estadoAtual = data?.botoes?.btc ?? false;
-            atualizarBotao();
-        } catch (e) {
-            console.error("Erro ao ler estado:", e);
-        }
-    }
-
-    // Envia estado para o servidor
-    async function enviarEstado() {
-        try {
-            await fetch(SERVER_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    botoes: { btc: estadoAtual }
-                })
-            });
-        } catch (e) {
-            console.error("Erro ao enviar estado:", e);
-        }
-    }
-
-    // Clique no botão
-    btn.addEventListener("click", async () => {
-        estadoAtual = !estadoAtual;
-        atualizarBotao();
-        await enviarEstado();
-    });
-
-    // Atualiza automaticamente a cada 2s
-    setInterval(lerEstado, 2000);
-
-    // Inicial
-    lerEstado();
+setInterval(lerEstado, 1000);
+lerEstado();
 </script>
 
 </body>
