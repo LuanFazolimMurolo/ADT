@@ -1,30 +1,41 @@
-# server.py
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 import json
 import os
 
 app = Flask(__name__)
-
 FILE = "ponte.json"
 
-# garante que o arquivo exista
 if not os.path.exists(FILE):
     with open(FILE, "w") as f:
-        json.dump({}, f)
+        json.dump({"botoes": {"btc": False}}, f)
+        
+@app.route("/")
+def index():
+    return render_template("index.html")
+def ler():
+    with open(FILE, "r") as f:
+        return json.load(f)
 
-# -------- LER DADOS --------
+def salvar(dados):
+    with open(FILE, "w") as f:
+        json.dump(dados, f, indent=4)
+
 @app.route("/estado", methods=["GET"])
 def get_estado():
-    with open(FILE, "r") as f:
-        dados = json.load(f)
-    return jsonify(dados)
+    return jsonify(ler())
 
-# -------- ESCREVER DADOS --------
 @app.route("/estado", methods=["POST"])
 def set_estado():
     dados = request.json
-    with open(FILE, "w") as f:
-        json.dump(dados, f, indent=4)
+    salvar(dados)
     return {"status": "ok"}
+
+@app.route("/toggle/<botao>", methods=["POST"])
+def toggle(botao):
+    dados = ler()
+    atual = dados["botoes"].get(botao, False)
+    dados["botoes"][botao] = not atual
+    salvar(dados)
+    return jsonify(dados)
 
 app.run(host="0.0.0.0", port=5000)
