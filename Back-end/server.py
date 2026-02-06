@@ -12,30 +12,16 @@ if not os.path.exists(FILE):
 @app.route("/")
 def index():
     return render_template("index.html")
-def ler():
-    with open(FILE, "r") as f:
-        return json.load(f)
 
-def salvar(dados):
-    with open(FILE, "w") as f:
-        json.dump(dados, f, indent=4)
+@app.route("/login")
+def login():
+    return render_template("login.html")
 
-@app.route("/estado", methods=["GET"])
-def get_estado():
-    return jsonify(ler())
+@app.route("/entrar")
+def entrar():
+    return render_template("entrar.html")
 
-@app.route("/estado", methods=["POST"])
-def set_estado():
-    dados = request.json
-    salvar(dados)
-    return {"status": "ok"}
 
-@app.route("/toggle/<botao>", methods=["POST"])
-def toggle(botao):
-    dados = ler()
-    atual = dados["botoes"].get(botao, False)
-    dados["botoes"][botao] = not atual
-    salvar(dados)
-    return jsonify(dados)
+if __name__ == "__main__":
 
-app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000, debug=True)
