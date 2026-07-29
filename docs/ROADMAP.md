@@ -28,6 +28,9 @@ Project phases from foundation to full deployment.
 
 **Goal**: Add database, user authentication, and admin dashboard skeleton.
 
+**Status**: In progress — Phase 1A is in implementation; Phase 1 as a whole is
+not complete.
+
 **Deliverables**:
 - [ ] Supabase project setup
 - [ ] PostgreSQL schema (strategies, backtests, trades, users)
@@ -38,6 +41,25 @@ Project phases from foundation to full deployment.
 - [ ] Admin dashboard skeleton
 - [ ] CRUD endpoints for strategies
 - [ ] User repository & auth middleware
+
+### Phase 1A: Initial Supabase and database structure 🚧
+
+**Scope**: Establish the single versioned migration source, the initial
+simulation ledger schema and RLS policies, and the controlled bootstrap for the
+first administrator.
+
+**Deliverables**:
+- [x] Project-local Supabase CLI structure in `supabase/`
+- [x] Initial versioned schema and public active-simulation summary
+- [x] RLS policies, constraints, indexes, and audit foundations
+- [x] Idempotent initial-administrator bootstrap script and unit tests
+- [x] Local/remote setup and security documentation
+- [ ] Manually link the reviewed remote project and apply the migration
+
+**Status**: In implementation
+
+**Explicitly deferred**: Admin login/dashboard, strategy CRUD, market data,
+backtesting, Telegram, machine learning, and completion of Phase 1.
 
 **Dependencies**: Phase 0 complete  
 **Estimated Duration**: 2 weeks  
@@ -244,4 +266,3 @@ Project phases from foundation to full deployment.
 ---
 
 ## Timeline Overview
-

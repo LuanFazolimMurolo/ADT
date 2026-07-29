@@ -20,6 +20,7 @@ dependencies = [
   "pydantic-settings>=2.1.0",
   "python-dotenv>=1.0.0",
   "httpx>=0.25.2",
+  "psycopg[binary]>=3.1.18,<4.0.0",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +28,7 @@ dev = [
   "pytest>=7.4.3",
   "pytest-asyncio>=0.21.1",
   "pytest-cov>=4.1.0",
+  "httpx2>=2.0.0,<3.0.0",
   "ruff>=0.1.8",
   "mypy>=1.7.1",
   "black>=23.12.0",
@@ -37,6 +39,7 @@ packages = ["app"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["../.."]
 asyncio_mode = "auto"
 addopts = "--cov=app --cov-report=term-missing"
 

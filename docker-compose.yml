@@ -13,8 +13,8 @@ services:
       ADT_LOG_LEVEL: INFO
       ADT_CORS_ORIGINS: "http://localhost:5173,http://localhost:3000,http://web:5173"
       ADT_DATA_DIR: /app/data
-      SUPABASE_URL: ${SUPABASE_URL:-}
-      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
+      ADT_SUPABASE_URL: ${ADT_SUPABASE_URL:-}
+      ADT_SUPABASE_SECRET_KEY: ${ADT_SUPABASE_SECRET_KEY:-}
     volumes:
       - ./data:/app/data
       - ./services/backend/app:/app/app
