@@ -229,15 +229,14 @@ Supabase Auth.
 
 ## Separação de variáveis
 
-A Fase 1A não adiciona integração Supabase ao frontend. Quando a autenticação
-for implementada, somente valores expressamente públicos podem receber o
-prefixo `VITE_`:
+A Fase 1C adiciona autenticação Supabase ao frontend. Somente valores
+expressamente públicos podem receber o prefixo `VITE_`:
 
 | Contexto | Variável | Regra |
 | --- | --- | --- |
 | Frontend | `VITE_ADT_API_URL` | URL pública da API do ADT. |
-| Frontend futuro | `VITE_SUPABASE_URL` | URL pública do projeto Supabase. |
-| Frontend futuro | `VITE_SUPABASE_PUBLISHABLE_KEY` | Chave publicável; a segurança continua dependendo de RLS. |
+| Frontend | `VITE_SUPABASE_URL` | URL pública do projeto Supabase. |
+| Frontend | `VITE_SUPABASE_PUBLISHABLE_KEY` | Chave publicável; a segurança continua dependendo de RLS e do backend. |
 | Frontend legado | `VITE_SUPABASE_ANON_KEY` | Somente se o projeto ainda usar a chave `anon`; não é uma chave administrativa. |
 | Backend/bootstrap | `ADT_ADMIN_USER_ID` | UUID do administrador inicial; não expor na UI pública. |
 | Backend | `SUPABASE_URL` | URL pública do projeto usada para derivar issuer e JWKS. |
@@ -255,6 +254,21 @@ exclusivamente de backend/operação e nunca podem ter prefixo `VITE_`.
 Por regra do ADT, novas variáveis próprias do backend usam o prefixo `ADT_`.
 Os nomes padronizados `SUPABASE_*` documentados acima são exceções da integração
 com Supabase e têm escopo explícito de frontend, backend ou operação.
+
+## Redirect URLs da recuperação de senha
+
+A recuperação implementada na Fase 1C envia o usuário para
+`/admin/reset-password`. No dashboard do projeto correto, abra
+**Authentication > URL Configuration > Redirect URLs** e adicione manualmente:
+
+```text
+http://localhost:5173/admin/reset-password
+https://SEU-DOMINIO-DE-PRODUCAO/admin/reset-password
+```
+
+Substitua o placeholder pelo domínio HTTPS real usado pelo frontend. Não use
+curingas mais amplos que o necessário. A lista de Redirect URLs não é alterada
+por código, migration ou comando durante a implementação local.
 
 ## Autenticação do backend na Fase 1B
 

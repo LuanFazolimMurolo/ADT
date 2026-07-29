@@ -86,6 +86,34 @@ The public simulation endpoint reads only
 view's internal simulation UUID and cannot expose administrator, audit or
 movement-level data.
 
+## Phase 1C frontend
+
+The React application keeps the public site at `/` and exposes no registration
+or visible login entry there. Administrative authentication starts only under
+`/admin`. The frontend is split into these boundaries:
+
+- `config/` validates the three public `VITE_*` variables without echoing
+  configured values;
+- `lib/supabase.ts` is the single Supabase client, with SDK-managed session
+  persistence, automatic token refresh and URL session detection;
+- `auth/` restores the session, confirms every administrative session through
+  `GET /api/v1/admin/me`, protects routes and performs logout;
+- `http/` is the only FastAPI client and attaches the current Supabase access
+  token to administrative requests;
+- `pages/admin/` renders backend contracts without performing financial
+  calculations or direct database access.
+
+The API client retries a failed authentication only for idempotent `GET`
+requests, after asking the Supabase SDK to refresh the session. It never
+automatically repeats `POST` or `PATCH`, preventing duplicate simulations,
+ledger entries or setting updates. A persistent 401 ends the local session;
+401/403 during administrator verification denies the private route.
+
+Financial decimals remain strings across the JSON boundary. Withdrawal signs
+are mapped to the backend request contract, adjustments preserve the explicit
+sign, and balances/P&L displayed by the UI are always values calculated and
+returned by the backend.
+
 ## Out of scope
 
 Phase 1B does not add frontend login screens, strategy execution, backtesting,

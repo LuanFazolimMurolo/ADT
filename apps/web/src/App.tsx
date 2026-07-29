@@ -1,99 +1,62 @@
-import { useEffect, useState } from 'react'
-import { apiClient } from './http/client'
-import { SystemStatus } from './types/system'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { AuthProvider } from './auth/AuthContext'
+import { ProtectedRoute } from './auth/ProtectedRoute'
+import { ErrorBoundary } from './components/ErrorBoundary'
+import { PublicConfigError, validatePublicConfig } from './config/env'
+import { AdminLayout } from './layouts/AdminLayout'
+import { PublicHome } from './pages/PublicHome'
+import { DashboardPage } from './pages/admin/DashboardPage'
+import { SettingsPage } from './pages/admin/SettingsPage'
+import { SimulationDetailPage } from './pages/admin/SimulationDetailPage'
+import { SimulationsPage } from './pages/admin/SimulationsPage'
+import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
+import { LoginPage } from './pages/auth/LoginPage'
+import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
 import './App.css'
 
+function ConfigurationFailure({ error }: { error: PublicConfigError }) {
+  return (
+    <main className="state state--full configuration-error" role="alert">
+      <div className="brand-mark" aria-hidden="true">A</div>
+      <p className="eyebrow">Configuração necessária</p>
+      <h1>O frontend do ADT não pode iniciar</h1>
+      <p>Defina as variáveis públicas obrigatórias e reinicie o servidor de desenvolvimento.</p>
+      <code>{error.missingVariables.join(', ')}</code>
+      <small>Nenhum valor configurado foi exibido.</small>
+    </main>
+  )
+}
+
 function App() {
-  const [status, setStatus] = useState<SystemStatus | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const fetchStatus = async () => {
-      try {
-        const data = await apiClient.getSystemStatus()
-        setStatus(data)
-        setError(null)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to connect to API')
-        setStatus(null)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchStatus()
-  }, [])
+  try {
+    validatePublicConfig()
+  } catch (error) {
+    if (error instanceof PublicConfigError) return <ConfigurationFailure error={error} />
+    throw error
+  }
 
   return (
-    <div className="app">
-      <header className="header">
-        <h1 className="title">ADT</h1>
-        <p className="subtitle">Automatic Dry Trade</p>
-      </header>
-
-      <main className="main-content">
-        <section className="status-section">
-          <h2>System Status</h2>
-          {loading ? (
-            <p className="status-text">Loading...</p>
-          ) : error ? (
-            <div className="status-error">
-              <p className="status-text">⚠️ API Unavailable</p>
-              <p className="error-message">{error}</p>
-              <p className="error-hint">Ensure the backend is running on {import.meta.env.VITE_ADT_API_URL}</p>
-            </div>
-          ) : (
-            <div className="status-ok">
-              <p className="status-text">✓ System Ready</p>
-              {status && (
-                <div className="status-details">
-                  <p>Environment: {status.environment}</p>
-                  <p>Version: {status.version}</p>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-
-        <section className="components-grid">
-          <div className="component-card">
-            <h3>API</h3>
-            <p className="phase">Phase 0</p>
-            <p className="description">Backend service with FastAPI</p>
-            <p className={`status ${error ? 'inactive' : 'active'}`}>
-              {error ? 'Offline' : 'Online'}
-            </p>
-          </div>
-
-          <div className="component-card">
-            <h3>Supabase</h3>
-            <p className="phase">Phase 1</p>
-            <p className="description">PostgreSQL database & auth</p>
-            <p className="status inactive">Pending</p>
-          </div>
-
-          <div className="component-card">
-            <h3>Market Data</h3>
-            <p className="phase">Phase 2</p>
-            <p className="description">Historical candle collection</p>
-            <p className="status inactive">Pending</p>
-          </div>
-
-          <div className="component-card">
-            <h3>Workers</h3>
-            <p className="phase">Phase 3+</p>
-            <p className="description">Strategy engine & backtesting</p>
-            <p className="status inactive">Pending</p>
-          </div>
-        </section>
-
-        <section className="info-section">
-          <p className="info-text">🔄 System under preparation</p>
-          <p className="info-text">📖 Read the documentation for development details</p>
-        </section>
-      </main>
-    </div>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <Routes>
+            <Route path="/" element={<PublicHome />} />
+            <Route path="/admin/login" element={<LoginPage />} />
+            <Route path="/admin/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/admin/reset-password" element={<ResetPasswordPage />} />
+            <Route element={<ProtectedRoute />}>
+              <Route path="/admin" element={<AdminLayout />}>
+                <Route index element={<DashboardPage />} />
+                <Route path="simulations" element={<SimulationsPage />} />
+                <Route path="simulations/:simulationId" element={<SimulationDetailPage />} />
+                <Route path="settings" element={<SettingsPage />} />
+              </Route>
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   )
 }
 

@@ -28,8 +28,9 @@ Project phases from foundation to full deployment.
 
 **Goal**: Add database, user authentication, and admin dashboard skeleton.
 
-**Status**: In progress — the Phase 1A foundation is implemented locally and
-Phase 1B is in implementation; Phase 1 as a whole is not complete.
+**Status**: In progress — Phases 1A, 1B and 1C are implemented locally; remote
+Supabase configuration and validation remain manual, and Phase 1 as a whole is
+not complete.
 
 **Deliverables**:
 - [ ] Supabase project setup
@@ -37,8 +38,8 @@ Phase 1B is in implementation; Phase 1 as a whole is not complete.
 - [x] Database migrations
 - [x] JWT authentication (Supabase Auth)
 - [x] Row-level security (RLS) policies
-- [ ] Admin login page (frontend)
-- [ ] Admin dashboard skeleton
+- [x] Admin login page (frontend)
+- [x] Admin dashboard skeleton
 - [ ] CRUD endpoints for strategies
 - [x] Database-backed administrator authorization middleware
 
@@ -91,6 +92,32 @@ backtesting, Telegram, machine learning, and any real-capital operation.
 
 **Dependencies**: Reviewed Phase 1A migration and an asymmetric Supabase JWT
 signing key for deployment.
+
+---
+
+### Phase 1C: Frontend authentication and administration ✅
+
+**Scope**: Add the private React administration surface while keeping Supabase
+Auth as the identity provider and FastAPI as the sole administrative
+authority.
+
+**Deliverables**:
+- [x] Public configuration validation and single Supabase client
+- [x] Login, session restoration, token renewal, logout and route protection
+- [x] Password recovery and reset flows
+- [x] Backend-authorized dashboard and responsive administrative layout
+- [x] Paginated simulations, immutable movements and terminal transitions
+- [x] Non-secret settings editor
+- [x] Typed centralized API client with safe error handling
+- [x] Mocked frontend tests with no remote service access
+- [x] Frontend operations and Supabase Redirect URL documentation
+
+**Status**: Complete locally. Real Supabase credentials, allowed Redirect URLs
+and end-to-end validation against the selected project remain manual.
+
+**Explicitly deferred**: Public registration, strategy CRUD, market data,
+backtesting, Telegram, machine learning, real-capital trading and remote
+Supabase changes.
 
 ---
 

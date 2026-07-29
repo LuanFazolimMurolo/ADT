@@ -4,7 +4,7 @@
 
 ## Status
 
-🔄 **Phase 0 — Foundation** (Active)
+🔄 **Phase 1 — Supabase & Administration** (In progress locally)
 
 This is the architectural foundation. The system is not yet connected to real exchanges or live markets.
 
@@ -31,7 +31,7 @@ ADT is a trading robot designed to:
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20+
 - Python 3.11+
 - (Optional) Docker & Docker Compose
 
@@ -53,6 +53,11 @@ npm run dev
 # Open http://localhost:5173
 ```
 
+The public site has no registration or visible login. Administrative access is
+available only at `http://localhost:5173/admin/login`. Configure the three
+required public variables documented in
+[`apps/web/README.md`](./apps/web/README.md) before starting Vite.
+
 ### 3. Backend
 
 ```bash
@@ -67,9 +72,12 @@ python -m uvicorn app.main:app --reload
 ### 4. Test the Connection
 
 Visit http://localhost:5173. You should see:
-- ADT title and status
-- API connection status (✓ or ⚠️)
-- Component cards
+- the public ADT presentation;
+- API connection status;
+- no visible registration or administrative login.
+
+For the full local frontend/backend workflow, private routes, Supabase password
+Redirect URLs and quality commands, see
+[`apps/web/README.md`](./apps/web/README.md).
 
 ## Project Structure
-
