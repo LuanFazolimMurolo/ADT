@@ -1,0 +1,4 @@
+# ...existing common ignores from root...
+node_modules/
+dist/
+.vite/

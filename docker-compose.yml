@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./services/backend
+      dockerfile: Dockerfile
+    container_name: adt-backend
+    ports:
+      - "8000:8000"
+    environment:
+      ADT_ENVIRONMENT: development
+      ADT_LOG_LEVEL: INFO
+      ADT_CORS_ORIGINS: "http://localhost:5173,http://localhost:3000,http://web:5173"
+      ADT_DATA_DIR: /app/data
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
+    volumes:
+      - ./data:/app/data
+      - ./services/backend/app:/app/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: adt-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_ADT_API_URL: http://backend:8000
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:-}
+    depends_on:
+      - backend
+    volumes:
+      - ./apps/web/src:/app/src
+      - ./apps/web/index.html:/app/index.html
+
+volumes:
+  data:
