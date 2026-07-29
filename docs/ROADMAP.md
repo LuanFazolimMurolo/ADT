@@ -2,7 +2,7 @@
 
 Project phases from foundation to full deployment.
 
-## Phase 0: Foundation ✅ CURRENT
+## Phase 0: Foundation ✅ COMPLETE
 
 **Goal**: Establish project structure, testing framework, and basic connectivity.
 
@@ -18,29 +18,29 @@ Project phases from foundation to full deployment.
 - [x] Docker setup
 - [x] Documentation (spec, architecture)
 
-**Status**: In progress  
+**Status**: Complete
 **Estimated Duration**: 1 week  
 **Blockers**: None
 
 ---
 
-## Phase 1: Supabase & Administration
+## Phase 1: Supabase & Administration 🚧 CURRENT
 
 **Goal**: Add database, user authentication, and admin dashboard skeleton.
 
-**Status**: In progress — Phase 1A is in implementation; Phase 1 as a whole is
-not complete.
+**Status**: In progress — the Phase 1A foundation is implemented locally and
+Phase 1B is in implementation; Phase 1 as a whole is not complete.
 
 **Deliverables**:
 - [ ] Supabase project setup
 - [ ] PostgreSQL schema (strategies, backtests, trades, users)
-- [ ] Database migrations
-- [ ] JWT authentication (Supabase Auth)
-- [ ] Row-level security (RLS) policies
+- [x] Database migrations
+- [x] JWT authentication (Supabase Auth)
+- [x] Row-level security (RLS) policies
 - [ ] Admin login page (frontend)
 - [ ] Admin dashboard skeleton
 - [ ] CRUD endpoints for strategies
-- [ ] User repository & auth middleware
+- [x] Database-backed administrator authorization middleware
 
 ### Phase 1A: Initial Supabase and database structure 🚧
 
@@ -56,7 +56,7 @@ first administrator.
 - [x] Local/remote setup and security documentation
 - [ ] Manually link the reviewed remote project and apply the migration
 
-**Status**: In implementation
+**Status**: Complete locally; remote application remains a manual operational step.
 
 **Explicitly deferred**: Admin login/dashboard, strategy CRUD, market data,
 backtesting, Telegram, machine learning, and completion of Phase 1.
@@ -64,6 +64,33 @@ backtesting, Telegram, machine learning, and completion of Phase 1.
 **Dependencies**: Phase 0 complete  
 **Estimated Duration**: 2 weeks  
 **Blockers**: Supabase account setup
+
+### Phase 1B: Backend persistence and administrative authentication 🚧
+
+**Scope**: Connect FastAPI to the Phase 1A schema, verify Supabase access tokens
+with public signing keys, authorize administrators through `app_admins`, and
+expose the public and administrative simulation APIs.
+
+**Deliverables**:
+- [x] Typed backend configuration with sanitized startup failures
+- [x] Asynchronous PostgreSQL pool, explicit transactions and database health
+- [x] Supabase JWT verification through cached asymmetric JWKS
+- [x] Database-backed administrator dependency
+- [x] Public active-simulation endpoint
+- [x] Administrative simulation, movement and settings endpoints
+- [x] Explicit schemas and safe error contract
+- [x] Unit and temporary-PostgreSQL integration tests
+- [ ] Configure real project values and validate against Supabase Auth
+- [ ] Apply the reviewed migration to the selected remote project
+
+**Status**: Complete locally; remote configuration and application remain
+manual pending operations.
+
+**Explicitly deferred**: Frontend login/dashboard, strategy CRUD, market data,
+backtesting, Telegram, machine learning, and any real-capital operation.
+
+**Dependencies**: Reviewed Phase 1A migration and an asymmetric Supabase JWT
+signing key for deployment.
 
 ---
 

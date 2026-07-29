@@ -1,59 +1,88 @@
-import logging
+"""ADT FastAPI application factory and runtime lifecycle."""
 
+from __future__ import annotations
+
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.exceptions import setup_exception_handlers
-from app.api.routes import health, system
-from app.core.config import settings
+from app.api.routes import (
+    admin,
+    admin_settings,
+    admin_simulations,
+    health,
+    public,
+    system,
+)
+from app.auth import SupabaseJWTVerifier
+from app.core.config import Settings, settings
 from app.core.logging import setup_logging
+from app.database import Database
 
-# Setup logging
-setup_logging()
 logger = logging.getLogger(__name__)
 
 
-def create_app() -> FastAPI:
-    """Create and configure FastAPI application."""
-    app = FastAPI(
-        title=settings.api_title,
-        version="0.0.0",
-        description="ADT — Automatic Dry Trade Backend",
-    )
+def create_app(app_settings: Settings = settings) -> FastAPI:
+    """Create the application and bind resources to its lifespan."""
 
-    # CORS middleware
-    app.add_middleware(
+    setup_logging(app_settings)
+
+    @asynccontextmanager
+    async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        database = Database(app_settings.supabase_database_url.get_secret_value())
+        async with httpx.AsyncClient(follow_redirects=False) as http_client:
+            application.state.settings = app_settings
+            application.state.database = database
+            application.state.jwt_verifier = SupabaseJWTVerifier(
+                issuer=app_settings.supabase_issuer,
+                http_client=http_client,
+            )
+
+            try:
+                await database.open()
+                logger.info(
+                    "API starting on %s:%s",
+                    app_settings.api_host,
+                    app_settings.api_port,
+                )
+                yield
+            finally:
+                await database.close()
+                logger.info("API shutdown completed")
+
+    application = FastAPI(
+        title=app_settings.api_title,
+        version="0.1.0",
+        description="ADT — Automatic Dry Trade Backend",
+        lifespan=lifespan,
+    )
+    application.state.settings = app_settings
+
+    application.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins_list,
+        allow_origins=app_settings.cors_origins_list,
         allow_credentials=True,
         allow_methods=["*"],
-        allow_headers=["*"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
-    # Exception handlers
-    setup_exception_handlers(app)
+    setup_exception_handlers(application)
+    application.include_router(health.router)
+    application.include_router(system.router)
+    application.include_router(public.router)
+    application.include_router(admin.router)
+    application.include_router(admin_simulations.router)
+    application.include_router(admin_settings.router)
 
-    # Routes
-    app.include_router(health.router)
-    app.include_router(system.router)
-
-    logger.info("Application initialized successfully")
-    return app
+    return application
 
 
 app = create_app()
-
-
-@app.on_event("startup")
-async def startup() -> None:
-    """Run on application startup."""
-    logger.info(f"API starting on {settings.api_host}:{settings.api_port}")
-
-
-@app.on_event("shutdown")
-async def shutdown() -> None:
-    """Run on application shutdown."""
-    logger.info("API shutting down")
 
 
 if __name__ == "__main__":

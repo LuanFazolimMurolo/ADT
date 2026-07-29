@@ -1,4 +1,4 @@
-# Supabase setup — Fase 1A
+# Supabase setup — Fases 1A e 1B
 
 Este documento descreve o fluxo versionado do Supabase no ADT. A Fase 1A
 prepara o schema inicial e o cadastro controlado do primeiro administrador;
@@ -240,9 +240,9 @@ prefixo `VITE_`:
 | Frontend futuro | `VITE_SUPABASE_PUBLISHABLE_KEY` | Chave publicável; a segurança continua dependendo de RLS. |
 | Frontend legado | `VITE_SUPABASE_ANON_KEY` | Somente se o projeto ainda usar a chave `anon`; não é uma chave administrativa. |
 | Backend/bootstrap | `ADT_ADMIN_USER_ID` | UUID do administrador inicial; não expor na UI pública. |
+| Backend | `SUPABASE_URL` | URL pública do projeto usada para derivar issuer e JWKS. |
+| Backend | `SUPABASE_PUBLISHABLE_KEY` | Chave publicável do projeto; não concede acesso administrativo. |
 | Backend/bootstrap | `SUPABASE_DATABASE_URL` | Segredo com acesso direto ao PostgreSQL; nunca usar no frontend. |
-| Backend | `ADT_SUPABASE_URL` | URL do projeto reservada à configuração do servidor nesta fase. |
-| Backend | `ADT_SUPABASE_SECRET_KEY` | Chave secreta do servidor; nunca usar prefixo `VITE_`. |
 | Operação/CLI | `SUPABASE_ACCESS_TOKEN` | Token secreto da conta para automação do CLI. |
 | Operação/CLI | `SUPABASE_DB_PASSWORD` | Senha secreta usada por comandos remotos do CLI. |
 
@@ -252,6 +252,32 @@ as políticas do banco são obrigatórias. Chaves `secret`/`service_role`, URL d
 banco, senha, access token e qualquer credencial administrativa são
 exclusivamente de backend/operação e nunca podem ter prefixo `VITE_`.
 
-Por regra do ADT, novas variáveis próprias do backend usam o prefixo `ADT_`. Os
-nomes `SUPABASE_DATABASE_URL`, `SUPABASE_ACCESS_TOKEN` e
-`SUPABASE_DB_PASSWORD` são exceções específicas do bootstrap ou do CLI.
+Por regra do ADT, novas variáveis próprias do backend usam o prefixo `ADT_`.
+Os nomes padronizados `SUPABASE_*` documentados acima são exceções da integração
+com Supabase e têm escopo explícito de frontend, backend ou operação.
+
+## Autenticação do backend na Fase 1B
+
+O backend valida tokens de usuário localmente com as chaves públicas
+assimétricas disponíveis em:
+
+```text
+<SUPABASE_URL>/auth/v1/.well-known/jwks.json
+```
+
+O projeto deve usar uma chave de assinatura assimétrica compatível (`ES256` ou
+`RS256`). O backend valida assinatura, issuer
+`<SUPABASE_URL>/auth/v1`, audience `authenticated`, expiração e o UUID de
+`sub`. As chaves são mantidas somente em cache de memória por tempo limitado e
+um `kid` desconhecido força uma atualização controlada do cache.
+
+Não configure `SUPABASE_SECRET_KEY` no serviço e não use o JWT secret legado
+para validação local. A autorização administrativa também não vem de
+`app_metadata` ou `user_metadata`: depois da autenticação, o backend consulta
+`public.app_admins` pelo UUID verificado.
+
+Referências oficiais:
+
+- [JWTs do Supabase e verificação por JWKS](https://supabase.com/docs/guides/auth/jwts)
+- [Chaves de assinatura JWT](https://supabase.com/docs/guides/auth/signing-keys)
+- [Campos obrigatórios dos JWTs](https://supabase.com/docs/guides/auth/jwt-fields)
