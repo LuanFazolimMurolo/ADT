@@ -9,6 +9,20 @@ interface LoginLocationState {
   passwordReset?: boolean
 }
 
+function safeAdminDestination(state: LoginLocationState | null): string {
+  const pathname = state?.from?.pathname
+  if (
+    typeof pathname !== 'string' ||
+    !pathname.startsWith('/admin') ||
+    pathname.startsWith('//') ||
+    pathname.includes('\\')
+  ) {
+    return '/admin'
+  }
+  const search = state?.from?.search
+  return `${pathname}${typeof search === 'string' && !search.includes('#') ? search : ''}`
+}
+
 export function LoginPage() {
   const { signIn, session, isAdmin } = useAuth()
   const navigate = useNavigate()
@@ -19,9 +33,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const destination = state?.from
-    ? `${state.from.pathname}${state.from.search ?? ''}`
-    : '/admin'
+  const destination = safeAdminDestination(state)
 
   useEffect(() => {
     if (session && isAdmin) navigate(destination, { replace: true })

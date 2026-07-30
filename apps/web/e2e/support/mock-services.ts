@@ -1,0 +1,801 @@
+import type {
+  BrowserContext,
+  Request,
+  Route,
+} from '@playwright/test'
+import type {
+  CapitalMovement,
+  JsonValue,
+  MovementCreateRequest,
+  Setting,
+  SimulationCreateRequest,
+  SimulationDetail,
+  SimulationListItem,
+} from '../../src/types/api'
+import type { SystemStatus } from '../../src/types/system'
+import {
+  ADMIN_EMAIL,
+  ADMIN_ID,
+  API_ORIGIN,
+  E2E_PASSWORD,
+  REQUEST_ID,
+  SUPABASE_ORIGIN,
+  USER_EMAIL,
+  WEB_ORIGIN,
+} from './constants'
+import {
+  createInitialMovement,
+  createSession,
+  createSettings,
+  createSimulation,
+  createUser,
+  type MockRole,
+} from './factories'
+
+type BackendMode = 'online' | 'service-unavailable' | 'network-error'
+
+interface RecordedRequest {
+  method: string
+  pathname: string
+  search: string
+  origin: string
+  authorization?: string
+  body?: unknown
+}
+
+interface ErrorResponse {
+  error: {
+    code: string
+    message: string
+    details?: JsonValue
+  }
+}
+
+const JSON_HEADERS = {
+  'Content-Type': 'application/json',
+  'X-Request-ID': REQUEST_ID,
+}
+
+function decimalToBigInt(value: string): bigint {
+  const match = /^(-?)(\d+)(?:\.(\d{1,8}))?$/.exec(value)
+  if (!match) throw new Error(`Decimal E2E inválido: ${value}`)
+  const [, sign, integer, fraction = ''] = match
+  const scaled = BigInt(`${integer}${fraction.padEnd(8, '0')}`)
+  return sign === '-' ? -scaled : scaled
+}
+
+function bigIntToDecimal(value: bigint): string {
+  const sign = value < 0n ? '-' : ''
+  const absolute = value < 0n ? -value : value
+  const raw = absolute.toString().padStart(9, '0')
+  return `${sign}${raw.slice(0, -8)}.${raw.slice(-8)}`
+}
+
+function normalizeDecimal(value: string): string {
+  return bigIntToDecimal(decimalToBigInt(value))
+}
+
+function asListItem(simulation: SimulationDetail): SimulationListItem {
+  return {
+    id: simulation.id,
+    name: simulation.name,
+    status: simulation.status,
+    currency: simulation.currency,
+    initial_capital: simulation.initial_capital,
+    current_balance: simulation.current_balance,
+    total_profit_loss: simulation.total_profit_loss,
+    started_at: simulation.started_at,
+    ended_at: simulation.ended_at,
+    created_at: simulation.created_at,
+    updated_at: simulation.updated_at,
+  }
+}
+
+export class MockServices {
+  readonly requests: RecordedRequest[] = []
+  readonly unexpectedRequests: string[] = []
+
+  private backendMode: BackendMode = 'online'
+  private databaseAvailable = true
+  private pendingAdminUnauthorizedResponses = 0
+  private tokenSequence = 0
+  private movementSequence = 0
+  private readonly tokenRoles = new Map<string, MockRole>()
+  private readonly refreshRoles = new Map<string, MockRole>()
+  private simulations: SimulationDetail[] = []
+  private readonly movements = new Map<string, CapitalMovement[]>()
+  private settings: Setting[] = createSettings()
+
+  lastIssuedAccessToken: string | null = null
+  recoveredEmail: string | null = null
+  recoveryRedirectTo: string | null = null
+  updatedPassword: string | null = null
+
+  constructor() {
+    this.tokenRoles.set('e2e-recovery-access', 'admin')
+    this.refreshRoles.set('e2e-recovery-refresh', 'admin')
+  }
+
+  async install(context: BrowserContext): Promise<void> {
+    await context.route('**/*', async (route) => {
+      const request = route.request()
+      const url = new URL(request.url())
+
+      if (url.origin === WEB_ORIGIN) {
+        await route.continue()
+        return
+      }
+      if (url.origin === SUPABASE_ORIGIN) {
+        await this.handleSupabase(route, request, url)
+        return
+      }
+      if (url.origin === API_ORIGIN) {
+        await this.handleApi(route, request, url)
+        return
+      }
+
+      this.unexpectedRequests.push(`${request.method()} ${url.origin}${url.pathname}`)
+      await route.abort('blockedbyclient')
+    })
+  }
+
+  seedActiveSimulation(
+    overrides: Partial<SimulationDetail> = {},
+  ): SimulationDetail {
+    const simulation = createSimulation(overrides)
+    this.simulations = [simulation]
+    this.movements.set(simulation.id, [
+      createInitialMovement(simulation.id, simulation.initial_capital),
+    ])
+    return simulation
+  }
+
+  setBackendMode(mode: BackendMode): void {
+    this.backendMode = mode
+  }
+
+  setDatabaseAvailable(available: boolean): void {
+    this.databaseAvailable = available
+  }
+
+  rejectNextAdminRequestsWith401(count = 1): void {
+    this.pendingAdminUnauthorizedResponses = count
+  }
+
+  requestsFor(method: string, pathname: string): RecordedRequest[] {
+    return this.requests.filter(
+      (request) =>
+        request.method === method.toUpperCase() &&
+        request.pathname === pathname,
+    )
+  }
+
+  recoveryCallbackUrl(expired = false): string {
+    if (expired) {
+      return '/admin/reset-password#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired'
+    }
+    return '/admin/reset-password#access_token=e2e-recovery-access&refresh_token=e2e-recovery-refresh&expires_in=3600&token_type=bearer&type=recovery'
+  }
+
+  private record(request: Request, url: URL): void {
+    const rawBody = request.postData()
+    let body: unknown
+    if (rawBody) {
+      try {
+        body = JSON.parse(rawBody) as unknown
+      } catch {
+        body = rawBody
+      }
+    }
+    this.requests.push({
+      method: request.method(),
+      pathname: url.pathname,
+      search: url.search,
+      origin: url.origin,
+      authorization: request.headers().authorization,
+      body,
+    })
+  }
+
+  private corsHeaders(): Record<string, string> {
+    return {
+      'Access-Control-Allow-Origin': WEB_ORIGIN,
+      'Access-Control-Expose-Headers': 'x-request-id',
+      Vary: 'Origin',
+    }
+  }
+
+  private async preflight(
+    route: Route,
+    request: Request,
+    allowedMethods: readonly string[],
+    allowedHeaders: readonly string[],
+  ): Promise<void> {
+    const requestedMethod =
+      request.headers()['access-control-request-method']?.toUpperCase()
+    const requestedHeaders = (
+      request.headers()['access-control-request-headers'] ?? ''
+    )
+      .split(',')
+      .map((header) => header.trim().toLowerCase())
+      .filter(Boolean)
+    const normalizedAllowedHeaders = new Set(
+      allowedHeaders.map((header) => header.toLowerCase()),
+    )
+    const permitted =
+      requestedMethod !== undefined &&
+      allowedMethods.includes(requestedMethod) &&
+      requestedHeaders.every((header) => normalizedAllowedHeaders.has(header))
+
+    await route.fulfill({
+      status: permitted ? 204 : 400,
+      headers: {
+        ...this.corsHeaders(),
+        'Access-Control-Allow-Methods': allowedMethods.join(', '),
+        'Access-Control-Allow-Headers': allowedHeaders.join(', '),
+      },
+    })
+  }
+
+  private async json(
+    route: Route,
+    status: number,
+    value: object | unknown[] | null,
+    headers: Record<string, string> = {},
+  ): Promise<void> {
+    await route.fulfill({
+      status,
+      json: value,
+      headers: {
+        ...this.corsHeaders(),
+        ...JSON_HEADERS,
+        ...headers,
+      },
+    })
+  }
+
+  private async apiError(
+    route: Route,
+    status: number,
+    code: string,
+    message: string,
+    details?: JsonValue,
+  ): Promise<void> {
+    const body: ErrorResponse = {
+      error: {
+        code,
+        message,
+        ...(details === undefined ? {} : { details }),
+      },
+    }
+    await this.json(route, status, body)
+  }
+
+  private issueSession(role: MockRole) {
+    this.tokenSequence += 1
+    const accessToken = `e2e-${role}-access-${this.tokenSequence}`
+    const refreshToken = `e2e-${role}-refresh-${this.tokenSequence}`
+    this.tokenRoles.set(accessToken, role)
+    this.refreshRoles.set(refreshToken, role)
+    this.lastIssuedAccessToken = accessToken
+    return createSession(role, accessToken, refreshToken)
+  }
+
+  private requestBody<T>(request: Request): T {
+    const body = request.postData()
+    if (!body) throw new Error(`Corpo ausente em ${request.method()} ${request.url()}`)
+    return JSON.parse(body) as T
+  }
+
+  private roleForRequest(request: Request): MockRole | null {
+    const authorization = request.headers().authorization
+    if (!authorization?.startsWith('Bearer ')) return null
+    return this.tokenRoles.get(authorization.slice('Bearer '.length)) ?? null
+  }
+
+  private async handleSupabase(
+    route: Route,
+    request: Request,
+    url: URL,
+  ): Promise<void> {
+    this.record(request, url)
+    if (request.method() === 'OPTIONS') {
+      await this.preflight(
+        route,
+        request,
+        ['GET', 'POST', 'PUT', 'OPTIONS'],
+        [
+          'accept',
+          'apikey',
+          'authorization',
+          'content-type',
+          'x-client-info',
+        ],
+      )
+      return
+    }
+
+    if (
+      request.method() === 'POST' &&
+      url.pathname === '/auth/v1/token' &&
+      url.searchParams.get('grant_type') === 'password'
+    ) {
+      const credentials = this.requestBody<{
+        email?: string
+        password?: string
+      }>(request)
+      const role =
+        credentials.email === ADMIN_EMAIL
+          ? 'admin'
+          : credentials.email === USER_EMAIL
+            ? 'user'
+            : null
+      if (!role || credentials.password !== E2E_PASSWORD) {
+        await this.json(
+          route,
+          400,
+          {
+            code: 'invalid_credentials',
+            msg: 'Invalid login credentials',
+          },
+          { 'X-Supabase-Api-Version': '2024-01-01' },
+        )
+        return
+      }
+      await this.json(route, 200, this.issueSession(role))
+      return
+    }
+
+    if (
+      request.method() === 'POST' &&
+      url.pathname === '/auth/v1/token' &&
+      url.searchParams.get('grant_type') === 'refresh_token'
+    ) {
+      const body = this.requestBody<{ refresh_token?: string }>(request)
+      const role = body.refresh_token
+        ? this.refreshRoles.get(body.refresh_token)
+        : undefined
+      if (!role) {
+        await this.json(route, 400, {
+          code: 'refresh_token_not_found',
+          msg: 'Invalid refresh token',
+        })
+        return
+      }
+      await this.json(route, 200, this.issueSession(role))
+      return
+    }
+
+    if (request.method() === 'POST' && url.pathname === '/auth/v1/logout') {
+      await route.fulfill({
+        status: 204,
+        headers: this.corsHeaders(),
+      })
+      return
+    }
+
+    if (request.method() === 'POST' && url.pathname === '/auth/v1/recover') {
+      const body = this.requestBody<{ email?: string }>(request)
+      this.recoveredEmail = body.email ?? null
+      this.recoveryRedirectTo = url.searchParams.get('redirect_to')
+      await this.json(route, 200, {})
+      return
+    }
+
+    if (request.method() === 'GET' && url.pathname === '/auth/v1/user') {
+      const role = this.roleForRequest(request)
+      if (!role) {
+        await this.json(route, 401, {
+          code: 'bad_jwt',
+          msg: 'Invalid JWT',
+        })
+        return
+      }
+      await this.json(route, 200, createUser(role))
+      return
+    }
+
+    if (request.method() === 'PUT' && url.pathname === '/auth/v1/user') {
+      const role = this.roleForRequest(request)
+      if (!role) {
+        await this.json(route, 401, {
+          code: 'bad_jwt',
+          msg: 'Invalid JWT',
+        })
+        return
+      }
+      const body = this.requestBody<{ password?: string }>(request)
+      this.updatedPassword = body.password ?? null
+      await this.json(route, 200, createUser(role))
+      return
+    }
+
+    this.unexpectedRequests.push(`${request.method()} ${url.origin}${url.pathname}${url.search}`)
+    await route.fulfill({
+      status: 501,
+      json: { message: 'Endpoint Supabase não mockado.' },
+      headers: this.corsHeaders(),
+    })
+  }
+
+  private async requireAdmin(
+    route: Route,
+    request: Request,
+  ): Promise<boolean> {
+    const role = this.roleForRequest(request)
+    if (!role) {
+      await this.apiError(
+        route,
+        401,
+        'authentication_required',
+        'Autenticação válida é obrigatória.',
+      )
+      return false
+    }
+    if (role !== 'admin') {
+      await this.apiError(
+        route,
+        403,
+        'administrator_required',
+        'Acesso administrativo negado.',
+      )
+      return false
+    }
+    return true
+  }
+
+  private async handleApi(
+    route: Route,
+    request: Request,
+    url: URL,
+  ): Promise<void> {
+    this.record(request, url)
+    if (request.method() === 'OPTIONS') {
+      await this.preflight(
+        route,
+        request,
+        ['GET', 'POST', 'PATCH', 'OPTIONS'],
+        ['accept', 'authorization', 'content-type', 'x-request-id'],
+      )
+      return
+    }
+    if (this.backendMode === 'network-error') {
+      await route.abort('connectionfailed')
+      return
+    }
+    if (this.backendMode === 'service-unavailable') {
+      await this.apiError(
+        route,
+        503,
+        'service_unavailable',
+        'O serviço está temporariamente indisponível.',
+      )
+      return
+    }
+
+    if (
+      request.method() === 'GET' &&
+      url.pathname === '/api/v1/system/status'
+    ) {
+      const systemStatus = {
+        status: 'operational',
+        version: '0.1.0',
+        environment: 'test',
+        timestamp: '2026-07-29T15:00:00.000Z',
+      } satisfies SystemStatus
+      await this.json(route, 200, systemStatus)
+      return
+    }
+
+    if (request.method() === 'GET' && url.pathname === '/health') {
+      await this.json(route, 200, { status: 'healthy' })
+      return
+    }
+
+    if (
+      request.method() === 'GET' &&
+      (url.pathname === '/health/database' ||
+        url.pathname === '/health/readiness')
+    ) {
+      if (!this.databaseAvailable) {
+        await this.apiError(
+          route,
+          503,
+          'database_unavailable',
+          'O banco de dados está temporariamente indisponível.',
+        )
+        return
+      }
+      await this.json(route, 200, {
+        status: url.pathname.endsWith('readiness') ? 'ready' : 'healthy',
+      })
+      return
+    }
+
+    if (
+      request.method() === 'GET' &&
+      url.pathname === '/api/v1/public/simulation'
+    ) {
+      if (!this.databaseAvailable) {
+        await this.apiError(
+          route,
+          503,
+          'database_unavailable',
+          'O banco de dados está temporariamente indisponível.',
+        )
+        return
+      }
+      const active = this.simulations.find(
+        (simulation) => simulation.status === 'ACTIVE',
+      )
+      await this.json(
+        route,
+        200,
+        active
+          ? {
+              name: active.name,
+              currency: active.currency,
+              initial_capital: active.initial_capital,
+              current_balance: active.current_balance,
+              total_profit_loss: active.total_profit_loss,
+              started_at: active.started_at,
+              status: active.status,
+            }
+          : null,
+      )
+      return
+    }
+
+    if (url.pathname.startsWith('/api/v1/admin/')) {
+      if (!this.databaseAvailable) {
+        await this.apiError(
+          route,
+          503,
+          'database_unavailable',
+          'O banco de dados está temporariamente indisponível.',
+        )
+        return
+      }
+      if (this.pendingAdminUnauthorizedResponses > 0) {
+        this.pendingAdminUnauthorizedResponses -= 1
+        await this.apiError(
+          route,
+          401,
+          'token_expired',
+          'A sessão expirou.',
+        )
+        return
+      }
+      if (!(await this.requireAdmin(route, request))) return
+    }
+
+    if (
+      request.method() === 'GET' &&
+      url.pathname === '/api/v1/admin/me'
+    ) {
+      await this.json(route, 200, {
+        user_id: ADMIN_ID,
+        is_admin: true,
+      })
+      return
+    }
+
+    if (
+      request.method() === 'GET' &&
+      url.pathname === '/api/v1/admin/simulations'
+    ) {
+      const page = Number(url.searchParams.get('page') ?? '1')
+      const pageSize = Number(url.searchParams.get('page_size') ?? '20')
+      const start = (page - 1) * pageSize
+      const total = this.simulations.length
+      await this.json(route, 200, {
+        items: this.simulations
+          .slice(start, start + pageSize)
+          .map(asListItem),
+        pagination: {
+          page,
+          page_size: pageSize,
+          total,
+          total_pages: total === 0 ? 0 : Math.ceil(total / pageSize),
+        },
+      })
+      return
+    }
+
+    if (
+      request.method() === 'POST' &&
+      url.pathname === '/api/v1/admin/simulations'
+    ) {
+      if (
+        this.simulations.some(
+          (simulation) => simulation.status === 'ACTIVE',
+        )
+      ) {
+        await this.apiError(
+          route,
+          409,
+          'active_simulation_exists',
+          'Já existe uma simulação ativa.',
+        )
+        return
+      }
+      const body = this.requestBody<SimulationCreateRequest>(request)
+      const simulation = createSimulation({
+        name: body.name,
+        currency: body.currency,
+        initial_capital: normalizeDecimal(body.initial_capital),
+        current_balance: normalizeDecimal(body.initial_capital),
+      })
+      this.simulations = [simulation, ...this.simulations]
+      this.movements.set(simulation.id, [
+        createInitialMovement(simulation.id, simulation.initial_capital),
+      ])
+      await this.json(route, 201, simulation)
+      return
+    }
+
+    const detailMatch = /^\/api\/v1\/admin\/simulations\/([^/]+)$/.exec(
+      url.pathname,
+    )
+    if (request.method() === 'GET' && detailMatch) {
+      const simulation = this.simulations.find(
+        (item) => item.id === decodeURIComponent(detailMatch[1]),
+      )
+      if (!simulation) {
+        await this.apiError(
+          route,
+          404,
+          'simulation_not_found',
+          'Simulação não encontrada.',
+        )
+        return
+      }
+      await this.json(route, 200, simulation)
+      return
+    }
+
+    const movementMatch =
+      /^\/api\/v1\/admin\/simulations\/([^/]+)\/movements$/.exec(
+        url.pathname,
+      )
+    if (request.method() === 'GET' && movementMatch) {
+      const simulationId = decodeURIComponent(movementMatch[1])
+      const items = this.movements.get(simulationId) ?? []
+      const page = Number(url.searchParams.get('page') ?? '1')
+      const pageSize = Number(url.searchParams.get('page_size') ?? '20')
+      const start = (page - 1) * pageSize
+      await this.json(route, 200, {
+        items: items.slice(start, start + pageSize),
+        pagination: {
+          page,
+          page_size: pageSize,
+          total: items.length,
+          total_pages:
+            items.length === 0 ? 0 : Math.ceil(items.length / pageSize),
+        },
+      })
+      return
+    }
+
+    if (request.method() === 'POST' && movementMatch) {
+      const simulationId = decodeURIComponent(movementMatch[1])
+      const simulation = this.simulations.find(
+        (item) => item.id === simulationId,
+      )
+      if (!simulation) {
+        await this.apiError(
+          route,
+          404,
+          'simulation_not_found',
+          'Simulação não encontrada.',
+        )
+        return
+      }
+      const body = this.requestBody<MovementCreateRequest>(request)
+      const nextBalance =
+        decimalToBigInt(simulation.current_balance) +
+        decimalToBigInt(body.amount)
+      if (nextBalance < 0n) {
+        await this.apiError(
+          route,
+          409,
+          'insufficient_balance',
+          'Saldo insuficiente.',
+        )
+        return
+      }
+      this.movementSequence += 1
+      const ledgerTypes = {
+        DEPOSIT: 'ADMIN_DEPOSIT',
+        WITHDRAWAL: 'ADMIN_WITHDRAWAL',
+        ADJUSTMENT: 'ADJUSTMENT',
+      } as const
+      const movement: CapitalMovement = {
+        id: `55555555-5555-4555-8555-${this.movementSequence
+          .toString()
+          .padStart(12, '0')}`,
+        simulation_id: simulationId,
+        type: ledgerTypes[body.type],
+        amount: normalizeDecimal(body.amount),
+        reason: body.reason,
+        reference_id: null,
+        created_by: ADMIN_ID,
+        created_at: '2026-07-29T15:05:00.000Z',
+        metadata: body.metadata ?? null,
+      }
+      this.movements.set(simulationId, [
+        movement,
+        ...(this.movements.get(simulationId) ?? []),
+      ])
+      simulation.current_balance = bigIntToDecimal(nextBalance)
+      simulation.updated_at = movement.created_at
+      await this.json(route, 201, movement)
+      return
+    }
+
+    const transitionMatch =
+      /^\/api\/v1\/admin\/simulations\/([^/]+)\/(complete|cancel)$/.exec(
+        url.pathname,
+      )
+    if (request.method() === 'POST' && transitionMatch) {
+      const simulation = this.simulations.find(
+        (item) => item.id === decodeURIComponent(transitionMatch[1]),
+      )
+      if (!simulation) {
+        await this.apiError(
+          route,
+          404,
+          'simulation_not_found',
+          'Simulação não encontrada.',
+        )
+        return
+      }
+      simulation.status =
+        transitionMatch[2] === 'complete' ? 'COMPLETED' : 'CANCELLED'
+      simulation.ended_at = '2026-07-29T16:00:00.000Z'
+      simulation.updated_at = simulation.ended_at
+      await this.json(route, 200, simulation)
+      return
+    }
+
+    if (
+      request.method() === 'GET' &&
+      url.pathname === '/api/v1/admin/settings'
+    ) {
+      await this.json(route, 200, { items: this.settings })
+      return
+    }
+
+    const settingMatch = /^\/api\/v1\/admin\/settings\/([^/]+)$/.exec(
+      url.pathname,
+    )
+    if (request.method() === 'PATCH' && settingMatch) {
+      const key = decodeURIComponent(settingMatch[1])
+      const body = this.requestBody<{ value: JsonValue }>(request)
+      const setting = this.settings.find((item) => item.key === key)
+      if (!setting) {
+        await this.apiError(
+          route,
+          404,
+          'setting_not_found',
+          'Configuração não encontrada.',
+        )
+        return
+      }
+      setting.value = body.value
+      setting.updated_by = ADMIN_ID
+      setting.updated_at = '2026-07-29T15:10:00.000Z'
+      this.settings = [...this.settings]
+      await this.json(route, 200, setting)
+      return
+    }
+
+    this.unexpectedRequests.push(`${request.method()} ${url.origin}${url.pathname}${url.search}`)
+    await this.apiError(
+      route,
+      501,
+      'endpoint_not_mocked',
+      'Endpoint FastAPI não mockado.',
+    )
+  }
+}

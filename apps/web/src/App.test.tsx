@@ -25,7 +25,7 @@ vi.mock('./http/client', async () => {
     ApiError,
     apiClient: {
       getSystemStatus: vi.fn().mockResolvedValue({
-        status: 'healthy',
+        status: 'operational',
         version: '0.1.0',
         environment: 'development',
         timestamp: new Date().toISOString(),

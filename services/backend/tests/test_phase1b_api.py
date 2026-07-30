@@ -522,6 +522,22 @@ async def test_missing_bearer_token_returns_401(api_harness: ApiHarness) -> None
     assert api_harness.verifier.tokens == []
 
 
+async def test_oversized_bearer_token_is_rejected_before_verification(
+    api_harness: ApiHarness,
+) -> None:
+    oversized_token = "x" * 8193
+
+    response = await api_harness.client.get(
+        "/api/v1/admin/me",
+        headers={"Authorization": f"Bearer {oversized_token}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_token"
+    assert oversized_token not in response.text
+    assert api_harness.verifier.tokens == []
+
+
 @pytest.mark.parametrize(
     ("authentication_error", "expected_code"),
     [
@@ -598,7 +614,7 @@ async def test_administrator_can_create_simulation_with_decimal_capital(
         json={
             "name": "  Simulação nova  ",
             "initial_capital": "2500.12500000",
-            "currency": "brl",
+            "currency": "BRL",
         },
     )
 
@@ -609,7 +625,7 @@ async def test_administrator_can_create_simulation_with_decimal_capital(
         SimulationCreateCall(
             name="Simulação nova",
             initial_capital=Decimal("2500.12500000"),
-            currency="brl",
+            currency="BRL",
             created_by=ADMIN_ID,
         )
     ]
@@ -661,6 +677,26 @@ async def test_invalid_initial_capital_payload_is_rejected_with_422(
     assert response.json()["error"]["code"] == "validation_error"
     assert api_harness.simulation_service.create_calls == []
     assert "traceback" not in response.text.lower()
+
+
+@pytest.mark.parametrize("invalid_capital", [1000, 1000.5])
+async def test_numeric_json_initial_capital_is_rejected_before_service(
+    api_harness: ApiHarness,
+    invalid_capital: float,
+) -> None:
+    response = await api_harness.client.post(
+        "/api/v1/admin/simulations",
+        headers=AUTH_HEADERS,
+        json={
+            "name": "Contrato decimal",
+            "initial_capital": invalid_capital,
+            "currency": "BRL",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+    assert api_harness.simulation_service.create_calls == []
 
 
 @pytest.mark.parametrize(

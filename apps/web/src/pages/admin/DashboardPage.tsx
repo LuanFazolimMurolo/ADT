@@ -4,6 +4,7 @@ import { apiClient } from '../../http/client'
 import type { SimulationDetail } from '../../types/api'
 import { EmptyState, InlineError, LoadingState } from '../../components/States'
 import { StatusBadge } from '../../components/StatusBadge'
+import { isNegativeFinancialDecimal } from '../../utils/decimal'
 import { formatDate, formatMoney, getErrorMessage } from '../../utils/format'
 
 interface ServiceState {
@@ -79,10 +80,10 @@ export function DashboardPage() {
               <strong>{formatMoney(simulation.current_balance, simulation.currency)}</strong>
               <small>Calculado pelo backend</small>
             </article>
-            <article className={`metric-card ${Number(simulation.total_profit_loss) < 0 ? 'metric-card--negative' : ''}`}>
+            <article className={`metric-card ${isNegativeFinancialDecimal(simulation.total_profit_loss) ? 'metric-card--negative' : ''}`}>
               <span className="metric-label">LUCRO / PREJUÍZO</span>
               <strong>{formatMoney(simulation.total_profit_loss, simulation.currency)}</strong>
-              <small>Movimentos acumulados</small>
+              <small>Resultado de trades e taxas</small>
             </article>
             <article className="metric-card">
               <span className="metric-label">INÍCIO</span>

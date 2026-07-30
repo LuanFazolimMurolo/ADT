@@ -4,12 +4,24 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { apiClient, ApiError } from '../http/client'
-import { getSupabaseClient } from '../lib/supabase'
+import { getPublicConfig } from '../config/env'
+import {
+  clearPasswordRecoveryContext,
+  getSupabaseClient,
+} from '../lib/supabase'
+import { signOutLocally, signOutWithLocalFallback } from './signOut'
+import {
+  getPersistedSupabaseAccessToken,
+  getSupabaseAuthStorageKey,
+  reconcileCrossTabSessionInvalidation,
+  subscribeToSessionInvalidation,
+} from './supabaseSessionStorage'
 
 interface AuthContextValue {
   session: Session | null
@@ -25,12 +37,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
+  const pendingSignOut = useRef<Promise<void> | null>(null)
 
-  const signOut = useCallback(async () => {
-    await getSupabaseClient().auth.signOut()
+  const clearAuthenticationState = useCallback(() => {
     setSession(null)
     setIsAdmin(false)
   }, [])
+
+  const clearLocalAccess = useCallback(async () => {
+    try {
+      signOutLocally()
+    } finally {
+      clearAuthenticationState()
+    }
+  }, [clearAuthenticationState])
+
+  const signOut = useCallback(async () => {
+    clearAuthenticationState()
+    const operation = signOutWithLocalFallback(getSupabaseClient().auth)
+    pendingSignOut.current = operation
+    try {
+      await operation
+    } finally {
+      if (pendingSignOut.current === operation) pendingSignOut.current = null
+    }
+  }, [clearAuthenticationState])
 
   const verifyAdministrator = useCallback(async (nextSession: Session) => {
     setSession(nextSession)
@@ -40,16 +71,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsAdmin(true)
     } catch (error) {
       setIsAdmin(false)
-      await getSupabaseClient().auth.signOut()
-      setSession(null)
+      await clearLocalAccess()
       if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
         throw new ApiError(403, 'forbidden', 'Esta conta não possui acesso administrativo.')
       }
       throw error
     }
-  }, [])
+  }, [clearLocalAccess])
 
   const signIn = useCallback(async (email: string, password: string) => {
+    await pendingSignOut.current
     const { data, error } = await getSupabaseClient().auth.signInWithPassword({
       email,
       password,
@@ -63,6 +94,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true
     const supabase = getSupabaseClient()
+    const authStorageKey = getSupabaseAuthStorageKey(getPublicConfig().supabaseUrl)
+    const unsubscribeInvalidation = subscribeToSessionInvalidation(
+      clearAuthenticationState,
+    )
+    const handleCrossTabSignOut = (event: StorageEvent) => {
+      if (event.key === authStorageKey && event.newValue === null) {
+        if (reconcileCrossTabSessionInvalidation(event.oldValue)) {
+          clearPasswordRecoveryContext()
+          clearAuthenticationState()
+        }
+      }
+    }
+    globalThis.addEventListener('storage', handleCrossTabSignOut)
 
     const restore = async () => {
       try {
@@ -71,8 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (active && data.session) await verifyAdministrator(data.session)
       } catch {
         if (active) {
-          setSession(null)
-          setIsAdmin(false)
+          clearAuthenticationState()
         }
       } finally {
         if (active) setLoading(false)
@@ -83,19 +126,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!active) return
       if (event === 'SIGNED_OUT' || !nextSession) {
-        setSession(null)
-        setIsAdmin(false)
+        clearAuthenticationState()
         setLoading(false)
       } else if (event === 'TOKEN_REFRESHED') {
-        setSession(nextSession)
+        const persistedAccessToken = getPersistedSupabaseAccessToken()
+        if (persistedAccessToken === nextSession.access_token) {
+          setSession(nextSession)
+        } else if (persistedAccessToken === null) {
+          clearAuthenticationState()
+        }
       }
     })
 
     return () => {
       active = false
+      unsubscribeInvalidation()
+      globalThis.removeEventListener('storage', handleCrossTabSignOut)
       subscription.subscription.unsubscribe()
     }
-  }, [verifyAdministrator])
+  }, [clearAuthenticationState, verifyAdministrator])
 
   const value = useMemo<AuthContextValue>(() => ({
     session,

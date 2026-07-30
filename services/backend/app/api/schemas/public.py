@@ -1,6 +1,7 @@
 """Public response contracts with an intentionally narrow projection."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import AliasChoices, Field
 
@@ -10,7 +11,6 @@ from app.api.schemas.common import (
     NonBlankText,
     PositiveFinancialDecimal,
 )
-from app.api.schemas.simulations import SimulationStatus
 
 
 class PublicSimulationSummaryResponse(ApiSchema):
@@ -22,4 +22,4 @@ class PublicSimulationSummaryResponse(ApiSchema):
     current_balance: FinancialDecimal
     total_profit_loss: FinancialDecimal
     started_at: datetime
-    status: SimulationStatus
+    status: Literal["ACTIVE"]

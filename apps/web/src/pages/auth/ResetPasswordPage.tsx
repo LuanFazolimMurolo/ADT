@@ -1,6 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { getSupabaseClient } from '../../lib/supabase'
+import { signOutLocally } from '../../auth/signOut'
+import {
+  clearPasswordRecoveryContext,
+  getSupabaseClient,
+  hasPasswordRecoveryContext,
+} from '../../lib/supabase'
 import { InlineError, LoadingState } from '../../components/States'
 
 export function ResetPasswordPage() {
@@ -16,16 +21,25 @@ export function ResetPasswordPage() {
     let active = true
     const supabase = getSupabaseClient()
     const verify = async () => {
-      const { data } = await supabase.auth.getSession()
-      if (active) {
-        setValidSession(Boolean(data.session))
-        setChecking(false)
+      try {
+        const { data, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError) throw sessionError
+        if (active) {
+          setValidSession(Boolean(data.session) && hasPasswordRecoveryContext())
+        }
+      } catch {
+        if (active) setValidSession(false)
+      } finally {
+        if (active) setChecking(false)
       }
     }
     void verify()
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       if (active && event === 'PASSWORD_RECOVERY') {
         setValidSession(Boolean(session))
+        setChecking(false)
+      } else if (active && (event === 'SIGNED_OUT' || !session)) {
+        setValidSession(false)
         setChecking(false)
       }
     })
@@ -48,14 +62,20 @@ export function ResetPasswordPage() {
     }
     setBusy(true)
     setError(null)
-    const { error: updateError } = await getSupabaseClient().auth.updateUser({ password })
-    if (updateError) {
-      setBusy(false)
+    try {
+      const { error: updateError } = await getSupabaseClient().auth.updateUser({
+        password,
+      })
+      if (updateError) throw updateError
+
+      clearPasswordRecoveryContext()
+      signOutLocally()
+      navigate('/admin/login', { replace: true, state: { passwordReset: true } })
+    } catch {
       setError('O link é inválido ou expirou. Solicite uma nova recuperação.')
-      return
+    } finally {
+      setBusy(false)
     }
-    await getSupabaseClient().auth.signOut()
-    navigate('/admin/login', { replace: true, state: { passwordReset: true } })
   }
 
   if (checking) return <LoadingState message="Validando link de recuperação…" fullPage />

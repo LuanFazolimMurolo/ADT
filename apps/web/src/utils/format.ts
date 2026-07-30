@@ -1,16 +1,13 @@
 export function formatMoney(value: string, currency = 'USD'): string {
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return `${currency} ${value}`
-  try {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: currency.toUpperCase(),
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 8,
-    }).format(numeric)
-  } catch {
-    return `${currency.toUpperCase()} ${numeric.toLocaleString('pt-BR')}`
-  }
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value)
+  const normalizedCurrency = currency.trim().toUpperCase() || 'USD'
+  if (!match) return `${normalizedCurrency} ${value}`
+
+  const [, sign, rawInteger, rawFraction = ''] = match
+  const integer = rawInteger.replace(/^0+(?=\d)/, '')
+  const groupedInteger = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  const fraction = rawFraction.replace(/0+$/, '').padEnd(2, '0')
+  return `${normalizedCurrency} ${sign}${groupedInteger},${fraction}`
 }
 
 export function formatDate(value: string | null): string {
@@ -22,5 +19,9 @@ export function formatDate(value: string | null): string {
 }
 
 export function getErrorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback
+  if (!(error instanceof Error)) return fallback
+  const requestId = 'requestId' in error ? error.requestId : undefined
+  return typeof requestId === 'string' && /^[0-9a-f-]{36}$/i.test(requestId)
+    ? `${error.message} Referência: ${requestId}.`
+    : error.message
 }

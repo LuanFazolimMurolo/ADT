@@ -132,3 +132,38 @@ def test_secret_representations_do_not_contain_values() -> None:
     assert REQUIRED_ENVIRONMENT["SUPABASE_PUBLISHABLE_KEY"] not in representation
     assert REQUIRED_ENVIRONMENT["SUPABASE_DATABASE_URL"] not in representation
     assert "**********" in representation
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://localhost",
+        "https://localhost.",
+        "https://foo.localhost",
+        "https://127.0.0.1",
+        "https://127.1",
+        "https://[::1]",
+    ],
+)
+def test_production_rejects_loopback_cors_variants(origin: str) -> None:
+    with pytest.raises(ValueError):
+        Settings(
+            supabase_url=AnyHttpUrl("https://project.example.test"),
+            supabase_publishable_key=SecretStr("public-value"),
+            supabase_database_url=SecretStr(
+                "postgresql://backend@db.example.test/adt?sslmode=require"
+            ),
+            environment="production",
+            cors_origins=[origin],
+        )
+
+
+def test_production_requires_database_tls() -> None:
+    with pytest.raises(ValueError):
+        Settings(
+            supabase_url=AnyHttpUrl("https://project.example.test"),
+            supabase_publishable_key=SecretStr("public-value"),
+            supabase_database_url=SecretStr("postgresql://backend@db.example.test/adt"),
+            environment="production",
+            cors_origins=["https://admin.example.test"],
+        )

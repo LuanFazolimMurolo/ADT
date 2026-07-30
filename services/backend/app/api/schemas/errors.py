@@ -1,8 +1,6 @@
 """Stable, non-sensitive error response schemas."""
 
-from pydantic import JsonValue
-
-from app.api.schemas.common import ApiSchema, NonBlankText
+from app.api.schemas.common import ApiSchema, JsonValue, NonBlankText
 
 
 class ErrorDetail(ApiSchema):

@@ -4,9 +4,13 @@
 
 ## Status
 
-🔄 **Phase 1 — Supabase & Administration** (In progress locally)
+🟡 **Phase 1D implemented; candidate gate and operational homologation pending**
+
+⏳ **Formal Phase 1 closure pending operational homologation**
 
 This is the architectural foundation. The system is not yet connected to real exchanges or live markets.
+No migration or administrator bootstrap has been run against a remote Supabase
+project as part of this implementation.
 
 ## What is ADT?
 
@@ -62,10 +66,10 @@ required public variables documented in
 
 ```bash
 cd services/backend
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-python -m uvicorn app.main:app --reload
+.venv/bin/python -m app.main
 # API runs at http://localhost:8000
 ```
 
@@ -80,4 +84,38 @@ For the full local frontend/backend workflow, private routes, Supabase password
 Redirect URLs and quality commands, see
 [`apps/web/README.md`](./apps/web/README.md).
 
+### 5. Validate Phase 1 locally
+
+```bash
+cd services/backend
+.venv/bin/ruff format --check app scripts tests
+.venv/bin/ruff check app scripts tests
+.venv/bin/mypy app scripts
+.venv/bin/pytest
+
+cd ../../apps/web
+npm run generate:api
+npm run typecheck
+npm run typecheck:e2e
+npm run lint
+npm test -- --run --silent
+npm run test:e2e
+npm run build
+```
+
+The PostgreSQL tests create an isolated temporary cluster. Playwright starts
+Vite and intercepts Supabase Auth/FastAPI only on explicit loopback origins;
+unexpected or remote network requests fail the test.
+
+The complete release gate, security checklist and manual Supabase homologation
+steps are in
+[`docs/PHASE1_HOMOLOGATION.md`](./docs/PHASE1_HOMOLOGATION.md).
+
 ## Project Structure
+
+```text
+apps/web/          React/Vite public and administrative frontend
+services/backend/  FastAPI, JWT verification and PostgreSQL services
+supabase/          ordered, versioned database migrations
+docs/              specification, architecture and operational guides
+```

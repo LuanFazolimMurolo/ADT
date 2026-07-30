@@ -420,6 +420,199 @@ def test_simulation_initial_capital_cannot_be_changed(database_url: str) -> None
     assert capital == (Decimal("100.00000000"),)
 
 
+@pytest.mark.parametrize(
+    ("terminal_status", "new_status"),
+    [
+        ("COMPLETED", "ACTIVE"),
+        ("COMPLETED", "CANCELLED"),
+        ("CANCELLED", "COMPLETED"),
+    ],
+)
+def test_terminal_simulation_status_cannot_be_changed_by_direct_connection(
+    database_url: str,
+    terminal_status: str,
+    new_status: str,
+) -> None:
+    """Neither terminal state can be reopened or changed to the other one."""
+    _creator_id, simulation_id = _seed_simulation(database_url)
+
+    with psycopg.connect(database_url, autocommit=True) as connection:
+        connection.execute(
+            """
+            update public.simulation_runs
+            set status = %s, ended_at = now()
+            where id = %s
+            """,
+            (terminal_status, simulation_id),
+        )
+
+        with pytest.raises(psycopg.Error):
+            connection.execute(
+                """
+                update public.simulation_runs
+                set status = %s,
+                    ended_at = case when %s = 'ACTIVE' then null else ended_at end
+                where id = %s
+                """,
+                (new_status, new_status, simulation_id),
+            )
+
+        status_row = connection.execute(
+            "select status from public.simulation_runs where id = %s",
+            (simulation_id,),
+        ).fetchone()
+
+    assert status_row == (terminal_status,)
+
+
+@pytest.mark.parametrize("terminal_status", ["COMPLETED", "CANCELLED"])
+def test_terminal_simulation_ended_at_cannot_be_changed_by_direct_connection(
+    database_url: str,
+    terminal_status: str,
+) -> None:
+    """The timestamp that closed either terminal state is immutable."""
+    _creator_id, simulation_id = _seed_simulation(database_url)
+
+    with psycopg.connect(database_url, autocommit=True) as connection:
+        connection.execute(
+            """
+            update public.simulation_runs
+            set status = %s, ended_at = now()
+            where id = %s
+            """,
+            (terminal_status, simulation_id),
+        )
+        original_ended_at = connection.execute(
+            "select ended_at from public.simulation_runs where id = %s",
+            (simulation_id,),
+        ).fetchone()
+
+        with pytest.raises(psycopg.Error):
+            connection.execute(
+                """
+                update public.simulation_runs
+                set ended_at = ended_at + interval '1 second'
+                where id = %s
+                """,
+                (simulation_id,),
+            )
+
+        ended_at_row = connection.execute(
+            "select ended_at from public.simulation_runs where id = %s",
+            (simulation_id,),
+        ).fetchone()
+
+    assert ended_at_row == original_ended_at
+
+
+@pytest.mark.parametrize("terminal_status", ["COMPLETED", "CANCELLED"])
+def test_active_simulation_can_transition_to_terminal_state(
+    database_url: str,
+    terminal_status: str,
+) -> None:
+    """An ACTIVE simulation can still be completed or cancelled."""
+    _creator_id, simulation_id = _seed_simulation(database_url)
+
+    with psycopg.connect(database_url, autocommit=True) as connection:
+        connection.execute(
+            """
+            update public.simulation_runs
+            set status = %s, ended_at = now()
+            where id = %s
+            """,
+            (terminal_status, simulation_id),
+        )
+
+        terminal_row = connection.execute(
+            """
+            select status, ended_at is not null
+            from public.simulation_runs
+            where id = %s
+            """,
+            (simulation_id,),
+        ).fetchone()
+
+    assert terminal_row == (terminal_status, True)
+
+
+def test_terminal_simulation_can_still_be_renamed(database_url: str) -> None:
+    """Terminal protection does not expand to the mutable simulation name."""
+    _creator_id, simulation_id = _seed_simulation(database_url)
+
+    with psycopg.connect(database_url, autocommit=True) as connection:
+        connection.execute(
+            """
+            update public.simulation_runs
+            set status = 'COMPLETED', ended_at = now()
+            where id = %s
+            """,
+            (simulation_id,),
+        )
+        connection.execute(
+            """
+            update public.simulation_runs
+            set name = 'Renamed terminal simulation'
+            where id = %s
+            """,
+            (simulation_id,),
+        )
+
+        name_row = connection.execute(
+            "select name from public.simulation_runs where id = %s",
+            (simulation_id,),
+        ).fetchone()
+
+    assert name_row == ("Renamed terminal simulation",)
+
+
+def test_terminal_simulation_rejects_new_movement_by_direct_connection(
+    database_url: str,
+) -> None:
+    """No owner-side mistake can append cash after the run has ended."""
+    creator_id, simulation_id = _seed_simulation(database_url)
+
+    with psycopg.connect(database_url, autocommit=True) as connection:
+        connection.execute(
+            """
+            update public.simulation_runs
+            set status = 'CANCELLED', ended_at = now()
+            where id = %s
+            """,
+            (simulation_id,),
+        )
+
+        with pytest.raises(psycopg.Error):
+            connection.execute(
+                """
+                insert into public.capital_movements (
+                    simulation_id,
+                    type,
+                    amount,
+                    reason,
+                    created_by
+                )
+                values (%s, 'ADJUSTMENT', %s, %s, %s)
+                """,
+                (
+                    simulation_id,
+                    Decimal("1"),
+                    "Rejected terminal adjustment",
+                    creator_id,
+                ),
+            )
+
+        movement_count = connection.execute(
+            """
+            select count(*)
+            from public.capital_movements
+            where simulation_id = %s
+            """,
+            (simulation_id,),
+        ).fetchone()
+
+    assert movement_count == (1,)
+
+
 def test_active_simulation_rejects_ended_at(database_url: str) -> None:
     """ACTIVE and ended_at are mutually exclusive."""
     creator_id = uuid4()
@@ -658,10 +851,6 @@ def test_data_api_roles_cannot_modify_admins(
     with psycopg.connect(database_url, autocommit=True) as connection:
         if api_role == "authenticated":
             _set_authenticated_role(connection, administrator_id)
-            visible_admins = connection.execute(
-                "select user_id from public.app_admins order by user_id"
-            ).fetchall()
-            assert len(visible_admins) == 2
         else:
             connection.execute("set role service_role")
 
@@ -699,6 +888,172 @@ def test_data_api_roles_cannot_modify_admins(
     }
 
 
+@pytest.mark.parametrize(
+    "table_name",
+    [
+        "app_admins",
+        "simulation_runs",
+        "capital_movements",
+        "system_settings",
+        "audit_logs",
+    ],
+)
+@pytest.mark.parametrize("api_role", ["public", "anon", "authenticated", "service_role"])
+@pytest.mark.parametrize("privilege", ["SELECT", "INSERT", "UPDATE", "DELETE"])
+def test_data_api_roles_have_no_base_table_privileges(
+    database_url: str,
+    table_name: str,
+    api_role: str,
+    privilege: str,
+) -> None:
+    """Browser-facing roles cannot bypass the backend on any base table."""
+    with psycopg.connect(database_url, autocommit=True) as connection:
+        result = connection.execute(
+            "select has_table_privilege(%s, %s, %s)",
+            (api_role, f"public.{table_name}", privilege),
+        ).fetchone()
+
+    assert result == (False,)
+
+
+@pytest.mark.parametrize("api_role", ["anon", "authenticated"])
+def test_public_summary_is_the_only_data_api_read_surface(
+    database_url: str,
+    api_role: str,
+) -> None:
+    """Only the deliberately narrow summary view remains readable."""
+    with psycopg.connect(database_url, autocommit=True) as connection:
+        view_select = connection.execute(
+            "select has_table_privilege(%s, %s, 'SELECT')",
+            (api_role, "public.active_simulation_summary"),
+        ).fetchone()
+
+    assert view_select == (True,)
+
+
+@pytest.mark.parametrize("api_role", ["public", "anon", "authenticated", "service_role"])
+@pytest.mark.parametrize(
+    "function_name",
+    [
+        "public.validate_capital_movement()",
+        "public.reject_append_only_change()",
+        "public.protect_simulation_run_history()",
+        "public.set_updated_at()",
+        "public.is_adt_admin()",
+        "public.require_active_simulation_for_movement()",
+        "public.enforce_simulation_terminal_state()",
+    ],
+)
+def test_data_api_roles_cannot_execute_application_functions(
+    database_url: str,
+    api_role: str,
+    function_name: str,
+) -> None:
+    """Trigger and former RLS helpers are not callable Data API RPCs."""
+    with psycopg.connect(database_url, autocommit=True) as connection:
+        result = connection.execute(
+            "select has_function_privilege(%s, %s, 'EXECUTE')",
+            (api_role, function_name),
+        ).fetchone()
+
+    assert result == (False,)
+
+
+@pytest.mark.parametrize("api_role", ["public", "anon", "authenticated", "service_role"])
+@pytest.mark.parametrize("privilege", ["SELECT", "INSERT", "UPDATE", "DELETE"])
+def test_public_summary_has_only_explicit_read_privileges(
+    database_url: str,
+    api_role: str,
+    privilege: str,
+) -> None:
+    """Default privileges cannot reopen the recreated view to Data API DML."""
+    with psycopg.connect(database_url, autocommit=True) as connection:
+        result = connection.execute(
+            "select has_table_privilege(%s, %s, %s)",
+            (api_role, "public.active_simulation_summary", privilege),
+        ).fetchone()
+
+    expected = api_role in {"anon", "authenticated"} and privilege == "SELECT"
+    assert result == (expected,)
+
+
+def test_public_summary_does_not_expose_internal_identifiers(database_url: str) -> None:
+    """The Data API projection omits the simulation UUID by construction."""
+    with psycopg.connect(database_url, autocommit=True) as connection:
+        columns = connection.execute(
+            """
+            select column_name
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'active_simulation_summary'
+            order by ordinal_position
+            """
+        ).fetchall()
+
+        connection.execute("set role anon")
+        with pytest.raises(psycopg.errors.UndefinedColumn):
+            connection.execute(
+                "select simulation_id from public.active_simulation_summary"
+            ).fetchall()
+
+    assert [column[0] for column in columns] == [
+        "simulation_name",
+        "currency",
+        "initial_capital",
+        "current_balance",
+        "total_profit_loss",
+        "started_at",
+        "status",
+    ]
+
+
+def test_future_public_objects_inherit_no_data_api_privileges(database_url: str) -> None:
+    """Migration-role defaults keep later tables, sequences and RPCs private."""
+    api_roles = ("public", "anon", "authenticated", "service_role")
+    with psycopg.connect(database_url, autocommit=True) as connection:
+        connection.execute("create table public.future_table_probe (id bigint)")
+        connection.execute("create sequence public.future_sequence_probe")
+        connection.execute(
+            """
+            create function public.future_function_probe()
+            returns integer
+            language sql
+            set search_path = ''
+            as $function$
+                select 1;
+            $function$
+            """
+        )
+
+        table_permissions = [
+            connection.execute(
+                "select has_table_privilege(%s, %s, %s)",
+                (api_role, "public.future_table_probe", privilege),
+            ).fetchone()
+            for api_role in api_roles
+            for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE")
+        ]
+        sequence_permissions = [
+            connection.execute(
+                "select has_sequence_privilege(%s, %s, %s)",
+                (api_role, "public.future_sequence_probe", privilege),
+            ).fetchone()
+            for api_role in api_roles
+            for privilege in ("USAGE", "SELECT", "UPDATE")
+        ]
+        function_permissions = {
+            api_role: connection.execute(
+                "select has_function_privilege(%s, %s, 'EXECUTE')",
+                (api_role, "public.future_function_probe()"),
+            ).fetchone()
+            for api_role in api_roles
+        }
+
+    assert all(result == (False,) for result in table_permissions)
+    assert all(result == (False,) for result in sequence_permissions)
+    assert all(result == (False,) for result in function_permissions.values()), function_permissions
+
+
 def test_public_summary_keeps_balance_and_profit_loss_correct(database_url: str) -> None:
     """The public view reports all cash and only trading P/L in its P/L field."""
     creator_id, simulation_id = _seed_simulation(database_url)
@@ -733,9 +1088,7 @@ def test_public_summary_keeps_balance_and_profit_loss_correct(database_url: str)
                 total_profit_loss,
                 status
             from public.active_simulation_summary
-            where simulation_id = %s
-            """,
-            (simulation_id,),
+            """
         ).fetchone()
 
     assert row == (

@@ -49,6 +49,16 @@ def test_simulation_create_rejects_invalid_capital(capital: str) -> None:
         )
 
 
+@pytest.mark.parametrize("capital", [100, 100.5, "1e2", "+100", " 100 "])
+def test_simulation_create_requires_plain_decimal_json_string(
+    capital: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        SimulationCreateRequest.model_validate(
+            {"name": "Simulation", "initial_capital": capital, "currency": "BRL"},
+        )
+
+
 @pytest.mark.parametrize(
     ("movement_type", "amount"),
     [
@@ -96,6 +106,14 @@ def test_movement_create_rejects_invalid_or_internal_movement(
         )
 
 
+@pytest.mark.parametrize("amount", [1, -1.5, "1e2", "+1", " 1 "])
+def test_movement_create_requires_plain_decimal_json_string(amount: object) -> None:
+    with pytest.raises(ValidationError):
+        MovementCreateRequest.model_validate(
+            {"type": "ADJUSTMENT", "amount": amount, "reason": "reason"},
+        )
+
+
 def test_movement_response_serializes_decimal_as_string() -> None:
     response = CapitalMovementResponse(
         id=uuid4(),
@@ -128,6 +146,25 @@ def test_public_summary_has_no_identifier_field() -> None:
     assert payload["name"] == "Public simulation"
     assert "id" not in payload
     assert "simulation_id" not in payload
+
+
+def test_calculated_response_totals_may_exceed_one_stored_numeric_value() -> None:
+    """SUM(numeric(20,8)) is wider than each input column and stays serializable."""
+    summary = PublicSimulationSummaryResponse.model_validate(
+        {
+            "simulation_name": "Long-running simulation",
+            "currency": "BRL",
+            "initial_capital": "999999999999.99999999",
+            "current_balance": "1000000000000.00000000",
+            "total_profit_loss": "-1000000000000.00000000",
+            "started_at": datetime.now(UTC),
+            "status": "ACTIVE",
+        },
+    )
+
+    payload = json.loads(summary.model_dump_json())
+    assert payload["current_balance"] == "1000000000000.00000000"
+    assert payload["total_profit_loss"] == "-1000000000000.00000000"
 
 
 def test_setting_patch_rejects_key_changes() -> None:

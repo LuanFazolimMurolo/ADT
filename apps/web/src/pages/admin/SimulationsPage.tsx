@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiClient, ApiError } from '../../http/client'
-import type { PageMeta, SimulationCreateRequest, SimulationDetail } from '../../types/api'
+import type { PageMeta, SimulationCreateRequest, SimulationListItem } from '../../types/api'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { EmptyState, InlineError, LoadingState, SuccessMessage } from '../../components/States'
 import { Pagination } from '../../components/Pagination'
 import { StatusBadge } from '../../components/StatusBadge'
+import {
+  FINANCIAL_DECIMAL_MAX_EXCLUSIVE,
+  isNegativeFinancialDecimal,
+  validateFinancialDecimal,
+} from '../../utils/decimal'
 import { formatDate, formatMoney, getErrorMessage } from '../../utils/format'
 
 const EMPTY_FORM: SimulationCreateRequest = { name: '', initial_capital: '', currency: 'USD' }
 
 export function SimulationsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [items, setItems] = useState<SimulationDetail[]>([])
+  const [items, setItems] = useState<SimulationListItem[]>([])
   const [pagination, setPagination] = useState<PageMeta>({ page: 1, page_size: 10, total: 0, total_pages: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -27,8 +32,7 @@ export function SimulationsPage() {
     setError(null)
     try {
       const response = await apiClient.listSimulations(page, 10)
-      const details = await Promise.all(response.items.map((item) => apiClient.getSimulation(item.id)))
-      setItems(details)
+      setItems(response.items)
       setPagination(response.pagination)
     } catch (nextError) {
       setError(getErrorMessage(nextError, 'Não foi possível carregar as simulações.'))
@@ -41,12 +45,16 @@ export function SimulationsPage() {
 
   const requestConfirmation = (event: FormEvent) => {
     event.preventDefault()
-    const capital = Number(form.initial_capital)
-    if (!form.name.trim() || !Number.isFinite(capital) || capital <= 0 || !form.currency.trim()) {
-      setError('Informe nome, moeda e capital inicial maior que zero.')
+    if (!form.name.trim() || !form.currency.trim()) {
+      setError('Informe nome e moeda para a simulação.')
       return
     }
-    if (!/^\d+(\.\d{1,8})?$/.test(form.initial_capital)) {
+    const capitalError = validateFinancialDecimal(form.initial_capital)
+    if (capitalError === 'range') {
+      setError(`O capital inicial deve ser menor que ${FINANCIAL_DECIMAL_MAX_EXCLUSIVE}.`)
+      return
+    }
+    if (capitalError !== null) {
       setError('Use capital positivo com ponto decimal e até 8 casas.')
       return
     }
@@ -120,7 +128,7 @@ export function SimulationsPage() {
                     <td><StatusBadge status={item.status} /></td>
                     <td>{formatMoney(item.initial_capital, item.currency)}</td>
                     <td>{formatMoney(item.current_balance, item.currency)}</td>
-                    <td className={Number(item.total_profit_loss) < 0 ? 'value-negative' : 'value-positive'}>{formatMoney(item.total_profit_loss, item.currency)}</td>
+                    <td className={isNegativeFinancialDecimal(item.total_profit_loss) ? 'value-negative' : 'value-positive'}>{formatMoney(item.total_profit_loss, item.currency)}</td>
                     <td>{formatDate(item.started_at)}</td>
                     <td><Link className="table-link" to={`/admin/simulations/${item.id}`}>Detalhes →</Link></td>
                   </tr>

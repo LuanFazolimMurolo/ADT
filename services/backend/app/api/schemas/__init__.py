@@ -4,10 +4,13 @@ from app.api.schemas.auth import AdminMeResponse
 from app.api.schemas.common import (
     ApiSchema,
     FinancialDecimal,
+    FinancialDecimalStringInput,
     JsonObject,
     NonBlankText,
     NonZeroFinancialDecimal,
+    NonZeroFinancialDecimalStringInput,
     PositiveFinancialDecimal,
+    PositiveFinancialDecimalStringInput,
 )
 from app.api.schemas.errors import ErrorDetail, ErrorPayload, ErrorResponse
 from app.api.schemas.movements import (
@@ -31,6 +34,7 @@ from app.api.schemas.simulations import (
     SimulationListResponse,
     SimulationStatus,
 )
+from app.api.schemas.system import SystemStatus
 
 __all__ = [
     "AdminMeResponse",
@@ -41,16 +45,19 @@ __all__ = [
     "ErrorPayload",
     "ErrorResponse",
     "FinancialDecimal",
+    "FinancialDecimalStringInput",
     "JsonObject",
     "MovementCreateRequest",
     "MovementCreateType",
     "MovementListResponse",
     "NonBlankText",
     "NonZeroFinancialDecimal",
+    "NonZeroFinancialDecimalStringInput",
     "PageMeta",
     "PageParams",
     "PaginatedResponse",
     "PositiveFinancialDecimal",
+    "PositiveFinancialDecimalStringInput",
     "PublicSimulationSummaryResponse",
     "SettingPatchRequest",
     "SettingResponse",
@@ -60,4 +67,5 @@ __all__ = [
     "SimulationListItem",
     "SimulationListResponse",
     "SimulationStatus",
+    "SystemStatus",
 ]

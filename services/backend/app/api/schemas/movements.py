@@ -2,17 +2,17 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Self
+from typing import Annotated, Self
 from uuid import UUID
 
-from pydantic import model_validator
+from pydantic import StringConstraints, model_validator
 
 from app.api.schemas.common import (
     ApiSchema,
     FinancialDecimal,
     JsonObject,
     NonBlankText,
-    NonZeroFinancialDecimal,
+    NonZeroFinancialDecimalStringInput,
 )
 from app.api.schemas.pagination import PaginatedResponse
 
@@ -37,12 +37,18 @@ class CapitalMovementType(StrEnum):
     ADJUSTMENT = "ADJUSTMENT"
 
 
+MovementReason = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=500),
+]
+
+
 class MovementCreateRequest(ApiSchema):
     """Append-only administrative ledger entry."""
 
     type: MovementCreateType
-    amount: NonZeroFinancialDecimal
-    reason: NonBlankText
+    amount: NonZeroFinancialDecimalStringInput
+    reason: MovementReason
     metadata: JsonObject | None = None
 
     @model_validator(mode="after")

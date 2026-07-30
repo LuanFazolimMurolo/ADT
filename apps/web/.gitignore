@@ -2,3 +2,7 @@
 node_modules/
 dist/
 .vite/
+playwright-report/
+test-results/
+.openapi.tmp.json
+.openapi.generated.tmp.ts

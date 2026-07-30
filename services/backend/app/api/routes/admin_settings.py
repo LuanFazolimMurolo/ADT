@@ -7,14 +7,20 @@ from fastapi import APIRouter, Depends
 
 from app.api.dependencies.auth import require_administrator
 from app.api.dependencies.resources import get_settings_service
+from app.api.openapi import ADMIN_ERROR_RESPONSES
 from app.api.schemas.settings import (
+    SettingKey,
     SettingPatchRequest,
     SettingResponse,
     SettingsListResponse,
 )
 from app.services import SettingsService
 
-router = APIRouter(prefix="/api/v1/admin/settings", tags=["admin settings"])
+router = APIRouter(
+    prefix="/api/v1/admin/settings",
+    tags=["admin settings"],
+    responses=ADMIN_ERROR_RESPONSES,
+)
 
 
 @router.get("", response_model=SettingsListResponse)
@@ -31,7 +37,7 @@ async def list_settings(
 
 @router.patch("/{key}", response_model=SettingResponse)
 async def update_setting(
-    key: str,
+    key: SettingKey,
     payload: SettingPatchRequest,
     administrator_id: Annotated[UUID, Depends(require_administrator)],
     service: Annotated[SettingsService, Depends(get_settings_service)],

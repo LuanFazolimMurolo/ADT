@@ -25,7 +25,7 @@ from psycopg import sql
 
 from app.database import Database
 from tests.postgres_support import (
-    MIGRATION_PATH,
+    MIGRATION_PATHS,
     POSTGRES_OWNER,
     POSTGRES_PORT,
     PostgresCluster,
@@ -101,7 +101,7 @@ def postgres_cluster(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Postg
 
 @pytest.fixture
 def database_url(postgres_cluster: PostgresCluster) -> Iterator[str]:
-    """Create a clean database and apply the reviewed Phase 1A migration."""
+    """Create a clean database and apply every local migration in order."""
     database_name = f"adt_test_{uuid4().hex}"
     maintenance_url = postgres_cluster.connection_info("postgres")
 
@@ -112,7 +112,8 @@ def database_url(postgres_cluster: PostgresCluster) -> Iterator[str]:
     try:
         with psycopg.connect(isolated_database_url, autocommit=True) as connection:
             install_supabase_stubs(connection)
-            connection.execute(MIGRATION_PATH.read_text(encoding="utf-8"))
+            for migration_path in MIGRATION_PATHS:
+                connection.execute(migration_path.read_text(encoding="utf-8"))
         yield isolated_database_url
     finally:
         with psycopg.connect(maintenance_url, autocommit=True) as connection:

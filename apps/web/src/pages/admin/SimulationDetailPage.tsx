@@ -13,6 +13,11 @@ import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { Pagination } from '../../components/Pagination'
 import { EmptyState, InlineError, LoadingState, SuccessMessage } from '../../components/States'
 import { StatusBadge } from '../../components/StatusBadge'
+import {
+  FINANCIAL_DECIMAL_MAX_EXCLUSIVE,
+  isNegativeFinancialDecimal,
+  validateFinancialDecimal,
+} from '../../utils/decimal'
 import { formatDate, formatMoney, getErrorMessage } from '../../utils/format'
 
 interface MovementForm {
@@ -63,17 +68,22 @@ export function SimulationDetailPage() {
 
   const validateMovement = (event: FormEvent) => {
     event.preventDefault()
-    const amount = Number(form.amount)
     const isAdjustment = form.type === 'ADJUSTMENT'
-    if (!Number.isFinite(amount) || amount === 0 || (!isAdjustment && amount < 0)) {
-      setError(isAdjustment
-        ? 'O ajuste deve ser diferente de zero e pode ser positivo ou negativo.'
-        : 'Informe um valor maior que zero. O sinal é aplicado conforme o tipo.')
+    const amountError = validateFinancialDecimal(form.amount, {
+      allowNegative: isAdjustment,
+    })
+    if (amountError === 'range') {
+      setError(`O valor deve ser menor que ${FINANCIAL_DECIMAL_MAX_EXCLUSIVE} em magnitude.`)
       return
     }
-    const decimalPattern = isAdjustment ? /^-?\d+(\.\d{1,8})?$/ : /^\d+(\.\d{1,8})?$/
-    if (!decimalPattern.test(form.amount) || !form.reason.trim()) {
-      setError('Informe motivo e valor com ponto decimal e até 8 casas.')
+    if (amountError !== null) {
+      setError(isAdjustment
+        ? 'Use um ajuste diferente de zero, positivo ou negativo, com até 8 casas.'
+        : 'Informe um valor positivo com ponto decimal e até 8 casas.')
+      return
+    }
+    if (!form.reason.trim()) {
+      setError('Informe um motivo auditável para o movimento.')
       return
     }
     if (form.metadata.trim()) {
@@ -155,7 +165,7 @@ export function SimulationDetailPage() {
       <section className="metrics-grid metrics-grid--three">
         <article className="metric-card"><span className="metric-label">CAPITAL INICIAL</span><strong>{formatMoney(simulation.initial_capital, simulation.currency)}</strong><small>Imutável</small></article>
         <article className="metric-card metric-card--primary"><span className="metric-label">SALDO ATUAL</span><strong>{formatMoney(simulation.current_balance, simulation.currency)}</strong><small>Autoridade: backend</small></article>
-        <article className={`metric-card ${Number(simulation.total_profit_loss) < 0 ? 'metric-card--negative' : ''}`}><span className="metric-label">P/L TOTAL</span><strong>{formatMoney(simulation.total_profit_loss, simulation.currency)}</strong><small>Desde {formatDate(simulation.started_at)}</small></article>
+        <article className={`metric-card ${isNegativeFinancialDecimal(simulation.total_profit_loss) ? 'metric-card--negative' : ''}`}><span className="metric-label">P/L TOTAL</span><strong>{formatMoney(simulation.total_profit_loss, simulation.currency)}</strong><small>Desde {formatDate(simulation.started_at)}</small></article>
       </section>
 
       {success && <SuccessMessage message={success} />}
@@ -181,7 +191,7 @@ export function SimulationDetailPage() {
           <div className="table-wrap">
             <table>
               <thead><tr><th>Data</th><th>Tipo</th><th>Motivo</th><th>Valor</th><th>Metadados</th></tr></thead>
-              <tbody>{movements.map((movement) => <tr key={movement.id}><td>{formatDate(movement.created_at)}</td><td><code>{movement.type}</code></td><td>{movement.reason}</td><td className={Number(movement.amount) < 0 ? 'value-negative' : 'value-positive'}>{formatMoney(movement.amount, simulation.currency)}</td><td><small>{movement.metadata ? JSON.stringify(movement.metadata) : '—'}</small></td></tr>)}</tbody>
+              <tbody>{movements.map((movement) => <tr key={movement.id}><td>{formatDate(movement.created_at)}</td><td><code>{movement.type}</code></td><td>{movement.reason}</td><td className={isNegativeFinancialDecimal(movement.amount) ? 'value-negative' : 'value-positive'}>{formatMoney(movement.amount, simulation.currency)}</td><td><small>{movement.metadata ? JSON.stringify(movement.metadata) : '—'}</small></td></tr>)}</tbody>
             </table>
           </div>
         )}

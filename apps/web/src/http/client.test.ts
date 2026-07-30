@@ -40,6 +40,70 @@ describe('ApiClient', () => {
     expect(document.body.textContent).not.toContain('token-ultrassecreto')
   })
 
+  it('normaliza falha nativa de fetch sem expor a mensagem do navegador', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(
+      new TypeError('Failed to fetch https://internal.example/private'),
+    )
+    const client = new ApiClient({
+      baseUrl: 'http://api.test',
+      fetchImplementation: fetchMock as typeof fetch,
+    })
+
+    try {
+      await client.getHealth()
+      throw new Error('A chamada deveria ter falhado.')
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError)
+      expect(error).toMatchObject({
+        status: 0,
+        code: 'network_error',
+        message: 'Não foi possível conectar à API. Tente novamente em instantes.',
+      })
+      expect((error as Error).message).not.toContain('internal.example')
+      expect((error as Error).message).not.toContain('Failed to fetch')
+    }
+  })
+
+  it.each([200, 204])('rejeita resposta %i sem corpo como contrato inválido', async (status) => {
+    const client = new ApiClient({
+      baseUrl: 'http://api.test',
+      fetchImplementation: vi.fn().mockResolvedValue(new Response(null, { status })) as typeof fetch,
+    })
+
+    await expect(client.getHealth()).rejects.toMatchObject({
+      status,
+      code: 'invalid_response',
+    })
+  })
+
+  it('preserva JSON null como resposta pública válida', async () => {
+    const client = new ApiClient({
+      baseUrl: 'http://api.test',
+      fetchImplementation: vi.fn().mockResolvedValue(jsonResponse(200, null)) as typeof fetch,
+    })
+
+    await expect(client.getPublicSimulation()).resolves.toBeNull()
+  })
+
+  it('não invalida a sessão administrativa por erro de endpoint público', async () => {
+    const onFailure = vi.fn()
+    const client = new ApiClient({
+      baseUrl: 'http://api.test',
+      onAuthenticationFailure: onFailure,
+      fetchImplementation: vi.fn().mockResolvedValue(
+        jsonResponse(403, {
+          error: { code: 'forbidden', message: 'Mensagem segura.' },
+        }),
+      ) as typeof fetch,
+    })
+
+    await expect(client.getPublicSimulation()).rejects.toMatchObject({
+      status: 403,
+      code: 'forbidden',
+    })
+    expect(onFailure).not.toHaveBeenCalled()
+  })
+
   it.each([
     [403, 'forbidden'],
     [409, 'active_simulation_exists'],
@@ -68,18 +132,62 @@ describe('ApiClient', () => {
     })
     await expect(client.getAdminMe()).rejects.toBeInstanceOf(ApiError)
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(onFailure).toHaveBeenCalledOnce()
+    expect(onFailure).toHaveBeenCalledWith('new-token')
   })
 
   it('não repete POST após 401', async () => {
+    const onFailure = vi.fn()
+    const refreshAccessToken = vi.fn()
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(401, { error: { code: 'expired', message: 'Expirado.' } }))
     const client = new ApiClient({
       baseUrl: 'http://api.test',
       getAccessToken: async () => 'token',
-      refreshAccessToken: vi.fn(),
+      refreshAccessToken,
+      onAuthenticationFailure: onFailure,
       fetchImplementation: fetchMock as typeof fetch,
     })
     await expect(client.createSimulation({ name: 'Teste', initial_capital: '100', currency: 'USD' })).rejects.toBeInstanceOf(ApiError)
     expect(fetchMock).toHaveBeenCalledOnce()
+    expect(refreshAccessToken).not.toHaveBeenCalled()
+    expect(onFailure).toHaveBeenCalledWith('token')
+  })
+
+  it('encerra a sessão se o GET renovado for proibido', async () => {
+    const onFailure = vi.fn()
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(401, { error: { code: 'expired', message: 'Expirado.' } }))
+      .mockResolvedValueOnce(jsonResponse(403, { error: { code: 'forbidden', message: 'Negado.' } }))
+    const client = new ApiClient({
+      baseUrl: 'http://api.test',
+      getAccessToken: async () => 'old-token',
+      refreshAccessToken: async () => 'new-token',
+      onAuthenticationFailure: onFailure,
+      fetchImplementation: fetchMock as typeof fetch,
+    })
+
+    await expect(client.getAdminMe()).rejects.toMatchObject({
+      status: 403,
+      code: 'forbidden',
+    })
+    expect(onFailure).toHaveBeenCalledWith('new-token')
+  })
+
+  it('normaliza falha ao obter a sessão e invalida sem vazar detalhes', async () => {
+    const onFailure = vi.fn()
+    const client = new ApiClient({
+      baseUrl: 'http://api.test',
+      getAccessToken: async () => {
+        throw new Error('storage interno indisponível em /segredo')
+      },
+      onAuthenticationFailure: onFailure,
+      fetchImplementation: vi.fn() as typeof fetch,
+    })
+
+    await expect(client.getAdminMe()).rejects.toMatchObject({
+      status: 0,
+      code: 'session_unavailable',
+      message: 'Não foi possível validar sua sessão. Entre novamente.',
+    })
+    expect(onFailure).toHaveBeenCalledWith(null)
   })
 })

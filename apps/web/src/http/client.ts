@@ -1,5 +1,7 @@
 import { getPublicConfig } from '../config/env'
 import { getSupabaseClient } from '../lib/supabase'
+import { signOutLocally } from '../auth/signOut'
+import { getPersistedSupabaseAccessToken } from '../auth/supabaseSessionStorage'
 import type {
   AdminMe,
   ApiErrorEnvelope,
@@ -7,7 +9,9 @@ import type {
   HealthResponse,
   MovementCreateRequest,
   MovementListResponse,
+  PublicSimulationSummary,
   Setting,
+  SettingPatchRequest,
   SettingsListResponse,
   SimulationCreateRequest,
   SimulationDetail,
@@ -27,12 +31,17 @@ const STATUS_MESSAGES: Record<number, string> = {
 const browserFetch: typeof fetch = (input, init) =>
   globalThis.fetch(input, init)
 
+const NETWORK_ERROR_MESSAGE = 'Não foi possível conectar à API. Tente novamente em instantes.'
+const INVALID_RESPONSE_MESSAGE = 'A API retornou uma resposta inválida.'
+const SESSION_ERROR_MESSAGE = 'Não foi possível validar sua sessão. Entre novamente.'
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
     readonly details?: unknown,
+    readonly requestId?: string,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -43,7 +52,9 @@ export interface ApiClientOptions {
   baseUrl?: string
   getAccessToken?: () => Promise<string | null>
   refreshAccessToken?: () => Promise<string | null>
-  onAuthenticationFailure?: () => Promise<void>
+  onAuthenticationFailure?: (
+    failedAccessToken: string | null,
+  ) => Promise<void>
   fetchImplementation?: typeof fetch
 }
 
@@ -55,13 +66,27 @@ export class ApiClient {
   }
 
   private async parse<T>(response: Response): Promise<T> {
-    if (response.status === 204) return undefined as T
     const text = await response.text()
-    if (!text) return undefined as T
+    const requestId = response.headers.get('X-Request-ID') ?? undefined
+    if (!text.trim()) {
+      throw new ApiError(
+        response.status,
+        'invalid_response',
+        INVALID_RESPONSE_MESSAGE,
+        undefined,
+        requestId,
+      )
+    }
     try {
       return JSON.parse(text) as T
     } catch {
-      throw new ApiError(response.status, 'invalid_response', 'A API retornou uma resposta inválida.')
+      throw new ApiError(
+        response.status,
+        'invalid_response',
+        INVALID_RESPONSE_MESSAGE,
+        undefined,
+        requestId,
+      )
     }
   }
 
@@ -76,10 +101,18 @@ export class ApiClient {
     if (token) headers.set('Authorization', `Bearer ${token}`)
 
     const baseUrl = this.options.baseUrl ?? getPublicConfig().apiUrl
-    const response = await this.fetchImplementation(`${baseUrl}${path}`, {
-      ...options,
-      headers,
-    })
+    let response: Response
+    try {
+      response = await this.fetchImplementation(`${baseUrl}${path}`, {
+        ...options,
+        headers,
+      })
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new ApiError(0, 'network_error', NETWORK_ERROR_MESSAGE)
+      }
+      throw error
+    }
 
     if (response.ok) return this.parse<T>(response)
 
@@ -94,6 +127,7 @@ export class ApiClient {
       envelope?.error?.code ?? `http_${response.status}`,
       envelope?.error?.message ?? STATUS_MESSAGES[response.status] ?? 'Não foi possível concluir a solicitação.',
       envelope?.error?.details,
+      response.headers.get('X-Request-ID') ?? undefined,
     )
   }
 
@@ -103,9 +137,15 @@ export class ApiClient {
     authenticated = true,
   ): Promise<T> {
     const method = (options.method ?? 'GET').toUpperCase()
-    const token = authenticated && this.options.getAccessToken
-      ? await this.options.getAccessToken()
-      : null
+    let token: string | null = null
+    if (authenticated && this.options.getAccessToken) {
+      try {
+        token = await this.options.getAccessToken()
+      } catch {
+        await this.options.onAuthenticationFailure?.(null)
+        throw new ApiError(0, 'session_unavailable', SESSION_ERROR_MESSAGE)
+      }
+    }
 
     try {
       return await this.performRequest<T>(path, options, token)
@@ -121,22 +161,29 @@ export class ApiClient {
         try {
           refreshedToken = await this.options.refreshAccessToken()
         } catch {
-          await this.options.onAuthenticationFailure?.()
+          await this.options.onAuthenticationFailure?.(token)
           throw error
         }
         if (refreshedToken) {
           try {
             return await this.performRequest<T>(path, options, refreshedToken)
           } catch (retryError) {
-            if (retryError instanceof ApiError && retryError.status === 401) {
-              await this.options.onAuthenticationFailure?.()
+            if (
+              retryError instanceof ApiError &&
+              (retryError.status === 401 || retryError.status === 403)
+            ) {
+              await this.options.onAuthenticationFailure?.(refreshedToken)
             }
             throw retryError
           }
         }
-        await this.options.onAuthenticationFailure?.()
-      } else if (error instanceof ApiError && error.status === 403) {
-        await this.options.onAuthenticationFailure?.()
+        await this.options.onAuthenticationFailure?.(token)
+      } else if (
+        error instanceof ApiError &&
+        authenticated &&
+        (error.status === 401 || error.status === 403)
+      ) {
+        await this.options.onAuthenticationFailure?.(token)
       }
       throw error
     }
@@ -152,6 +199,14 @@ export class ApiClient {
 
   getDatabaseHealth(): Promise<HealthResponse> {
     return this.request('/health/database', {}, false)
+  }
+
+  getReadiness(): Promise<HealthResponse> {
+    return this.request('/health/readiness', {}, false)
+  }
+
+  getPublicSimulation(): Promise<PublicSimulationSummary | null> {
+    return this.request('/api/v1/public/simulation', {}, false)
   }
 
   getAdminMe(): Promise<AdminMe> {
@@ -202,7 +257,7 @@ export class ApiClient {
     return this.request('/api/v1/admin/settings')
   }
 
-  updateSetting(key: string, value: Setting['value']): Promise<Setting> {
+  updateSetting(key: string, value: SettingPatchRequest['value']): Promise<Setting> {
     return this.request(`/api/v1/admin/settings/${encodeURIComponent(key)}`, {
       method: 'PATCH',
       body: JSON.stringify({ value }),
@@ -219,7 +274,15 @@ export const apiClient = new ApiClient({
     const { data } = await getSupabaseClient().auth.refreshSession()
     return data.session?.access_token ?? null
   },
-  onAuthenticationFailure: async () => {
-    await getSupabaseClient().auth.signOut()
+  onAuthenticationFailure: async (failedAccessToken) => {
+    const persistedAccessToken = getPersistedSupabaseAccessToken()
+    if (
+      failedAccessToken !== null
+      && persistedAccessToken !== null
+      && failedAccessToken !== persistedAccessToken
+    ) {
+      return
+    }
+    signOutLocally()
   },
 })

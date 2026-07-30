@@ -87,6 +87,33 @@ describe('dashboard e simulações', () => {
       currency: 'BRL',
     }))
   })
+
+  it('rejeita capital fora de numeric(20, 8) antes da confirmação', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/admin/simulations?create=true']}>
+        <Routes><Route path="/admin/simulations" element={<SimulationsPage />} /></Routes>
+      </MemoryRouter>,
+    )
+    await user.type(screen.getByLabelText('Nome'), 'Capital inválido')
+    await user.type(screen.getByLabelText('Capital inicial'), '1000000000000')
+    await user.click(screen.getByRole('button', { name: 'Revisar e criar' }))
+
+    expect(await screen.findByText(/deve ser menor que 1000000000000/)).toBeDefined()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(mocks.createSimulation).not.toHaveBeenCalled()
+  })
+
+  it('descreve P/L como resultado de trades e taxas', async () => {
+    mocks.listSimulations.mockResolvedValue({
+      items: [simulation],
+      pagination: { page: 1, page_size: 100, total: 1, total_pages: 1 },
+    })
+    render(<MemoryRouter><DashboardPage /></MemoryRouter>)
+
+    expect(await screen.findByText('Resultado de trades e taxas')).toBeDefined()
+    expect(screen.queryByText('Movimentos acumulados')).toBeNull()
+  })
 })
 
 function renderDetail() {
@@ -136,6 +163,34 @@ describe('movimentos e encerramento', () => {
     await fillMovement(user, 'Retirada', '9999')
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Registrar movimento' }))
     expect(await screen.findByText('Saldo insuficiente para realizar esta retirada.')).toBeDefined()
+  })
+
+  it('rejeita movimento fora de numeric(20, 8) antes da chamada', async () => {
+    const user = userEvent.setup()
+    renderDetail()
+    await fillMovement(user, 'Depósito', '1000000000000')
+
+    expect(await screen.findByText(/deve ser menor que 1000000000000 em magnitude/)).toBeDefined()
+    expect(mocks.createMovement).not.toHaveBeenCalled()
+  })
+
+  it('preserva o sinal de um ajuste válido sem conversão numérica', async () => {
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText('Novo movimento')
+    await user.selectOptions(screen.getByLabelText('Tipo'), 'ADJUSTMENT')
+    await user.type(screen.getByLabelText('Valor assinado'), '-25.125')
+    await user.type(screen.getByLabelText('Motivo'), 'Correção auditável')
+    await user.click(screen.getByRole('button', { name: 'Registrar movimento' }))
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Registrar movimento' }))
+
+    await waitFor(() => expect(mocks.createMovement).toHaveBeenCalledWith(
+      simulation.id,
+      expect.objectContaining({
+        type: 'ADJUSTMENT',
+        amount: '-25.125',
+      }),
+    ))
   })
 
   it('encerra a simulação como COMPLETED após confirmação', async () => {

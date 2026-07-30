@@ -24,24 +24,29 @@ Project phases from foundation to full deployment.
 
 ---
 
-## Phase 1: Supabase & Administration 🚧 CURRENT
+## Phase 1: Supabase & Administration ⏳ HOMOLOGATION
 
 **Goal**: Add database, user authentication, and admin dashboard skeleton.
 
-**Status**: In progress — Phases 1A, 1B and 1C are implemented locally; remote
-Supabase configuration and validation remain manual, and Phase 1 as a whole is
-not complete.
+**Status**: Phases 1A–1D are implemented and validated locally. Formal Phase 1
+closure remains pending until the two reviewed migrations are applied to the
+selected Supabase project and the manual homologation checklist passes. No
+remote operation was performed during Phase 1D.
 
 **Deliverables**:
 - [ ] Supabase project setup
-- [ ] PostgreSQL schema (strategies, backtests, trades, users)
+- [x] PostgreSQL administration and paper-simulation schema
 - [x] Database migrations
 - [x] JWT authentication (Supabase Auth)
-- [x] Row-level security (RLS) policies
+- [x] Data API privilege boundary and public view
 - [x] Admin login page (frontend)
 - [x] Admin dashboard skeleton
-- [ ] CRUD endpoints for strategies
 - [x] Database-backed administrator authorization middleware
+- [x] Remote-free browser E2E and vertical PostgreSQL integration
+- [x] HTTP security, request correlation and health/readiness
+- [ ] Apply migrations, bootstrap the first admin and homologate the real project
+
+Strategy CRUD belongs to Phase 3, after market-data foundations in Phase 2.
 
 ### Phase 1A: Initial Supabase and database structure 🚧
 
@@ -118,6 +123,40 @@ and end-to-end validation against the selected project remain manual.
 **Explicitly deferred**: Public registration, strategy CRUD, market data,
 backtesting, Telegram, machine learning, real-capital trading and remote
 Supabase changes.
+
+---
+
+### Phase 1D: Integration, E2E, security and closure gate 🟡 HOMOLOGATION
+
+**Scope**: Verify the complete Phase 1 boundary, remove contract drift, exercise
+authentication/UI flows without remote services, harden the Data API and HTTP
+surface, and define the operational closure gate.
+
+**Deliverables**:
+- [x] OpenAPI-generated TypeScript contracts and strict Decimal string boundary
+- [x] Safe 401/403 session invalidation, refresh and password-recovery flows
+- [x] Playwright with real Supabase browser SDK and deny-by-default local mocks
+- [x] 27 public/auth/admin/resilience/accessibility E2E scenarios
+- [x] Signed-JWT → JWKS mock → app_admins → temporary PostgreSQL vertical test
+- [x] Complete temporary-PostgreSQL financial and privilege test matrix
+- [x] Data API hardening migration with one-way lifecycle defense in depth
+- [x] CORS, security headers, request IDs, structured logs and body/token limits
+- [x] Liveness, database and readiness separation
+- [x] Security and homologation documentation
+- [ ] Apply both reviewed migrations to the selected remote project
+- [ ] Configure Redirect URLs, production CORS/CSP/TLS/rate limits
+- [ ] Bootstrap the first administrator and execute manual homologation
+
+**Status**: Implementation and automated local gate are available. Re-run the
+entire gate, including Playwright, on the candidate commit. Overall Phase 1
+intentionally remains in homologation until that evidence and the three manual
+items above are complete.
+
+**Closure checklist**:
+[`docs/PHASE1_HOMOLOGATION.md`](./PHASE1_HOMOLOGATION.md)
+
+**Explicitly deferred**: strategy CRUD/execution, market data, backtesting,
+Telegram, machine learning and real-capital trading.
 
 ---
 

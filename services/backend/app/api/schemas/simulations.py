@@ -4,19 +4,31 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Annotated, Self
 from uuid import UUID
+
+from pydantic import StringConstraints
 
 from app.api.schemas.common import (
     ApiSchema,
     FinancialDecimal,
     NonBlankText,
     PositiveFinancialDecimal,
+    PositiveFinancialDecimalStringInput,
 )
 from app.api.schemas.pagination import PaginatedResponse
 
 if TYPE_CHECKING:
     from app.domain.models import SimulationDetails
+
+SimulationName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=120),
+]
+CurrencyCode = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=3, max_length=3, pattern=r"^[A-Z]{3}$"),
+]
 
 
 class SimulationStatus(StrEnum):
@@ -30,9 +42,9 @@ class SimulationStatus(StrEnum):
 class SimulationCreateRequest(ApiSchema):
     """Fields accepted when opening a paper-trading simulation."""
 
-    name: NonBlankText
-    initial_capital: PositiveFinancialDecimal
-    currency: NonBlankText
+    name: SimulationName
+    initial_capital: PositiveFinancialDecimalStringInput
+    currency: CurrencyCode
 
 
 class SimulationListItem(ApiSchema):
@@ -43,6 +55,8 @@ class SimulationListItem(ApiSchema):
     status: SimulationStatus
     currency: NonBlankText
     initial_capital: PositiveFinancialDecimal
+    current_balance: FinancialDecimal
+    total_profit_loss: FinancialDecimal
     started_at: datetime
     ended_at: datetime | None
     created_at: datetime
@@ -59,6 +73,8 @@ class SimulationListItem(ApiSchema):
             status=SimulationStatus(simulation.status.value),
             currency=simulation.currency,
             initial_capital=simulation.initial_capital,
+            current_balance=details.current_balance,
+            total_profit_loss=details.total_profit_loss,
             started_at=simulation.started_at,
             ended_at=simulation.ended_at,
             created_at=simulation.created_at,
@@ -70,8 +86,6 @@ class SimulationDetailResponse(SimulationListItem):
     """Simulation history plus calculated ledger totals."""
 
     created_by: UUID
-    current_balance: FinancialDecimal
-    total_profit_loss: FinancialDecimal
 
     @classmethod
     def from_domain(cls, details: SimulationDetails) -> Self:

@@ -10,6 +10,7 @@ from app.api.dependencies.resources import (
     get_capital_movement_service,
     get_simulation_service,
 )
+from app.api.openapi import ADMIN_ERROR_RESPONSES
 from app.api.schemas.movements import (
     CapitalMovementResponse,
     MovementCreateRequest,
@@ -25,7 +26,11 @@ from app.api.schemas.simulations import (
 from app.domain.models import AdministrativeMovementType
 from app.services import CapitalMovementService, SimulationService
 
-router = APIRouter(prefix="/api/v1/admin/simulations", tags=["admin simulations"])
+router = APIRouter(
+    prefix="/api/v1/admin/simulations",
+    tags=["admin simulations"],
+    responses=ADMIN_ERROR_RESPONSES,
+)
 
 
 @router.get("", response_model=SimulationListResponse)

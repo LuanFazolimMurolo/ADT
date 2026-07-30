@@ -25,6 +25,13 @@ async psycopg connection pool
 PostgreSQL / Supabase
 ```
 
+The Supabase Data API is not an alternative administrative path. Roles
+`anon`, `authenticated` and `service_role` have no privileges on Phase 1 base
+tables after the Phase 1D hardening migration. The only browser-readable
+database object is the narrow owner-rights
+`active_simulation_summary` view. FastAPI uses a secret direct PostgreSQL URL
+and is the sole administrative reader/writer.
+
 ## Backend layers
 
 The FastAPI backend is split into the following boundaries:
@@ -37,7 +44,8 @@ The FastAPI backend is split into the following boundaries:
 - `app/repositories/`: parameterized SQL and row mapping;
 - `app/domain/`: typed entities, enums and safe domain errors;
 - `app/database/`: asynchronous pool lifecycle and transaction contexts;
-- `app/core/`: typed configuration and logging.
+- `app/core/`: typed configuration, request correlation and JSON logging;
+- `app/middleware/`: body limits, security headers and safe request telemetry.
 
 Routes do not contain SQL or financial rules. Repositories do not know about
 FastAPI, and domain/services do not return HTTP responses.
@@ -74,6 +82,7 @@ Financial correctness remains authoritative in PostgreSQL:
 - the unique active simulation and unique initial capital are database indexes;
 - the initial-capital and non-negative-balance rules are database triggers;
 - ledgers and historical simulation fields are protected by database triggers.
+- terminal simulations cannot be reopened and cannot receive new movements.
 
 Python validation improves client feedback but never replaces these constraints.
 Known PostgreSQL violations are translated to stable, non-sensitive domain
@@ -85,6 +94,19 @@ The public simulation endpoint reads only
 `public.active_simulation_summary`. Its response schema deliberately omits the
 view's internal simulation UUID and cannot expose administrator, audit or
 movement-level data.
+
+## Contract source
+
+Pydantic request/response models generate the OpenAPI document. The document
+declares success schemas, the normalized `ErrorResponse` for 400, 401, 403,
+404, 409, 413, 422, 500 and 503, and `X-Request-ID` on every response.
+
+`services/backend/scripts/export_openapi.py` creates a deterministic contract
+using only fictitious environment values. `openapi-typescript` generates
+`apps/web/src/types/openapi.generated.ts`; application-facing aliases import
+those generated schemas. Decimal inputs are ordinary base-10 strings and
+decimal outputs remain strings. JSON `null` is distinct from an absent or empty
+HTTP body.
 
 ## Phase 1C frontend
 
@@ -109,13 +131,60 @@ automatically repeats `POST` or `PATCH`, preventing duplicate simulations,
 ledger entries or setting updates. A persistent 401 ends the local session;
 401/403 during administrator verification denies the private route.
 
+Network failures are normalized without exposing URLs. A 2xx response with an
+empty body is rejected because every current endpoint has a JSON contract; the
+public simulation uses the explicit JSON literal `null` when there is no active
+run. Response request IDs are attached to safe user-facing diagnostics.
+
 Financial decimals remain strings across the JSON boundary. Withdrawal signs
 are mapped to the backend request contract, adjustments preserve the explicit
 sign, and balances/P&L displayed by the UI are always values calculated and
 returned by the backend.
 
-## Out of scope
+## Observability and HTTP security
 
-Phase 1B does not add frontend login screens, strategy execution, backtesting,
-market adapters, Telegram integration, machine learning or real-capital
-trading.
+The backend assigns or validates a UUID correlation ID and emits one structured
+completion log containing only method, path, status, duration and request ID.
+Known failures add a stable error code; unexpected failures log only their
+exception type. Authorization headers, bodies, tokens, SQL errors and
+connection strings are never log fields.
+
+CORS accepts only configured origins, the four required methods and minimal
+headers. Production rejects HTTP, localhost and loopback variants. API
+responses use restrictive CSP, anti-framing, permissions, referrer and MIME
+headers; administrative responses are not cacheable. Development API docs
+receive a separate compatible CSP, while production disables the docs and
+enables HSTS. A 1 MiB application body limit is defense in depth; distributed
+rate limits remain an edge concern.
+
+`/health` is liveness. `/health/database` is an explicit dependency probe,
+`/health/readiness` is the traffic gate, and `/api/v1/system/status` exposes
+only version/environment/time. JWKS is an on-demand authentication dependency.
+
+The frontend host must set its own CSP/HSTS. React renders untrusted strings as
+text, no raw HTML rendering is used, production source maps are disabled, and
+only documented public `VITE_*` values may enter the bundle.
+
+## Local validation topology
+
+Two complementary remote-free paths are intentional:
+
+```text
+Pytest vertical integration
+signed local JWT → mocked JWKS → real FastAPI dependencies
+                 → real app_admins/services → disposable PostgreSQL
+
+Playwright browser integration
+Chromium → Vite → real Supabase browser SDK + real API client
+        → deny-by-default loopback Auth/FastAPI network mocks
+```
+
+The PostgreSQL suite independently proves transactionality, immutable ledger,
+balance/P&L, concurrency, lifecycle, privilege matrix and public view. The
+browser suite proves session behavior and UI workflows without duplicating
+financial calculations.
+
+## Out of scope after Phase 1
+
+Phase 1 does not add strategy execution, market data, backtesting, market
+adapters, Telegram integration, machine learning or real-capital trading.

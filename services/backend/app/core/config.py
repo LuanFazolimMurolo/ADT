@@ -7,13 +7,22 @@ with a message that contains variable names, never their values.
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import socket
 from collections.abc import Mapping
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from psycopg.conninfo import conninfo_to_dict
-from pydantic import AnyHttpUrl, Field, SecretStr, ValidationError, field_validator
+from pydantic import (
+    AnyHttpUrl,
+    Field,
+    SecretStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 Environment = Literal["development", "test", "staging", "production"]
@@ -68,6 +77,21 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, ge=1, le=65535)
     api_title: str = "ADT API"
     data_dir: str = "./data"
+
+    @field_validator("supabase_url")
+    @classmethod
+    def validate_supabase_url(cls, value: AnyHttpUrl) -> AnyHttpUrl:
+        """Require a plain HTTP origin, never credentials or URL suffixes."""
+        parsed = urlsplit(str(value))
+        if (
+            parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("must be an HTTP origin without credentials or path")
+        return value
 
     @field_validator("supabase_publishable_key", "supabase_database_url")
     @classmethod
@@ -124,12 +148,27 @@ class Settings(BaseSettings):
             raise ValueError("must contain at least one origin")
 
         normalized_origins: list[str] = []
+        seen_origins: set[str] = set()
         for origin in origins:
             stripped_origin = origin.strip()
             if not stripped_origin or stripped_origin == "*":
                 raise ValueError("must contain explicit HTTP origins")
+            parsed_origin = urlsplit(stripped_origin)
+            if (
+                parsed_origin.scheme not in {"http", "https"}
+                or parsed_origin.hostname is None
+                or parsed_origin.username is not None
+                or parsed_origin.password is not None
+                or parsed_origin.path not in {"", "/"}
+                or parsed_origin.query
+                or parsed_origin.fragment
+            ):
+                raise ValueError("must contain HTTP origins without credentials or paths")
             validated_origin = AnyHttpUrl(stripped_origin)
-            normalized_origins.append(str(validated_origin).rstrip("/"))
+            normalized_origin = str(validated_origin).rstrip("/")
+            if normalized_origin not in seen_origins:
+                normalized_origins.append(normalized_origin)
+                seen_origins.add(normalized_origin)
         return normalized_origins
 
     @field_validator("api_host")
@@ -140,6 +179,42 @@ class Settings(BaseSettings):
         if not normalized_value:
             raise ValueError("must not be blank")
         return normalized_value
+
+    @model_validator(mode="after")
+    def validate_production_origins(self) -> Settings:
+        """Production accepts HTTPS origins only and never local browser hosts."""
+        if self.environment != "production":
+            return self
+
+        def is_local_host(hostname: str | None) -> bool:
+            if hostname is None:
+                return True
+            normalized_host = hostname.rstrip(".").lower()
+            if normalized_host == "localhost" or normalized_host.endswith(".localhost"):
+                return True
+            try:
+                return ipaddress.ip_address(normalized_host).is_loopback
+            except ValueError:
+                try:
+                    packed_ipv4 = socket.inet_aton(normalized_host)
+                except OSError:
+                    return False
+                return ipaddress.ip_address(packed_ipv4).is_loopback
+
+        invalid_origins = [
+            origin
+            for origin in self.cors_origins
+            if ((parsed := urlsplit(origin)).scheme != "https" or is_local_host(parsed.hostname))
+        ]
+        if invalid_origins:
+            raise ValueError("production CORS origins must be non-local HTTPS origins")
+        parsed_supabase_url = urlsplit(str(self.supabase_url))
+        if parsed_supabase_url.scheme != "https" or is_local_host(parsed_supabase_url.hostname):
+            raise ValueError("production Supabase URL must use non-local HTTPS")
+        connection_options = conninfo_to_dict(self.supabase_database_url.get_secret_value())
+        if connection_options.get("sslmode") not in {"require", "verify-ca", "verify-full"}:
+            raise ValueError("production database URL must require TLS")
+        return self
 
     @property
     def cors_origins_list(self) -> list[str]:

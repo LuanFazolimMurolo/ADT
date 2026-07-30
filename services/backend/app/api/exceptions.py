@@ -7,11 +7,13 @@ from typing import Final
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import TypeAdapter, ValidationError
 from starlette.exceptions import HTTPException
 
+from app.api.schemas.common import JsonValue
 from app.api.schemas.errors import ErrorDetail, ErrorPayload, ErrorResponse
 from app.auth import AuthenticationError, JWKSUnavailableError
+from app.core.request_id import REQUEST_ID_HEADER, get_request_id
 from app.domain.errors import DomainError
 
 logger = logging.getLogger(__name__)
@@ -56,19 +58,21 @@ _VALIDATION_MESSAGES: Final[Mapping[str, str]] = {
 
 def _response(
     *,
+    request: Request,
     status_code: int,
     code: str,
     message: str,
     details: JsonValue | None = None,
     headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
+    request_id = get_request_id(request)
     payload = ErrorResponse(
         error=ErrorPayload(code=code, message=message, details=details),
     )
     return JSONResponse(
         status_code=status_code,
         content=payload.model_dump(mode="json", exclude_none=True),
-        headers=headers,
+        headers={**(headers or {}), REQUEST_ID_HEADER: request_id},
     )
 
 
@@ -112,6 +116,7 @@ async def domain_exception_handler(
     logger.info(
         "Domain request failure",
         extra={
+            "request_id": get_request_id(request),
             "error_code": exc.code,
             "http_status": exc.status_code,
             "method": request.method,
@@ -119,6 +124,7 @@ async def domain_exception_handler(
         },
     )
     return _response(
+        request=request,
         status_code=exc.status_code,
         code=exc.code,
         message=exc.message,
@@ -142,6 +148,7 @@ async def authentication_exception_handler(
     logger.info(
         "Authentication request rejected",
         extra={
+            "request_id": get_request_id(request),
             "error_code": exc.code,
             "http_status": status_code,
             "method": request.method,
@@ -149,6 +156,7 @@ async def authentication_exception_handler(
         },
     )
     return _response(
+        request=request,
         status_code=status_code,
         code=exc.code,
         message=exc.message,
@@ -167,9 +175,14 @@ async def validation_exception_handler(
 
     logger.info(
         "Request validation failed",
-        extra={"method": request.method, "path": request.url.path},
+        extra={
+            "request_id": get_request_id(request),
+            "method": request.method,
+            "path": request.url.path,
+        },
     )
     return _response(
+        request=request,
         status_code=_VALIDATION_STATUS_CODE,
         code="validation_error",
         message="Request validation failed.",
@@ -193,6 +206,7 @@ async def http_exception_handler(
     logger.info(
         "HTTP request rejected",
         extra={
+            "request_id": get_request_id(request),
             "error_code": code,
             "http_status": exc.status_code,
             "method": request.method,
@@ -200,6 +214,7 @@ async def http_exception_handler(
         },
     )
     return _response(
+        request=request,
         status_code=exc.status_code,
         code=code,
         message=message,
@@ -216,12 +231,14 @@ async def general_exception_handler(
     logger.error(
         "Unhandled exception while processing request",
         extra={
+            "request_id": get_request_id(request),
             "exception_type": type(exc).__name__,
             "method": request.method,
             "path": request.url.path,
         },
     )
     return _response(
+        request=request,
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         code="internal_error",
         message="An internal server error occurred.",

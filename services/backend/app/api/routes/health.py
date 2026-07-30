@@ -3,11 +3,16 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from app.api.dependencies.resources import get_database
+from app.api.openapi import PUBLIC_ERROR_RESPONSES
 from app.api.schemas.health import HealthResponse
 from app.database import Database
 from app.domain.errors import PersistenceUnavailableError
 
-router = APIRouter(prefix="/health", tags=["health"])
+router = APIRouter(
+    prefix="/health",
+    tags=["health"],
+    responses=PUBLIC_ERROR_RESPONSES,
+)
 
 
 @router.get("", response_model=HealthResponse)
@@ -17,8 +22,12 @@ async def health() -> HealthResponse:
 
 
 @router.get("/readiness", response_model=HealthResponse)
-async def readiness() -> HealthResponse:
-    """Get API readiness status."""
+async def readiness(
+    database: Annotated[Database, Depends(get_database)],
+) -> HealthResponse:
+    """Report readiness only when the required database is available."""
+    if not await database.health_check():
+        raise PersistenceUnavailableError()
     return HealthResponse(status="ready")
 
 

@@ -1,6 +1,4 @@
-export interface SystemStatus {
-  status: string
-  version: string
-  environment: string
-  timestamp: string
-}
+import type { components } from './openapi.generated'
+
+export type SystemStatus = components['schemas']['SystemStatus']
+export type SystemEnvironment = SystemStatus['environment']

@@ -5,10 +5,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from app.api.dependencies.resources import get_public_simulation_service
+from app.api.openapi import PUBLIC_ERROR_RESPONSES
 from app.api.schemas.public import PublicSimulationSummaryResponse
 from app.services import PublicSimulationService
 
-router = APIRouter(prefix="/api/v1/public", tags=["public"])
+router = APIRouter(
+    prefix="/api/v1/public",
+    tags=["public"],
+    responses=PUBLIC_ERROR_RESPONSES,
+)
 
 
 @router.get(

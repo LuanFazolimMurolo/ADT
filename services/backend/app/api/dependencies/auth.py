@@ -7,10 +7,11 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.api.dependencies.resources import get_admin_service, get_jwt_verifier
-from app.auth import SupabaseJWTVerifier
+from app.auth import InvalidTokenError, SupabaseJWTVerifier
 from app.services import AdminService
 
 _BEARER = HTTPBearer(auto_error=False)
+_MAX_BEARER_TOKEN_LENGTH = 8192
 
 
 async def get_authenticated_user(
@@ -23,6 +24,8 @@ async def get_authenticated_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if len(credentials.credentials) > _MAX_BEARER_TOKEN_LENGTH:
+        raise InvalidTokenError
     return await verifier.verify(credentials.credentials)
 
 

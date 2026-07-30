@@ -14,9 +14,7 @@ from psycopg import Connection
 from psycopg.conninfo import make_conninfo
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-MIGRATION_PATH = (
-    PROJECT_ROOT / "supabase" / "migrations" / "20260729000000_phase_1a_initial_schema.sql"
-)
+MIGRATION_PATHS = tuple(sorted((PROJECT_ROOT / "supabase" / "migrations").glob("*.sql")))
 POSTGRES_OWNER = "adt_test_owner"
 POSTGRES_PORT = 5432
 

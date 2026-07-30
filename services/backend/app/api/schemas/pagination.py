@@ -12,7 +12,7 @@ T = TypeVar("T")
 class PageParams(ApiSchema):
     """Validated query parameters shared by list endpoints."""
 
-    page: int = Field(default=1, ge=1)
+    page: int = Field(default=1, ge=1, le=1_000_000)
     page_size: int = Field(default=20, ge=1, le=100)
 
     @property
@@ -25,7 +25,7 @@ class PageParams(ApiSchema):
 class PageMeta(ApiSchema):
     """Metadata needed by clients to navigate a result set."""
 
-    page: int = Field(ge=1)
+    page: int = Field(ge=1, le=1_000_000)
     page_size: int = Field(ge=1, le=100)
     total: int = Field(ge=0)
     total_pages: int = Field(ge=0)

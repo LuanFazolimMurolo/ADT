@@ -15,6 +15,8 @@ Requer Node.js 20 ou mais recente.
   confirmação de `GET /api/v1/admin/me` pelo backend.
 - Toda leitura ou escrita administrativa usa o FastAPI com
   `Authorization: Bearer <access-token>`.
+- Respostas 401/403 encerram a sessão local; mutações nunca são repetidas
+  automaticamente.
 - Cálculos financeiros, autorização administrativa e persistência permanecem
   no backend/PostgreSQL.
 - Nunca configure `SUPABASE_SECRET_KEY`, `SUPABASE_DATABASE_URL`, senha do banco
@@ -86,10 +88,83 @@ configuração é manual; o frontend não altera o painel remoto.
 ## Qualidade
 
 ```bash
+npm run generate:api
 npm run lint
 npm run typecheck
-npm test -- --run
+npm run typecheck:e2e
+npm test -- --run --silent
 npm run build
 ```
 
-Todos os testes usam mocks de Supabase e FastAPI e não acessam serviços remotos.
+`src/types/openapi.generated.ts` é gerado dos schemas Pydantic/OpenAPI. Os
+aliases usados pela aplicação ficam em `src/types/api.ts`; não edite o arquivo
+gerado manualmente.
+
+Todos os testes usam valores fictícios e não acessam serviços remotos.
+
+## Testes end-to-end locais
+
+A suíte Playwright inicia somente o Vite em `127.0.0.1`. O SDK oficial do
+Supabase continua ativo no navegador, mas todas as chamadas de Supabase Auth e
+FastAPI são interceptadas em origens loopback controladas. Qualquer tentativa
+de acessar outra origem faz o teste falhar. As variáveis E2E são injetadas pelo
+`playwright.config.ts`, têm valores fictícios e substituem qualquer
+`apps/web/.env.local`.
+
+Instale o Chromium gerenciado pelo Playwright uma vez:
+
+```bash
+cd apps/web
+npm run test:e2e:install
+```
+
+Execute a suíte:
+
+```bash
+npm run test:e2e
+```
+
+Modos opcionais:
+
+```bash
+npm run test:e2e:headed
+npm run test:e2e:ui
+```
+
+Os relatórios e artefatos locais ficam em `playwright-report/` e
+`test-results/`, ambos ignorados pelo Git. Estes E2E validam a integração do
+navegador, SDK e contratos HTTP; regras PostgreSQL, RLS, triggers e transações
+continuam cobertas pelos testes de integração do backend.
+
+A suíte contém 27 cenários de público, login, autorização, restauração/refresh
+da sessão, logout, recuperação/redefinição, dashboard, simulações, movimentos,
+configurações, falhas 503, acessibilidade e responsividade.
+
+## Deploy do frontend
+
+O bundle contém somente as três variáveis públicas `VITE_*`; qualquer variável
+incluída pelo Vite deve ser tratada como publicamente legível. Source maps de
+produção permanecem desativados.
+
+O host estático/CDN deve adicionar a CSP do frontend, pois headers retornados
+pelo FastAPI protegem somente a API. Uma base adequada, ajustando as duas
+origens reais, é:
+
+```text
+default-src 'self';
+script-src 'self';
+style-src 'self';
+img-src 'self' data:;
+font-src 'self';
+connect-src 'self' https://API-ADT https://PROJECT_REF.supabase.co;
+base-uri 'self';
+form-action 'self';
+frame-ancestors 'none';
+```
+
+Configure também HSTS no domínio HTTPS final. Rate limiting de login deve usar
+os controles do Supabase Auth; limites distribuídos da API devem ficar no
+gateway/reverse proxy, não em memória dentro de uma única réplica.
+
+O checklist completo está em
+[`docs/PHASE1_HOMOLOGATION.md`](../../docs/PHASE1_HOMOLOGATION.md).

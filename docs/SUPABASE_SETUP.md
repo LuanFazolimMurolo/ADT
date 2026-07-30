@@ -1,12 +1,12 @@
-# Supabase setup — Fases 1A e 1B
+# Supabase setup — Fases 1A–1D
 
-Este documento descreve o fluxo versionado do Supabase no ADT. A Fase 1A
-prepara o schema inicial e o cadastro controlado do primeiro administrador;
-ela não implementa login, dashboard administrativo, estratégias, mercado,
-backtesting, Telegram ou machine learning.
+Este documento descreve o fluxo versionado do Supabase no ADT. A Fase 1
+prepara o schema administrativo, o cadastro controlado do primeiro
+administrador, a autenticação e o dashboard. Estratégias, mercado, backtesting,
+Telegram e machine learning continuam fora desse escopo.
 
 Nenhum comando deste documento foi executado contra o projeto remoto durante
-a implementação da Fase 1A.
+a implementação das Fases 1A–1D.
 
 ## Fonte oficial das migrations
 
@@ -14,7 +14,8 @@ A única fonte oficial do schema versionado é:
 
 ```text
 supabase/migrations/
-└── 20260729000000_phase_1a_initial_schema.sql
+├── 20260729000000_phase_1a_initial_schema.sql
+└── 20260729010000_phase_1d_data_api_hardening.sql
 ```
 
 O arquivo `supabase/config.toml` configura o projeto Supabase local, mas não
@@ -29,6 +30,39 @@ timestamp, revisada e versionada. Não edite uma migration que já tenha sido
 aplicada a um ambiente compartilhado e não use o SQL Editor remoto como fluxo
 normal de mudança, pois isso deixa o banco diferente do histórico do
 repositório.
+
+A segunda migration é necessária porque a primeira permitia que
+`authenticated` escrevesse diretamente nas tabelas administrativas via
+PostgREST, contornando os serviços FastAPI. Ela:
+
+- remove políticas e privilégios de tabelas base para `anon`,
+  `authenticated` e `service_role`;
+- preserva somente `SELECT` na view pública
+  `active_simulation_summary` para `anon`/`authenticated`;
+- impede reabrir uma simulação terminal;
+- impede novos movimentos em simulações terminadas;
+- restringe chaves de configuração ao formato representável pela API.
+
+Antes de aplicar a 1D em um banco que já recebeu dados, confirme que a consulta
+abaixo retorna zero linhas:
+
+```sql
+select key
+from public.system_settings
+where key !~ '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$';
+```
+
+Se houver resultados, revise e saneie essas chaves por um procedimento
+aprovado antes de tentar novamente. A migration falha antes de alterar o schema
+quando encontra uma chave legada incompatível e não corrige dados
+automaticamente.
+
+O backend é o único escritor administrativo e usa
+`SUPABASE_DATABASE_URL`, nunca a Data API ou uma chave `service_role`. A URL
+direta é segredo de servidor e deve apontar para uma role PostgreSQL controlada
+com os privilégios necessários. Uma role sujeita às políticas
+`authenticated` não funciona como conexão do backend, pois ela não recebe
+`auth.uid()` automaticamente.
 
 ## Supabase CLI local
 
@@ -120,6 +154,11 @@ O `db push` registra as migrations aplicadas no schema
 associado e só então autorize a escrita remota. Não use `--include-seed` em
 produção.
 
+O dry-run deve listar as duas migrations em ordem em uma instalação nova. Em
+um projeto que já recebeu a Fase 1A, deve listar somente a hardening 1D. Revise
+especialmente qualquer cliente externo que ainda tente ler tabelas base:
+depois da 1D, somente a view pública é uma superfície Data API.
+
 Para testar uma reconstrução local e descartável, com a stack local iniciada,
 o comando abaixo reaplica as migrations desde o início:
 
@@ -151,8 +190,8 @@ npm run supabase -- stop
   dashboard remoto.
 
 O simples fato de um comando estar documentado aqui não autoriza sua execução.
-Na Fase 1A não foram executados `login`, `link`, `db push`, `db reset` nem
-qualquer conexão com o Supabase remoto.
+Nas Fases 1A–1D não foram executados `login`, `link`, `db push`, `db reset`
+nem qualquer conexão com o Supabase remoto.
 
 ## Localizar o UUID do administrador
 
@@ -194,6 +233,13 @@ uma URL PostgreSQL compatível com esse driver:
 
 ```dotenv
 SUPABASE_DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+```
+
+Em produção, acrescente `sslmode=require` (ou `verify-ca`/`verify-full` quando a
+infraestrutura fornecer a cadeia de certificados):
+
+```dotenv
+SUPABASE_DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
 ```
 
 Não use uma URL do SQLAlchemy/asyncpg, como
@@ -270,7 +316,7 @@ Substitua o placeholder pelo domínio HTTPS real usado pelo frontend. Não use
 curingas mais amplos que o necessário. A lista de Redirect URLs não é alterada
 por código, migration ou comando durante a implementação local.
 
-## Autenticação do backend na Fase 1B
+## Autenticação do backend na Fase 1
 
 O backend valida tokens de usuário localmente com as chaves públicas
 assimétricas disponíveis em:
@@ -289,6 +335,18 @@ Não configure `SUPABASE_SECRET_KEY` no serviço e não use o JWT secret legado
 para validação local. A autorização administrativa também não vem de
 `app_metadata` ou `user_metadata`: depois da autenticação, o backend consulta
 `public.app_admins` pelo UUID verificado.
+
+## Gate operacional da Fase 1
+
+Após aplicar as migrations e cadastrar o administrador, execute o checklist em
+[`docs/PHASE1_HOMOLOGATION.md`](./PHASE1_HOMOLOGATION.md). A Fase 1 não deve ser
+marcada como encerrada apenas porque o SQL foi aplicado: login, 401/403,
+recuperação, CORS, headers, view pública, mutações e logs precisam ser
+homologados no ambiente escolhido.
+
+Durante a implementação da Fase 1D não foram executados `login`, `link`,
+`db push`, `db reset`, bootstrap ou qualquer alteração remota. Os testes SQL
+usam somente um cluster PostgreSQL temporário criado pelo Pytest.
 
 Referências oficiais:
 
