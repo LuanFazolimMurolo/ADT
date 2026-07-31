@@ -15,8 +15,13 @@ from app.core.config import Settings, settings
 from app.domain.errors import DomainError
 from app.market_data.binance import BINANCE_MARKET_DATA_BASE_URL, BinanceSpotAdapter
 from app.market_data.domain import DataRange, Exchange, Instrument, MarketType, TradingPair
+from app.market_data.errors import MarketDataInconsistencyError
 from app.market_data.http import PublicMarketHttpClient
+from app.market_data.jobs import MarketJobCatalog
+from app.market_data.orchestration import BackfillExecutor
+from app.market_data.planning import BackfillPlan, BackfillResult, MarketDataPlanner
 from app.market_data.services import default_local_services
+from app.market_data.storage import ParquetCandleStore
 from app.market_data.timeframes import TIMEFRAMES, get_timeframe
 
 EXIT_OK = 0
@@ -49,6 +54,42 @@ def build_parser() -> argparse.ArgumentParser:
     _add_market_identity(verify)
     _add_time_range(verify)
     verify.add_argument("--timeframe", choices=tuple(TIMEFRAMES), required=True)
+
+    backfill = commands.add_parser("backfill", help="Plan or execute bounded backfills.")
+    backfill_commands = backfill.add_subparsers(dest="backfill_command", required=True)
+    for name in ("plan", "run"):
+        command = backfill_commands.add_parser(name)
+        _add_market_identity(command)
+        _add_time_range(command)
+        command.add_argument("--timeframe", choices=tuple(TIMEFRAMES), required=True)
+        if name == "run":
+            command.add_argument("--yes", action="store_true")
+            command.add_argument("--dry-run", action="store_true")
+    resume = backfill_commands.add_parser("resume")
+    resume.add_argument("--job-id", required=True)
+    resume.add_argument("--symbol", required=True)
+    for name in ("status", "pause", "cancel"):
+        lifecycle = backfill_commands.add_parser(name)
+        lifecycle.add_argument("--job-id", required=True)
+
+    update = commands.add_parser("update", help="Incrementally update one dataset.")
+    _add_market_identity(update)
+    update.add_argument("--timeframe", choices=tuple(TIMEFRAMES), required=True)
+    update.add_argument("--start", type=_utc_datetime)
+    update.add_argument("--dry-run", action="store_true")
+    update.add_argument("--yes", action="store_true")
+
+    gaps = commands.add_parser("gaps", help="Discover local missing intervals.")
+    _add_market_identity(gaps)
+    _add_time_range(gaps)
+    gaps.add_argument("--timeframe", choices=tuple(TIMEFRAMES), required=True)
+
+    repair = commands.add_parser("repair", help="Explicitly refetch missing intervals.")
+    _add_market_identity(repair)
+    _add_time_range(repair)
+    repair.add_argument("--timeframe", choices=tuple(TIMEFRAMES), required=True)
+    repair.add_argument("--dry-run", action="store_true")
+    repair.add_argument("--yes", action="store_true")
     return parser
 
 
@@ -119,6 +160,31 @@ async def _run_market_command(
             adapter,
             max_fetch_candles=app_settings.market_max_fetch_candles,
             clock=clock,
+            lock_timeout_seconds=app_settings.market_job_lock_timeout,
+            lock_stale_after_seconds=app_settings.market_job_stale_after,
+        )
+        store = ParquetCandleStore(app_settings.data_dir)
+        jobs = MarketJobCatalog(
+            app_settings.data_dir,
+            clock=clock,
+            stale_after_seconds=app_settings.market_job_stale_after,
+        )
+        if args.command in {"backfill", "update", "repair"}:
+            jobs.recover_abandoned()
+        planner = MarketDataPlanner(
+            adapter_request_limit=adapter.limits.max_candles_per_request,
+            max_fetch_candles=app_settings.market_max_fetch_candles,
+            chunk_candles=app_settings.market_backfill_chunk_candles,
+            max_total_candles=app_settings.market_backfill_max_total_candles,
+            max_chunks=app_settings.market_job_max_chunks,
+            clock=clock,
+        )
+        executor = BackfillExecutor(
+            history=history_service,
+            jobs=jobs,
+            data_dir=app_settings.data_dir,
+            lock_timeout_seconds=app_settings.market_job_lock_timeout,
+            lock_stale_after_seconds=app_settings.market_job_stale_after,
         )
         if args.command == "instruments":
             instruments = await catalog_service.list()
@@ -139,10 +205,27 @@ async def _run_market_command(
             )
             return EXIT_OK
 
+        if args.command == "backfill" and args.backfill_command in {
+            "status",
+            "pause",
+            "cancel",
+        }:
+            if args.backfill_command == "pause":
+                jobs.pause(args.job_id)
+            if args.backfill_command == "cancel":
+                jobs.cancel(args.job_id)
+            _print_job(jobs, args.job_id, stdout)
+            return EXIT_OK
+        if args.command == "backfill" and args.backfill_command == "resume":
+            assert pair is not None
+            resume_result = await executor.resume(args.job_id, pair)
+            _print_job_result(resume_result, stdout)
+            return EXIT_OK
+
         assert pair is not None
         timeframe = get_timeframe(args.timeframe)
         if args.command == "fetch":
-            result = await history_service.ingest(
+            ingestion_result = await history_service.ingest(
                 pair,
                 timeframe,
                 DataRange(args.start, args.end),
@@ -150,13 +233,13 @@ async def _run_market_command(
             )
             _print(
                 {
-                    "run_id": result.run_id,
-                    "fetched": result.fetched_count,
-                    "stored": result.stored_count,
-                    "duplicates": result.duplicate_count,
-                    "requests": result.request_count,
-                    "quality_valid": result.quality.is_valid,
-                    "dry_run": result.dry_run,
+                    "run_id": ingestion_result.run_id,
+                    "fetched": ingestion_result.fetched_count,
+                    "stored": ingestion_result.stored_count,
+                    "duplicates": ingestion_result.duplicate_count,
+                    "requests": ingestion_result.request_count,
+                    "quality_valid": ingestion_result.quality.is_valid,
+                    "dry_run": ingestion_result.dry_run,
                 },
                 stdout,
             )
@@ -200,6 +283,74 @@ async def _run_market_command(
             )
             return EXIT_OK if report.is_valid else EXIT_DOMAIN_FAILURE
 
+        instrument = _local_instrument(pair)
+        key = (
+            f"{instrument.exchange.value}:{instrument.market_type.value}:"
+            f"{instrument.symbol}:{timeframe.code}"
+        )
+        if args.command == "backfill":
+            plan = planner.backfill(key, timeframe, DataRange(args.start, args.end))
+            if args.backfill_command == "plan" or args.dry_run:
+                _print_plan(plan, stdout)
+                return EXIT_OK
+            _require_confirmation(args.yes, len(plan.chunks))
+            backfill_result = await executor.run(plan, pair)
+            _print_job_result(backfill_result, stdout)
+            return EXIT_OK
+        if args.command == "update":
+            with history_service.dataset_lease(instrument, timeframe):
+                incremental = planner.incremental(
+                    store,
+                    instrument,
+                    timeframe,
+                    now=clock(),
+                    overlap_candles=app_settings.market_incremental_overlap_candles,
+                    start=args.start,
+                )
+            if incremental.backfill is None:
+                _print({"action": "NOOP"}, stdout)
+                return EXIT_OK
+            if args.dry_run:
+                _print_plan(incremental.backfill, stdout)
+                return EXIT_OK
+            _require_confirmation(args.yes, len(incremental.backfill.chunks))
+            update_result = await executor.run(incremental.backfill, pair)
+            _print_job_result(update_result, stdout)
+            return EXIT_OK
+        if args.command in {"gaps", "repair"}:
+            with history_service.dataset_lease(instrument, timeframe):
+                repair_plan = planner.gaps(
+                    store,
+                    instrument,
+                    timeframe,
+                    DataRange(args.start, args.end),
+                )
+            if args.command == "gaps" or args.dry_run:
+                missing_candles = (
+                    repair_plan.backfill.expected_candles if repair_plan.backfill is not None else 0
+                )
+                _print(
+                    {
+                        "gap_count": len(repair_plan.gap_ranges),
+                        "missing_candles": missing_candles,
+                        "ranges": [
+                            {"start": gap.start.isoformat(), "end": gap.end.isoformat()}
+                            for gap in repair_plan.gap_ranges[:50]
+                        ],
+                        "truncated": len(repair_plan.gap_ranges) > 50,
+                    },
+                    stdout,
+                )
+                return EXIT_OK
+            if not repair_plan.gap_ranges:
+                _print({"action": "NOOP", "gap_count": 0}, stdout)
+                return EXIT_OK
+            assert repair_plan.backfill is not None
+            _require_confirmation(args.yes, len(repair_plan.backfill.chunks))
+            repair_result = await executor.run(repair_plan.backfill, pair)
+            _print_job_result(repair_result, stdout)
+            return EXIT_OK
+
     raise ValueError("unknown command")
 
 
@@ -242,6 +393,58 @@ def _local_instrument(pair: TradingPair) -> Instrument:
 
 def _print(payload: dict[str, object], stdout: TextIO) -> None:
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True), file=stdout)
+
+
+def _print_plan(plan: BackfillPlan, stdout: TextIO) -> None:
+    _print(
+        {
+            "job_id": plan.job_id,
+            "job_type": plan.job_type.value,
+            "chunks": len(plan.chunks),
+            "expected_candles": plan.expected_candles,
+            "start": plan.data_range.start.isoformat(),
+            "end": plan.data_range.end.isoformat(),
+        },
+        stdout,
+    )
+
+
+def _print_job_result(result: BackfillResult, stdout: TextIO) -> None:
+    _print(
+        {
+            "job_id": result.job_id,
+            "status": result.status.value,
+            "chunks_completed": result.chunks_completed,
+            "total_chunks": result.total_chunks,
+            "fetched": result.fetched_count,
+            "stored": result.stored_count,
+            "duplicates": result.duplicate_count,
+            "requests": result.request_count,
+        },
+        stdout,
+    )
+
+
+def _print_job(jobs: MarketJobCatalog, job_id: str, stdout: TextIO) -> None:
+    progress = jobs.progress(job_id)
+    _print(
+        {
+            "job_id": progress.job_id,
+            "status": progress.status.value,
+            "chunks_completed": progress.chunks_completed,
+            "total_chunks": progress.total_chunks,
+            "next_start": progress.next_start.isoformat(),
+            "fetched": progress.fetched_count,
+            "stored": progress.stored_count,
+            "duplicates": progress.duplicate_count,
+        },
+        stdout,
+    )
+
+
+def _require_confirmation(confirmed: bool, chunk_count: int) -> None:
+    if chunk_count > 1 and not confirmed:
+        raise MarketDataInconsistencyError("Backfill grande exige confirmação explícita --yes.")
 
 
 if __name__ == "__main__":

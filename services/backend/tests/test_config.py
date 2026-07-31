@@ -33,6 +33,12 @@ def isolated_settings_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[N
         "ADT_MARKET_USER_AGENT",
         "ADT_MARKET_ALLOW_OPEN_CANDLES",
         "ADT_MARKET_MAX_FETCH_CANDLES",
+        "ADT_MARKET_BACKFILL_CHUNK_CANDLES",
+        "ADT_MARKET_BACKFILL_MAX_TOTAL_CANDLES",
+        "ADT_MARKET_INCREMENTAL_OVERLAP_CANDLES",
+        "ADT_MARKET_JOB_LOCK_TIMEOUT",
+        "ADT_MARKET_JOB_STALE_AFTER",
+        "ADT_MARKET_JOB_MAX_CHUNKS",
     ):
         monkeypatch.delenv(variable_name, raising=False)
     yield
@@ -104,6 +110,12 @@ def test_settings_are_typed_and_normalized(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("ADT_MARKET_USER_AGENT", "ADT-Test-Agent/1.0")
     monkeypatch.setenv("ADT_MARKET_ALLOW_OPEN_CANDLES", "true")
     monkeypatch.setenv("ADT_MARKET_MAX_FETCH_CANDLES", "2500")
+    monkeypatch.setenv("ADT_MARKET_BACKFILL_CHUNK_CANDLES", "500")
+    monkeypatch.setenv("ADT_MARKET_BACKFILL_MAX_TOTAL_CANDLES", "50000")
+    monkeypatch.setenv("ADT_MARKET_INCREMENTAL_OVERLAP_CANDLES", "3")
+    monkeypatch.setenv("ADT_MARKET_JOB_LOCK_TIMEOUT", "2.5")
+    monkeypatch.setenv("ADT_MARKET_JOB_STALE_AFTER", "600")
+    monkeypatch.setenv("ADT_MARKET_JOB_MAX_CHUNKS", "200")
 
     loaded_settings = get_settings()
 
@@ -123,6 +135,12 @@ def test_settings_are_typed_and_normalized(monkeypatch: pytest.MonkeyPatch) -> N
     assert loaded_settings.market_user_agent == "ADT-Test-Agent/1.0"
     assert loaded_settings.market_allow_open_candles is True
     assert loaded_settings.market_max_fetch_candles == 2500
+    assert loaded_settings.market_backfill_chunk_candles == 500
+    assert loaded_settings.market_backfill_max_total_candles == 50000
+    assert loaded_settings.market_incremental_overlap_candles == 3
+    assert loaded_settings.market_job_lock_timeout == 2.5
+    assert loaded_settings.market_job_stale_after == 600
+    assert loaded_settings.market_job_max_chunks == 200
     assert loaded_settings.supabase_issuer == "https://project.example.test/auth/v1"
     assert isinstance(loaded_settings.supabase_publishable_key, SecretStr)
     assert isinstance(loaded_settings.supabase_database_url, SecretStr)

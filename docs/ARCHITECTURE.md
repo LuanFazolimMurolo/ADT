@@ -227,6 +227,43 @@ not infer commit state from the presence of a promoted target. Once
 `COMMITTED` is durably fsynced, cleanup is recoverable maintenance and cannot
 downgrade the completed ingestion result.
 
+The journal also records its dataset identity and the previous/intended values
+of that dataset, ingestion run and optional chunk receipt. Late `PREPARED`
+recovery reverts only those owned keys and rejects any current value outside
+the recorded previous/intended pair. Catalog promotion preserves the old file
+through a durable hard link before atomically replacing the target.
+
 No Phase 2A API route or permanent worker exists. Network use is operator
 initiated through the CLI, and all automated adapter tests inject an in-memory
 transport.
+
+## Phase 2B local orchestration boundary
+
+Phase 2B adds a pure planner, an atomic local job checkpoint catalog and a
+sequential executor above the Phase 2A ingestion service. Each bounded chunk is
+still independently committed by `MarketDataTransactionCoordinator`; job
+progress advances only after that durable boundary. A per-dataset `flock`
+prevents same-host writers from running concurrently, while immutable job plans
+allow failed or paused work to resume at the first unconfirmed chunk.
+
+The dataset lock is represented by an explicit validated lease and covers every
+persistent caller, including direct fetches. A distinct global
+`market/.catalog.lock` serializes the main catalog. Completion acquires that
+catalog lease before rereading state and retains it through the durable journal
+commit, preventing different datasets from losing each other's metadata.
+Immutable chunk receipts are part of the same catalog replacement and allow a
+post-commit/pre-checkpoint crash to recover the original metrics without
+refetching.
+
+Persistent operations recover their dataset immediately after taking its
+lease, before source metadata, candle fetches, local reads or run creation.
+Inspect, verify, incremental planning and gap discovery use that same exclusive
+lease in Phase 2B. The global order is dataset lock, catalog lock, then files;
+callers reuse an existing lease instead of nesting another `flock`.
+
+Incremental planning uses a configured overlap and gap repair is explicit.
+Discovery never mutates storage, repairs never synthesize candles, and the
+executor validates the repaired logical interval. The dataset version hashes
+the complete canonical logical content, so it does not depend on chunk order.
+This layer has no route, scheduler, permanent service, PostgreSQL migration or
+frontend dependency.

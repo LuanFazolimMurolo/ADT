@@ -165,7 +165,6 @@ class ParquetCandleStore:
 
         planned: list[PlannedPartition] = []
         stored_count = 0
-        checksum = hashlib.sha256()
         pair = TradingPair.parse(candles[0].symbol)
         for (year, month), incoming in sorted(grouped.items()):
             target = self._partition_target(
@@ -205,8 +204,6 @@ class ParquetCandleStore:
             if new_rows == 0:
                 continue
             ordered = tuple(sorted(merged.values(), key=lambda item: item.open_time))
-            for candle in ordered:
-                checksum.update(_canonical_candle_bytes(candle))
             temporary = target.with_name(f".{target.name}.tmp-{transaction_id}")
             backup = target.with_name(f".{target.name}.bak-{transaction_id}")
             planned.append(
@@ -232,6 +229,13 @@ class ParquetCandleStore:
             incoming_last = max(incoming_times)
             first = min(first, incoming_first) if first is not None else incoming_first
             last = max(last, incoming_last) if last is not None else incoming_last
+        checksum = self._future_logical_checksum(
+            candles[0].exchange,
+            candles[0].market_type,
+            pair,
+            candles[0].timeframe,
+            unique_incoming,
+        )
         return ParquetUpsertPlan(
             transaction_id=transaction_id,
             partitions=tuple(planned),
@@ -240,8 +244,38 @@ class ParquetCandleStore:
             first_open_time=first,
             last_open_time=last,
             candle_count=current_count + stored_count,
-            checksum=checksum.hexdigest(),
+            checksum=checksum,
         )
+
+    def _future_logical_checksum(
+        self,
+        exchange: Exchange,
+        market_type: MarketType,
+        pair: TradingPair,
+        timeframe: Timeframe,
+        incoming: dict[tuple[Exchange, str, str, datetime], Candle],
+    ) -> str:
+        logical: dict[tuple[Exchange, str, str, datetime], Candle] = {}
+        dataset = self.dataset_root(exchange, market_type, pair, timeframe)
+        if dataset.exists():
+            for path in sorted(dataset.glob("year=*/month=*/candles.parquet")):
+                for candle in self._read_file(
+                    path,
+                    timeframe=timeframe,
+                    expected_exchange=exchange,
+                    expected_market_type=market_type,
+                    expected_pair=pair,
+                ):
+                    if candle.key in logical:
+                        raise MarketDataInconsistencyError(
+                            "O dataset contém chave duplicada entre partições."
+                        )
+                    logical[candle.key] = candle
+        logical.update(incoming)
+        checksum = hashlib.sha256()
+        for candle in sorted(logical.values(), key=lambda item: item.open_time):
+            checksum.update(_canonical_candle_bytes(candle))
+        return checksum.hexdigest()
 
     def prepare_files(self, plan: ParquetUpsertPlan) -> None:
         """Write and fsync every planned temporary Parquet file."""
@@ -583,12 +617,12 @@ def _canonical_candle_bytes(candle: Candle) -> bytes:
         candle.timeframe.code,
         candle.open_time.isoformat(),
         candle.close_time.isoformat(),
-        format(candle.open, "f"),
-        format(candle.high, "f"),
-        format(candle.low, "f"),
-        format(candle.close, "f"),
-        format(candle.volume, "f"),
-        format(candle.quote_volume, "f") if candle.quote_volume is not None else "",
+        format(candle.open, ".18f"),
+        format(candle.high, ".18f"),
+        format(candle.low, ".18f"),
+        format(candle.close, ".18f"),
+        format(candle.volume, ".18f"),
+        format(candle.quote_volume, ".18f") if candle.quote_volume is not None else "",
         str(candle.trade_count) if candle.trade_count is not None else "",
         "1" if candle.is_closed else "0",
         candle.source,

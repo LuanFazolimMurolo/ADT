@@ -5,7 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from app.market_data.domain import CandleBatch, DataRange, Instrument, Timeframe, TradingPair
+from app.market_data.domain import (
+    CandleBatch,
+    DataRange,
+    Exchange,
+    Instrument,
+    MarketType,
+    Timeframe,
+    TradingPair,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +30,16 @@ class MarketDataAdapter(Protocol):
     @property
     def limits(self) -> AdapterLimits:
         """Expose source limits used for safe planning."""
+        ...
+
+    @property
+    def exchange(self) -> Exchange:
+        """Identify the canonical exchange before any source request."""
+        ...
+
+    @property
+    def market_type(self) -> MarketType:
+        """Identify the canonical market family before any source request."""
         ...
 
     async def list_instruments(self) -> tuple[Instrument, ...]:

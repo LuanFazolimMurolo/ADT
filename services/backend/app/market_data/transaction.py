@@ -11,9 +11,10 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from uuid import UUID
 
-from app.market_data.catalog import CatalogPlan, JsonMarketDataCatalog
+from app.market_data.catalog import CatalogLease, CatalogPlan, JsonMarketDataCatalog
 from app.market_data.errors import MarketDataStorageError
 from app.market_data.filesystem import ensure_safe_path, fsync_directory
+from app.market_data.locks import DatasetLease, DatasetLockManager
 from app.market_data.storage import ParquetCandleStore, ParquetUpsertPlan
 
 FailureHook = Callable[[str], None]
@@ -42,6 +43,14 @@ class JournalRecord:
     intended_version: str
     intended_checksum: str
     run_id: str
+    dataset_key: str
+    dataset_before: dict[str, object] | None
+    dataset_intended: dict[str, object]
+    run_before: dict[str, object]
+    run_intended: dict[str, object]
+    receipt_key: str | None
+    receipt_before: dict[str, object] | None
+    receipt_intended: dict[str, object] | None
 
 
 class MarketDataTransactionCoordinator:
@@ -53,12 +62,18 @@ class MarketDataTransactionCoordinator:
         catalog: JsonMarketDataCatalog,
         *,
         failure_hook: FailureHook | None = None,
+        lock_manager: DatasetLockManager | None = None,
     ) -> None:
         self._store = store
         self._catalog = catalog
         self._root = store.root
         self._journal_dir = ensure_safe_path(self._root, self._root / ".transactions")
         self._failure_hook = failure_hook or (lambda _step: None)
+        self._locks = lock_manager or DatasetLockManager(
+            self._root.parent,
+            timeout_seconds=10,
+            stale_after_seconds=3_600,
+        )
 
     def execute(
         self,
@@ -66,8 +81,10 @@ class MarketDataTransactionCoordinator:
         catalog_plan: CatalogPlan,
         *,
         intended_version: str,
+        catalog_lease: CatalogLease,
     ) -> None:
         """Execute the protocol and never downgrade a durably committed result."""
+        self._catalog.validate_lease(catalog_lease)
         if parquet_plan.transaction_id != catalog_plan.transaction_id:
             raise MarketDataStorageError("Planos transacionais divergentes.")
         record = self._record(parquet_plan, catalog_plan, intended_version, state="PREPARED")
@@ -82,14 +99,14 @@ class MarketDataTransactionCoordinator:
                 self._store.prepare_partition(partition)
                 self._failure_hook(f"partition_prepared:{index}")
             self._failure_hook("before_catalog_prepared")
-            self._catalog.write_prepared(catalog_plan)
+            self._catalog.write_prepared(catalog_plan, lease=catalog_lease)
             self._failure_hook("catalog_prepared")
             for index, partition in enumerate(parquet_plan.partitions):
                 self._failure_hook(f"before_partition_promoted:{index}")
                 self._store.promote_partition(partition)
                 self._failure_hook(f"partition_promoted:{index}")
             self._failure_hook("before_catalog_promoted")
-            self._catalog.promote(catalog_plan)
+            self._catalog.promote(catalog_plan, lease=catalog_lease)
             self._failure_hook("catalog_promoted")
 
             self._failure_hook("before_journal_committed")
@@ -133,37 +150,92 @@ class MarketDataTransactionCoordinator:
 
     def recover(self) -> int:
         """Recover every journal idempotently and fail abandoned RUNNING runs."""
+        if not self._root.exists():
+            return 0
+        self._remove_incomplete_journal_writes()
+        records = self._pending_records()
         recovered = 0
-        if self._journal_dir.exists():
-            ensure_safe_path(self._root, self._journal_dir)
-            removed_temporary = False
-            for temporary in self._journal_dir.glob(".journal-*.tmp"):
-                ensure_safe_path(self._root, temporary).unlink(missing_ok=True)
-                removed_temporary = True
-            if removed_temporary:
-                fsync_directory(self._journal_dir)
-            for journal_path in sorted(self._journal_dir.glob("journal-*.json")):
-                record = self._read_journal(journal_path)
-                if record.state == "PREPARED":
-                    self._rollback(record)
-                elif record.state == "COMMITTED":
-                    self._cleanup_artifacts(record)
-                else:
-                    raise MarketDataStorageError("Estado transacional inválido.")
-                journal_path.unlink(missing_ok=True)
-                fsync_directory(self._journal_dir)
-                recovered += 1
+        for dataset_key in sorted({record.dataset_key for _, record in records}):
+            with self._locks.acquire(dataset_key) as dataset_lease:
+                recovered += self.recover_dataset(dataset_key, dataset_lease)
         self._catalog.mark_abandoned_runs_failed()
         return recovered
 
-    def _rollback(self, record: JournalRecord) -> None:
+    def recover_dataset(self, dataset_key: str, dataset_lease: DatasetLease) -> int:
+        """Recover one dataset while preserving unrelated catalog commits."""
+        self._locks.validate(dataset_lease, dataset_key)
+        if not self._root.exists():
+            return 0
+        self._remove_incomplete_journal_writes()
+        recovered = 0
+        with self._catalog.acquire_lease() as catalog_lease:
+            for journal_path, record in self._pending_records():
+                if record.dataset_key != dataset_key:
+                    continue
+                if record.state == "PREPARED":
+                    self._rollback_late(record, catalog_lease)
+                else:
+                    self._cleanup_artifacts(record)
+                journal_path.unlink(missing_ok=True)
+                fsync_directory(self._journal_dir)
+                recovered += 1
+        if any(
+            record.dataset_key == dataset_key and record.state == "PREPARED"
+            for _, record in self._pending_records()
+        ):
+            raise MarketDataStorageError("A recuperação do dataset ficou incompleta.")
+        return recovered
+
+    def _pending_records(self) -> tuple[tuple[Path, JournalRecord], ...]:
+        if not self._journal_dir.exists():
+            return ()
+        ensure_safe_path(self._root, self._journal_dir)
+        return tuple(
+            (journal_path, self._read_journal(journal_path))
+            for journal_path in sorted(self._journal_dir.glob("journal-*.json"))
+        )
+
+    def _remove_incomplete_journal_writes(self) -> None:
+        if not self._journal_dir.exists():
+            return
+        removed = False
+        for temporary in self._journal_dir.glob(".journal-*.tmp"):
+            ensure_safe_path(self._root, temporary).unlink(missing_ok=True)
+            removed = True
+        if removed:
+            fsync_directory(self._journal_dir)
+
+    def _rollback_full(self, record: JournalRecord) -> None:
         self._rollback_artifact(record.catalog)
         for artifact in reversed(record.partitions):
             self._rollback_artifact(artifact)
         self._cleanup_temporaries(record)
+        record.catalog.backup.unlink(missing_ok=True)
+        if record.catalog.target.parent.exists():
+            fsync_directory(record.catalog.target.parent)
+
+    def _rollback_late(self, record: JournalRecord, lease: CatalogLease) -> None:
+        self._catalog.rollback_semantic(
+            dataset_key=record.dataset_key,
+            dataset_before=record.dataset_before,
+            dataset_intended=record.dataset_intended,
+            run_id=record.run_id,
+            run_before=record.run_before,
+            run_intended=record.run_intended,
+            receipt_key=record.receipt_key,
+            receipt_before=record.receipt_before,
+            receipt_intended=record.receipt_intended,
+            lease=lease,
+        )
+        for artifact in reversed(record.partitions):
+            self._rollback_artifact(artifact)
+        self._cleanup_temporaries(record)
+        record.catalog.backup.unlink(missing_ok=True)
+        if record.catalog.target.parent.exists():
+            fsync_directory(record.catalog.target.parent)
 
     def _rollback_before_commit(self, record: JournalRecord, journal_path: Path) -> None:
-        self._rollback(record)
+        self._rollback_full(record)
         journal_path.unlink(missing_ok=True)
         if self._journal_dir.exists():
             fsync_directory(self._journal_dir)
@@ -225,6 +297,14 @@ class MarketDataTransactionCoordinator:
             intended_version=intended_version,
             intended_checksum=parquet_plan.checksum,
             run_id=catalog_plan.run_id,
+            dataset_key=catalog_plan.dataset_key,
+            dataset_before=catalog_plan.dataset_before,
+            dataset_intended=catalog_plan.dataset_intended,
+            run_before=catalog_plan.run_before,
+            run_intended=catalog_plan.run_intended,
+            receipt_key=catalog_plan.receipt_key,
+            receipt_before=catalog_plan.receipt_before,
+            receipt_intended=catalog_plan.receipt_intended,
         )
 
     def _journal_path(self, transaction_id: str) -> Path:
@@ -253,6 +333,14 @@ class MarketDataTransactionCoordinator:
             "intended_version": record.intended_version,
             "intended_checksum": record.intended_checksum,
             "run_id": record.run_id,
+            "dataset_key": record.dataset_key,
+            "dataset_before": record.dataset_before,
+            "dataset_intended": record.dataset_intended,
+            "run_before": record.run_before,
+            "run_intended": record.run_intended,
+            "receipt_key": record.receipt_key,
+            "receipt_before": record.receipt_before,
+            "receipt_intended": record.receipt_intended,
         }
         temporary = ensure_safe_path(
             self._root,
@@ -280,6 +368,14 @@ class MarketDataTransactionCoordinator:
             intended_version = payload["intended_version"]
             intended_checksum = payload["intended_checksum"]
             run_id = payload["run_id"]
+            dataset_key = payload["dataset_key"]
+            dataset_before = payload["dataset_before"]
+            dataset_intended = payload["dataset_intended"]
+            run_before = payload["run_before"]
+            run_intended = payload["run_intended"]
+            receipt_key = payload["receipt_key"]
+            receipt_before = payload["receipt_before"]
+            receipt_intended = payload["receipt_intended"]
         except (OSError, ValueError, KeyError, TypeError):
             raise MarketDataStorageError("Journal transacional inválido.") from None
         if (
@@ -290,6 +386,14 @@ class MarketDataTransactionCoordinator:
             or not isinstance(intended_version, str)
             or not isinstance(intended_checksum, str)
             or not isinstance(run_id, str)
+            or not isinstance(dataset_key, str)
+            or (dataset_before is not None and not isinstance(dataset_before, dict))
+            or not isinstance(dataset_intended, dict)
+            or not isinstance(run_before, dict)
+            or not isinstance(run_intended, dict)
+            or (receipt_key is not None and not isinstance(receipt_key, str))
+            or (receipt_before is not None and not isinstance(receipt_before, dict))
+            or (receipt_intended is not None and not isinstance(receipt_intended, dict))
         ):
             raise MarketDataStorageError("Journal transacional inválido.")
         expected_path = self._journal_path(transaction_id)
@@ -303,6 +407,14 @@ class MarketDataTransactionCoordinator:
             intended_version=intended_version,
             intended_checksum=intended_checksum,
             run_id=run_id,
+            dataset_key=dataset_key,
+            dataset_before=dataset_before,
+            dataset_intended=dataset_intended,
+            run_before=run_before,
+            run_intended=run_intended,
+            receipt_key=receipt_key,
+            receipt_before=receipt_before,
+            receipt_intended=receipt_intended,
         )
         self._validate_record(record)
         return record
@@ -318,6 +430,37 @@ class MarketDataTransactionCoordinator:
             raise MarketDataStorageError("Versão transacional inválida.")
         if not _SHA256_PATTERN.fullmatch(record.intended_checksum):
             raise MarketDataStorageError("Checksum transacional inválido.")
+        if (
+            not record.dataset_key
+            or record.dataset_intended.get("key") != record.dataset_key
+            or (
+                record.dataset_before is not None
+                and record.dataset_before.get("key") != record.dataset_key
+            )
+            or record.dataset_intended.get("version") != record.intended_version
+            or record.run_before.get("run_id") != record.run_id
+            or record.run_intended.get("run_id") != record.run_id
+            or record.run_before.get("dataset_key") != record.dataset_key
+            or record.run_intended.get("dataset_key") != record.dataset_key
+            or record.run_before.get("status") != "RUNNING"
+            or record.run_intended.get("status") != "COMPLETED"
+            or (record.receipt_key is None)
+            != (record.receipt_before is None and record.receipt_intended is None)
+            or (
+                record.receipt_intended is not None
+                and (
+                    record.receipt_intended.get("dataset_key") != record.dataset_key
+                    or record.receipt_intended.get("version") != record.intended_version
+                    or record.receipt_intended.get("checksum") != record.intended_checksum
+                    or record.receipt_key
+                    != (
+                        f"{record.receipt_intended.get('job_id')}:"
+                        f"{record.receipt_intended.get('chunk_index')}"
+                    )
+                )
+            )
+        ):
+            raise MarketDataStorageError("Identidade transacional inválida.")
 
         artifacts = (*record.partitions, record.catalog)
         targets = [artifact.target for artifact in artifacts]
@@ -349,6 +492,23 @@ class MarketDataTransactionCoordinator:
                 or partition.target.name != "candles.parquet"
             ):
                 raise MarketDataStorageError("Target de partição transacional inválido.")
+        location = record.dataset_intended.get("location")
+        if not isinstance(location, str):
+            raise MarketDataStorageError("Localização transacional inválida.")
+        relative_location = PurePosixPath(location)
+        if (
+            relative_location.is_absolute()
+            or not relative_location.parts
+            or relative_location.parts[0] != "market"
+            or ".." in relative_location.parts
+        ):
+            raise MarketDataStorageError("Localização transacional inválida.")
+        dataset_root = ensure_safe_path(
+            self._root,
+            self._root.parent.joinpath(*relative_location.parts),
+        )
+        if any(dataset_root not in partition.target.parents for partition in record.partitions):
+            raise MarketDataStorageError("A partição pertence a outro dataset.")
 
     def _artifact_json(self, artifact: JournalArtifact) -> dict[str, object]:
         return {

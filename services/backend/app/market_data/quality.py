@@ -136,7 +136,7 @@ class MarketDataQualityValidator:
                         )
                     )
                 if candle.open_time > expected_open:
-                    missing_count = int((candle.open_time - expected_open) / timeframe.duration)
+                    missing_count = (candle.open_time - expected_open) // timeframe.duration
                     issues.append(
                         DataQualityIssue(
                             "gap",
@@ -166,7 +166,7 @@ class MarketDataQualityValidator:
 
         expected_count: int | None = None
         if expected_range is not None:
-            expected_count = int((expected_range.end - expected_range.start) / timeframe.duration)
+            expected_count = (expected_range.end - expected_range.start) // timeframe.duration
             if candles:
                 observed = {candle.open_time for candle in candles}
                 cursor = expected_range.start

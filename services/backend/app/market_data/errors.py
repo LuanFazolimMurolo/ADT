@@ -78,3 +78,15 @@ class MarketDataStorageError(MarketDataError):
     code = "market_data_storage"
     default_message = "Não foi possível persistir o dataset de mercado."
     status_code = 500
+
+
+class MarketJobNotFoundError(MarketDataError):
+    code = "market_job_not_found"
+    default_message = "O job de dados de mercado não foi encontrado."
+    status_code = 404
+
+
+class MarketJobLockTimeoutError(MarketDataError):
+    code = "market_job_lock_timeout"
+    default_message = "Outro job já está processando este dataset."
+    status_code = 409

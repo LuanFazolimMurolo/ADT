@@ -53,6 +53,14 @@ class BinanceSpotAdapter:
     def limits(self) -> AdapterLimits:
         return AdapterLimits(max_candles_per_request=1000, request_weight_per_candle_page=2)
 
+    @property
+    def exchange(self) -> Exchange:
+        return Exchange.BINANCE
+
+    @property
+    def market_type(self) -> MarketType:
+        return MarketType.SPOT
+
     async def list_instruments(self) -> tuple[Instrument, ...]:
         result = await self._http.get_json(
             "/api/v3/exchangeInfo",

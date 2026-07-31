@@ -1,7 +1,7 @@
 # ADT Backend
 
 FastAPI service for ADT public status, paper-simulation administration and the
-local Phase 2A historical market-data foundation.
+local Phase 2A/2B historical market-data foundation and resumable ingestion.
 Phase 1 uses Supabase Auth only as the identity provider; administrator
 authorization and application data come from PostgreSQL.
 
@@ -50,6 +50,12 @@ ADT_MARKET_HTTP_MAX_RETRY_AFTER=30
 ADT_MARKET_USER_AGENT=ADT-MarketData/0.1
 ADT_MARKET_ALLOW_OPEN_CANDLES=false
 ADT_MARKET_MAX_FETCH_CANDLES=10000
+ADT_MARKET_BACKFILL_CHUNK_CANDLES=1000
+ADT_MARKET_BACKFILL_MAX_TOTAL_CANDLES=1000000
+ADT_MARKET_INCREMENTAL_OVERLAP_CANDLES=2
+ADT_MARKET_JOB_LOCK_TIMEOUT=10
+ADT_MARKET_JOB_STALE_AFTER=3600
+ADT_MARKET_JOB_MAX_CHUNKS=10000
 ```
 
 Configuration failures list only missing or invalid variable names; supplied
@@ -137,7 +143,7 @@ substitute for this backend boundary.
 
 ## Market-data CLI
 
-Phase 2A stores candles locally and does not add an HTTP route or worker. The
+Phases 2A and 2B store candles locally and do not add an HTTP route or worker. The
 commands are:
 
 ```bash
@@ -154,17 +160,52 @@ commands are:
 .venv/bin/python -m app.cli market-data verify \
   --exchange binance --market spot --symbol BTC/USDT --timeframe 1h \
   --start 2026-01-01T00:00:00Z --end 2026-01-02T00:00:00Z
+
+.venv/bin/python -m app.cli market-data backfill plan \
+  --symbol BTC/USDT --timeframe 1h \
+  --start 2025-01-01T00:00:00Z --end 2025-02-01T00:00:00Z
+
+.venv/bin/python -m app.cli market-data backfill run \
+  --symbol BTC/USDT --timeframe 1h \
+  --start 2025-01-01T00:00:00Z --end 2025-02-01T00:00:00Z --yes
+
+.venv/bin/python -m app.cli market-data backfill status --job-id JOB_UUID
+.venv/bin/python -m app.cli market-data backfill pause --job-id JOB_UUID
+.venv/bin/python -m app.cli market-data backfill cancel --job-id JOB_UUID
+.venv/bin/python -m app.cli market-data backfill resume \
+  --job-id JOB_UUID --symbol BTC/USDT
+.venv/bin/python -m app.cli market-data update --symbol BTC/USDT --timeframe 1h
+.venv/bin/python -m app.cli market-data gaps --symbol BTC/USDT --timeframe 1h \
+  --start 2025-01-01T00:00:00Z --end 2025-02-01T00:00:00Z
+.venv/bin/python -m app.cli market-data repair --symbol BTC/USDT --timeframe 1h \
+  --start 2025-01-01T00:00:00Z --end 2025-02-01T00:00:00Z --yes
 ```
 
-`instruments` and `fetch` are the only commands that use the public Binance
-market-data endpoint. `--dry-run` fetches and validates but writes neither
-Parquet nor catalog state. Output is a bounded JSON summary and never includes
-configured secrets or raw source errors.
+`backfill plan/status`, `gaps`, `inspect` and `verify` are local-only. Commands
+that execute fetching use the public Binance market-data endpoint.
+Multi-chunk writes require `--yes`; Phase 2B `--dry-run` plans without network
+or local writes. Output is a bounded JSON summary and never includes configured
+secrets or raw source errors.
 
 `ADT_MARKET_MAX_FETCH_CANDLES` is checked before instrument lookup or any HTTP
 request. `ADT_MARKET_ALLOW_OPEN_CANDLES=true` permits open candles only in
 adapter and diagnostic/dry-run results; persistent Parquet datasets always
 contain closed candles exclusively.
+
+Phase 2B keeps immutable job plans and atomic checkpoints in
+`ADT_DATA_DIR/market/jobs.json`. A Linux advisory lock prevents concurrent
+writes to the same exchange/market/symbol/timeframe dataset. Each confirmed
+chunk is a complete Phase 2A journal transaction; failed or paused jobs resume
+from the first unconfirmed range. Incremental updates use a configured overlap,
+and gap repair is always explicit and source-backed.
+
+All persistent entry points share the same explicit dataset lease. The main
+catalog uses a separate global `.catalog.lock`, held from its fresh completion
+read through the journal's durable commit. Chunk receipts are committed inside
+that catalog transaction, so resume can restore original metrics without
+refetching after a post-commit checkpoint interruption. CLI job startup safely
+marks only unlocked abandoned jobs as `FAILED`; kernel `flock`, never PID or
+age metadata, decides whether a job is active.
 
 The optional minimal network smoke test is disabled by default and must be
 selected explicitly:

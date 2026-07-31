@@ -184,9 +184,32 @@ remote Supabase dependency is included.
 - [x] Deterministic no-network automated tests and opt-in minimal smoke test
 
 **Deferred**: scheduled workers, administrator API/UI, additional market
-adapters, large backfills and a PostgreSQL operational catalog. The latter
+adapters and a PostgreSQL operational catalog. The latter
 should be introduced only with a reviewed migration when multi-process
 orchestration requires it.
+
+### Phase 2B: resumable local synchronization 🟡 IMPLEMENTED LOCALLY
+
+**Scope**: Deterministic large-range planning, sequential chunk execution,
+atomic checkpoints, same-host per-dataset locking, incremental overlap, gap
+discovery/repair and an operator CLI. It reuses the complete Phase 2A
+transaction for every chunk.
+
+**Delivered locally**:
+
+- [x] Exact integer planner bounded by adapter, request, total and chunk limits
+- [x] Immutable local job records with atomic progress checkpoints
+- [x] Safe resume after interruption and sanitized abandoned-job recovery
+- [x] Same-dataset advisory file lock with timeout
+- [x] Global catalog serialization and transaction-bound chunk receipts
+- [x] Incremental updates with overlap and deterministic `NOOP`
+- [x] Read-only gap discovery and explicit verified repair
+- [x] Full logical-content dataset version independent of chunk order
+- [x] Backfill plan/run/resume/status, update, gaps and repair CLI
+- [x] Deterministic no-network tests
+
+**Deferred**: scheduling, permanent workers, distributed coordination,
+administrator API/UI and additional adapters.
 
 **Deliverables**:
 - [x] Market data adapter interface
@@ -195,7 +218,7 @@ orchestration requires it.
 - [x] Parquet storage (efficient, queryable)
 - [x] Multi-symbol support
 - [x] Multi-timeframe support (1m, 5m, 1h, 1d)
-- [ ] Historical data sync job
+- [x] Historical data sync job
 - [x] Data validation foundations
 - [ ] Admin interface to trigger sync
 

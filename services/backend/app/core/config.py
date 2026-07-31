@@ -52,6 +52,12 @@ _FIELD_ENVIRONMENT_NAMES = {
     "market_user_agent": "ADT_MARKET_USER_AGENT",
     "market_allow_open_candles": "ADT_MARKET_ALLOW_OPEN_CANDLES",
     "market_max_fetch_candles": "ADT_MARKET_MAX_FETCH_CANDLES",
+    "market_backfill_chunk_candles": "ADT_MARKET_BACKFILL_CHUNK_CANDLES",
+    "market_backfill_max_total_candles": "ADT_MARKET_BACKFILL_MAX_TOTAL_CANDLES",
+    "market_incremental_overlap_candles": "ADT_MARKET_INCREMENTAL_OVERLAP_CANDLES",
+    "market_job_lock_timeout": "ADT_MARKET_JOB_LOCK_TIMEOUT",
+    "market_job_stale_after": "ADT_MARKET_JOB_STALE_AFTER",
+    "market_job_max_chunks": "ADT_MARKET_JOB_MAX_CHUNKS",
 }
 
 
@@ -93,6 +99,16 @@ class Settings(BaseSettings):
     market_user_agent: str = Field(default="ADT-MarketData/0.1", min_length=8, max_length=128)
     market_allow_open_candles: bool = False
     market_max_fetch_candles: int = Field(default=10_000, ge=1, le=100_000)
+    market_backfill_chunk_candles: int = Field(default=1_000, ge=1, le=10_000)
+    market_backfill_max_total_candles: int = Field(
+        default=1_000_000,
+        ge=1,
+        le=10_000_000,
+    )
+    market_incremental_overlap_candles: int = Field(default=2, ge=0, le=100)
+    market_job_lock_timeout: float = Field(default=10.0, ge=0.0, le=300.0)
+    market_job_stale_after: float = Field(default=3_600.0, ge=1.0, le=604_800.0)
+    market_job_max_chunks: int = Field(default=10_000, ge=1, le=100_000)
 
     @field_validator("supabase_url")
     @classmethod

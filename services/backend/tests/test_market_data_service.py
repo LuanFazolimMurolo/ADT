@@ -29,6 +29,14 @@ class FakeAdapter:
     def limits(self) -> AdapterLimits:
         return AdapterLimits(1000, 2)
 
+    @property
+    def exchange(self):
+        return INSTRUMENT.exchange
+
+    @property
+    def market_type(self):
+        return INSTRUMENT.market_type
+
     async def list_instruments(self) -> tuple[Instrument, ...]:
         return (INSTRUMENT,)
 
@@ -65,7 +73,7 @@ class FakeAdapter:
 
 
 class FailingCompletionCatalog(JsonMarketDataCatalog):
-    def promote(self, plan) -> None:
+    def promote(self, plan, *, lease) -> None:
         raise MarketDataStorageError()
 
 
