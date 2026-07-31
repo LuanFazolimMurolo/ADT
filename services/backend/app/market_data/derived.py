@@ -12,7 +12,7 @@ from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
-from urllib.parse import quote, unquote
+from urllib.parse import quote
 from uuid import uuid4
 
 import pyarrow.parquet as pq
@@ -26,6 +26,7 @@ from app.market_data.datasets import (
     DatasetState,
     GapPolicy,
     PartitionSummary,
+    ResamplingAction,
     ResamplingPlan,
     ResamplingResult,
 )
@@ -233,6 +234,7 @@ class DerivedDatasetService:
             group_size=group_size,
             gap_policy=gap_policy,
             calendar="CONTINUOUS_UTC_24_7",
+            source_version_algorithm=metadata.version_algorithm,
         )
 
     def materialize(
@@ -296,7 +298,18 @@ class DerivedDatasetService:
             and manifest.state is DatasetState.COMPLETE
             and manifest.source_dataset_version == plan.source_dataset_version
         ):
-            return self._build_result(plan)
+            verified = self._verify_unlocked(plan, verify_source_content=False)
+            if verified.state is DatasetState.COMPLETE:
+                return ResamplingResult(
+                    plan=plan,
+                    candles=(),
+                    skipped_ranges=(),
+                    source_count=0,
+                    materialized_count=0,
+                    checksum=verified.target_checksum,
+                    action=ResamplingAction.NOOP,
+                )
+            return self._materialize_locked(plan, leases)
         if not changed_months:
             return self._materialize_locked(plan, leases)
         first_month = min(changed_months)
@@ -310,8 +323,9 @@ class DerivedDatasetService:
             data_range=DataRange(affected_start, affected_end),
             source_candles=(affected_end - affected_start) // source_tf.duration,
             expected_groups=(affected_end - affected_start) // target_tf.duration,
-            estimated_partitions=len(changed_months),
+            estimated_partitions=len(_months_in_range(DataRange(affected_start, affected_end))),
         )
+        self._failure_hook("incremental:planned")
         result = self._build_result(affected)
         metadata = self._catalog.get_dataset(_raw_key(plan))
         if metadata is None or metadata.version != source_version:
@@ -348,7 +362,12 @@ class DerivedDatasetService:
             self._recover_locked(raw_key, plan.target.key, leases)
             return self._verify_unlocked(plan)
 
-    def _verify_unlocked(self, plan: ResamplingPlan) -> DatasetManifest:
+    def _verify_unlocked(
+        self,
+        plan: ResamplingPlan,
+        *,
+        verify_source_content: bool = True,
+    ) -> DatasetManifest:
         """Verify while the caller holds the canonical RAW and DERIVED locks."""
         path = self._derived.manifest_path(plan)
         manifest = self._derived.load_manifest(path)
@@ -357,46 +376,122 @@ class DerivedDatasetService:
             or manifest.schema_version != self._derived.schema_version
             or manifest.target_dataset_key != plan.target.key
             or manifest.source_dataset_key != _raw_key(plan)
+            or manifest.source_version_algorithm != plan.source_version_algorithm
             or manifest.source_timeframe != plan.source.timeframe
             or manifest.target_timeframe != plan.target.timeframe
             or manifest.gap_policy is not plan.gap_policy
             or manifest.algorithm != plan.algorithm
             or manifest.algorithm_version != plan.algorithm_version
+            or manifest.target_version != manifest.target_checksum
             or manifest.lineage.source_dataset_key != manifest.source_dataset_key
             or manifest.lineage.source_dataset_version != manifest.source_dataset_version
             or manifest.lineage.source_checksum != manifest.source_checksum
+            or manifest.lineage.source_version_algorithm != manifest.source_version_algorithm
+            or manifest.lineage.source_timeframe != manifest.source_timeframe
+            or manifest.lineage.target_timeframe != manifest.target_timeframe
+            or manifest.lineage.algorithm != manifest.algorithm
+            or manifest.lineage.algorithm_version != manifest.algorithm_version
+            or manifest.lineage.gap_policy is not manifest.gap_policy
+            or manifest.lineage.open_candle_policy != "REJECT"
+            or manifest.lineage.calendar != manifest.calendar
         ):
             invalid = replace(manifest, state=DatasetState.INVALID)
             self._derived.write_manifest_atomic(path, invalid)
             return invalid
         metadata = self._catalog.get_dataset(manifest.source_dataset_key)
-        if metadata is None or metadata.version != manifest.source_dataset_version:
+        if (
+            metadata is None
+            or metadata.version != manifest.source_dataset_version
+            or metadata.version != manifest.source_checksum
+            or metadata.version_algorithm != manifest.source_version_algorithm
+        ):
             stale = replace(manifest, state=DatasetState.STALE)
             self._derived.write_manifest_atomic(path, stale)
             return stale
+        source_pair = TradingPair.parse(plan.source.symbol)
+        source_tf = get_timeframe(plan.source.timeframe)
+        seen_source_partitions: set[tuple[int, int]] = set()
         for summary in manifest.source_partitions:
+            expected_source_path = ensure_safe_path(
+                self._raw.root,
+                self._raw.dataset_root(
+                    plan.source.exchange,
+                    plan.source.market_type,
+                    source_pair,
+                    source_tf,
+                )
+                / f"year={summary.year:04d}"
+                / f"month={summary.month:02d}"
+                / "candles.parquet",
+            )
             source_path = ensure_safe_path(
                 self._raw.root,
                 self._raw.root / summary.relative_path,
             )
-            if not source_path.exists() or _file_checksum(source_path) != summary.checksum:
+            if (
+                summary.year,
+                summary.month,
+            ) in seen_source_partitions or source_path != expected_source_path:
+                invalid = replace(manifest, state=DatasetState.INVALID)
+                self._derived.write_manifest_atomic(path, invalid)
+                return invalid
+            if verify_source_content and (
+                not source_path.exists() or _file_checksum(source_path) != summary.checksum
+            ):
                 stale = replace(manifest, state=DatasetState.STALE)
                 self._derived.write_manifest_atomic(path, stale)
                 return stale
+            if verify_source_content:
+                try:
+                    source_rows = self._raw.read_partition(
+                        source_path,
+                        exchange=plan.source.exchange,
+                        market_type=plan.source.market_type,
+                        pair=source_pair,
+                        timeframe=source_tf,
+                    )
+                except Exception:
+                    stale = replace(manifest, state=DatasetState.STALE)
+                    self._derived.write_manifest_atomic(path, stale)
+                    return stale
+                if (
+                    len(source_rows) != summary.candle_count
+                    or (source_rows[0].open_time.isoformat() if source_rows else None)
+                    != summary.first_open_time
+                    or (source_rows[-1].open_time.isoformat() if source_rows else None)
+                    != summary.last_open_time
+                ):
+                    invalid = replace(manifest, state=DatasetState.INVALID)
+                    self._derived.write_manifest_atomic(path, invalid)
+                    return invalid
+            seen_source_partitions.add((summary.year, summary.month))
         count = 0
         first_open_time: str | None = None
         last_open_time: str | None = None
         pair = TradingPair.parse(plan.target.symbol)
         target_tf = get_timeframe(plan.target.timeframe)
+        seen_target_partitions: set[tuple[int, int]] = set()
+        expected_target_paths: set[Path] = set()
         for summary in manifest.partitions:
+            expected_partition_path = self._derived.partition_path(
+                plan,
+                summary.year,
+                summary.month,
+            )
             partition_path = ensure_safe_path(
                 self._raw.root,
                 self._raw.root / summary.relative_path,
             )
-            if not partition_path.exists():
+            if (
+                (summary.year, summary.month) in seen_target_partitions
+                or partition_path != expected_partition_path
+                or not partition_path.exists()
+            ):
                 invalid = replace(manifest, state=DatasetState.INVALID)
                 self._derived.write_manifest_atomic(path, invalid)
                 return invalid
+            seen_target_partitions.add((summary.year, summary.month))
+            expected_target_paths.add(partition_path)
             try:
                 rows = self._raw.read_partition(
                     partition_path,
@@ -429,9 +524,16 @@ class DerivedDatasetService:
                 invalid = replace(manifest, state=DatasetState.INVALID)
                 self._derived.write_manifest_atomic(path, invalid)
                 return invalid
+        actual_target_paths = {
+            ensure_safe_path(self._raw.root, item)
+            for item in self._derived.dataset_root(plan).glob("year=*/month=*/candles.parquet")
+        }
         target_checksum = _dataset_checksum(manifest.partitions)
         if (
-            count != manifest.candle_count
+            actual_target_paths != expected_target_paths
+            or tuple(manifest.partitions)
+            != tuple(sorted(manifest.partitions, key=lambda item: (item.year, item.month)))
+            or count != manifest.candle_count
             or first_open_time != manifest.first_open_time
             or last_open_time != manifest.last_open_time
             or target_checksum != manifest.target_checksum
@@ -673,6 +775,7 @@ class DerivedDatasetService:
             open_candle_policy="REJECT",
             calendar=plan.calendar,
             materialized_at=now,
+            source_version_algorithm=plan.source_version_algorithm,
         )
         manifest = DatasetManifest(
             identity=plan.target,
@@ -704,6 +807,7 @@ class DerivedDatasetService:
             updated_at=now,
             state=DatasetState.COMPLETE,
             lineage=lineage,
+            source_version_algorithm=plan.source_version_algorithm,
         )
         manifest_artifact = _manifest_artifact(
             manifest_target,
@@ -976,7 +1080,13 @@ def _read_journal(path: Path, root: Path) -> dict[str, object]:
     if path.name != f"journal-{transaction_id}.json":
         raise MarketDataStorageError("O journal derivado possui identidade divergente.")
     dataset_root = ensure_safe_path(root, root / cast(str, raw["dataset_root"]))
-    if not _dataset_root_matches_key(dataset_root, root, cast(str, raw["derived_key"])):
+    derived_root = ensure_safe_path(root, path.parent.parent)
+    if not _dataset_root_matches_key(
+        dataset_root,
+        derived_root,
+        cast(str, raw["raw_key"]),
+        cast(str, raw["derived_key"]),
+    ):
         raise MarketDataStorageError("O journal derivado possui raiz inválida.")
     targets: set[Path] = set()
     manifest_targets = 0
@@ -987,21 +1097,23 @@ def _read_journal(path: Path, root: Path) -> dict[str, object]:
         target = Path(str(validated["target"]))
         temporary = Path(str(validated["temporary"]))
         backup = Path(str(validated["backup"]))
-        if (
-            target in targets
-            or not target.is_relative_to(dataset_root)
-            or temporary.name.count(transaction_id) != 1
-            or backup.name.count(transaction_id) != 1
-        ):
+        if target in targets or not target.is_relative_to(dataset_root):
             raise MarketDataStorageError("O journal derivado possui artefatos divergentes.")
         kind = validated["kind"]
         relative = target.relative_to(dataset_root)
         if kind == "manifest":
             if relative != Path("manifest.json"):
                 raise MarketDataStorageError("O target do manifest derivado é inválido.")
+            expected_temporary = f".manifest.json.tmp-{transaction_id}"
+            expected_backup = f".manifest.json.bak-{transaction_id}"
             manifest_targets += 1
         elif not _valid_partition_relative(relative):
             raise MarketDataStorageError("O target Parquet derivado é inválido.")
+        else:
+            expected_temporary = f".candles.parquet.tmp-{transaction_id}"
+            expected_backup = f".candles.parquet.bak-{transaction_id}"
+        if temporary.name != expected_temporary or backup.name != expected_backup:
+            raise MarketDataStorageError("O journal derivado possui artefatos divergentes.")
         targets.add(target)
     if manifest_targets != 1:
         raise MarketDataStorageError("O journal exige exatamente um manifest derivado.")
@@ -1037,19 +1149,18 @@ def _valid_partition_relative(path: Path) -> bool:
     )
 
 
-def _dataset_root_matches_key(path: Path, root: Path, derived_key: str) -> bool:
+def _dataset_root_matches_key(
+    path: Path,
+    derived_root: Path,
+    raw_key: str,
+    derived_key: str,
+) -> bool:
     try:
-        relative = path.relative_to(root)
+        relative = path.relative_to(derived_root)
     except ValueError:
         return False
-    if len(relative.parts) < 8 or relative.parts[0] != "derived":
+    if len(relative.parts) != 7:
         return False
-    components = {
-        key: unquote(value)
-        for part in relative.parts[1:]
-        if "=" in part
-        for key, value in (part.split("=", 1),)
-    }
     prefix = "derived:"
     if not derived_key.startswith(prefix):
         return False
@@ -1073,20 +1184,21 @@ def _dataset_root_matches_key(path: Path, root: Path, derived_key: str) -> bool:
     except (ValueError, IndexError, MarketDataInconsistencyError):
         return False
     return (
-        raw_kind == "raw"
+        raw_key == f"{raw_exchange}:{raw_market}:{raw_symbol}:{source_timeframe}"
+        and raw_kind == "raw"
         and raw_exchange == exchange
         and raw_market == market
         and raw_symbol == symbol
-        and components
-        == {
-            "exchange": exchange,
-            "market": market,
-            "base": pair.base,
-            "quote": pair.quote,
-            "source_timeframe": source_timeframe,
-            "timeframe": target_timeframe,
-            "policy": policy,
-        }
+        and relative
+        == Path(
+            f"exchange={quote(exchange, safe='')}",
+            f"market={quote(market, safe='')}",
+            f"base={quote(pair.base, safe='')}",
+            f"quote={quote(pair.quote, safe='')}",
+            f"source_timeframe={quote(source_timeframe, safe='')}",
+            f"timeframe={quote(target_timeframe, safe='')}",
+            f"policy={quote(policy, safe='')}",
+        )
         and schema.isdigit()
     )
 

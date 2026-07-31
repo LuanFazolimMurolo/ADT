@@ -42,12 +42,19 @@ from app.market_data.errors import (
 )
 from app.market_data.filesystem import ensure_safe_path, fsync_directory
 from app.market_data.quality import MarketDataQualityValidator
-from app.market_data.storage import ParquetCandleStore, canonical_candle_bytes
+from app.market_data.storage import (
+    LEGACY_RAW_DATASET_VERSION_ALGORITHM,
+    RAW_DATASET_VERSION_ALGORITHM,
+    ParquetCandleStore,
+    canonical_candle_bytes,
+    compose_raw_dataset_version,
+    raw_partition_logical_checksum,
+)
 from app.market_data.timeframes import get_timeframe
 
 Clock = Callable[[], datetime]
-SCANNER_SCHEMA_VERSION = 1
-SCANNER_VERSION = "phase2c-2"
+SCANNER_SCHEMA_VERSION = 2
+SCANNER_VERSION = "phase2c-3"
 
 
 class AdvancedMarketDataQualityScanner:
@@ -108,6 +115,15 @@ class AdvancedMarketDataQualityScanner:
         removed: set[str] = set()
         if baseline_used:
             baseline = _validate_baseline(plan, scope)
+            if metadata is None or metadata.version_algorithm != RAW_DATASET_VERSION_ALGORITHM:
+                raise MarketDataInconsistencyError(
+                    "O scan INCREMENTAL exige versão RAW componível; "
+                    "execute FULL e migre o dataset legado."
+                )
+            if baseline.dataset_version_algorithm != metadata.version_algorithm:
+                raise MarketDataInconsistencyError(
+                    "O scan INCREMENTAL exige baseline do mesmo algoritmo de versão RAW."
+                )
             partition_results = {item.summary.relative_path: item for item in baseline.partitions}
             prior = {
                 item.summary.relative_path: item.summary.checksum for item in baseline.partitions
@@ -119,6 +135,11 @@ class AdvancedMarketDataQualityScanner:
             }
             changed.update(set(current_physical) - set(prior))
             removed = set(prior) - set(current_physical)
+            if not changed and not removed and metadata is not None:
+                if baseline.dataset_version != metadata.version:
+                    raise MarketDataInconsistencyError(
+                        "O scan INCREMENTAL exige baseline da versão corrente."
+                    )
             for relative in changed | removed:
                 partition_results.pop(relative, None)
         else:
@@ -182,6 +203,9 @@ class AdvancedMarketDataQualityScanner:
                 partitions,
                 instrument,
                 timeframe,
+                mode=plan.mode,
+                baseline=plan.baseline,
+                logical_checksum=logical_checksum,
             )
         self._operational_artifacts(global_issues)
         partition_issues = tuple(issue for item in partitions for issue in item.issues)
@@ -200,6 +224,9 @@ class AdvancedMarketDataQualityScanner:
             coverage=coverage,
             logical_checksum=logical_checksum,
             global_issues=tuple(_ordered_issues(global_issues, self._max_issues)),
+            dataset_version_algorithm=(
+                metadata.version_algorithm if metadata else RAW_DATASET_VERSION_ALGORITHM
+            ),
         )
         return QualityScanResult(
             plan=plan,
@@ -288,11 +315,9 @@ class AdvancedMarketDataQualityScanner:
             if candle.close_time
             != candle.open_time + timeframe.duration - timedelta(milliseconds=1)
         )
-        logical = hashlib.sha256()
         gaps = 0
         previous = None
         for candle in rows:
-            logical.update(canonical_candle_bytes(candle))
             if previous is not None and candle.open_time > previous + timeframe.duration:
                 gaps += (candle.open_time - previous) // timeframe.duration - 1
             previous = candle.open_time
@@ -307,7 +332,7 @@ class AdvancedMarketDataQualityScanner:
                     rows[-1].open_time.isoformat() if rows else None,
                     physical_checksum,
                 ),
-                logical.hexdigest(),
+                raw_partition_logical_checksum(rows),
                 gaps,
                 tuple(_ordered_issues(issues, self._max_issues)),
             ),
@@ -402,6 +427,10 @@ class AdvancedMarketDataQualityScanner:
         partitions: tuple[QualityPartitionBaseline, ...],
         instrument: Instrument,
         timeframe: Timeframe,
+        *,
+        mode: QualityScanMode,
+        baseline: QualityScanBaseline | None,
+        logical_checksum: str,
     ) -> None:
         if metadata is None:
             issues.append(
@@ -431,8 +460,51 @@ class AdvancedMarketDataQualityScanner:
         for receipt in receipts:
             if receipt.dataset_key == key and not _valid_receipt(receipt):
                 issues.append(_issue("receipt_divergence", "ERROR", QualityIssueCategory.CATALOG))
-        # A FULL scan also calculates the canonical catalog checksum, streaming
-        # each partition again rather than retaining its rows.
+        if metadata is None:
+            return
+        if mode is QualityScanMode.INCREMENTAL:
+            if baseline is None:
+                raise MarketDataInconsistencyError(
+                    "O scan INCREMENTAL exige baseline compatível e válido."
+                )
+            if metadata.version != logical_checksum:
+                issues.append(
+                    _issue(
+                        "logical_checksum_divergence",
+                        "ERROR",
+                        QualityIssueCategory.CATALOG,
+                    )
+                )
+            return
+
+        if metadata.version_algorithm == RAW_DATASET_VERSION_ALGORITHM:
+            if metadata.version != logical_checksum:
+                issues.append(
+                    _issue(
+                        "logical_checksum_divergence",
+                        "ERROR",
+                        QualityIssueCategory.CATALOG,
+                    )
+                )
+            return
+        if metadata.version_algorithm != LEGACY_RAW_DATASET_VERSION_ALGORITHM:
+            issues.append(
+                _issue(
+                    "unknown_version_algorithm",
+                    "ERROR",
+                    QualityIssueCategory.CATALOG,
+                )
+            )
+            return
+
+        # Compatibility audit for catalogs persisted before partition composition.
+        issues.append(
+            _issue(
+                "legacy_version_algorithm",
+                "WARNING",
+                QualityIssueCategory.CATALOG,
+            )
+        )
         canonical = hashlib.sha256()
         for item in partitions:
             path = ensure_safe_path(
@@ -451,7 +523,7 @@ class AdvancedMarketDataQualityScanner:
                 rows = ()
             for candle in rows:
                 canonical.update(canonical_candle_bytes(candle))
-        if metadata is not None and metadata.version != canonical.hexdigest():
+        if metadata.version != canonical.hexdigest():
             issues.append(
                 _issue(
                     "logical_checksum_divergence",
@@ -642,13 +714,9 @@ def _empty_partition(
 def _composed_logical_checksum(
     partitions: tuple[QualityPartitionBaseline, ...],
 ) -> str:
-    digest = hashlib.sha256()
-    for item in partitions:
-        digest.update(item.summary.relative_path.encode())
-        digest.update(b"\0")
-        digest.update(item.logical_checksum.encode())
-        digest.update(b"\n")
-    return digest.hexdigest()
+    return compose_raw_dataset_version(
+        (item.summary.relative_path, item.logical_checksum) for item in partitions
+    )
 
 
 def _scope(plan: QualityScanPlan) -> QualityScanScope:
@@ -755,6 +823,16 @@ def _valid_receipt(receipt: object) -> bool:
         < 0
     ):
         return False
+    if receipt.version_algorithm not in {
+        LEGACY_RAW_DATASET_VERSION_ALGORITHM,
+        RAW_DATASET_VERSION_ALGORITHM,
+    }:
+        return False
+    if (
+        receipt.version_algorithm == RAW_DATASET_VERSION_ALGORITHM
+        and receipt.checksum != receipt.version
+    ):
+        return False
     try:
         start = datetime.fromisoformat(receipt.start)
         end = datetime.fromisoformat(receipt.end)
@@ -844,4 +922,5 @@ def _decode_baseline(raw: object) -> QualityScanBaseline:
             )
             for issue in raw["global_issues"]
         ),
+        raw.get("dataset_version_algorithm", LEGACY_RAW_DATASET_VERSION_ALGORITHM),
     )

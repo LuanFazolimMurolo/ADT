@@ -10,6 +10,7 @@ from datetime import timedelta
 from decimal import Decimal
 from io import StringIO
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -18,6 +19,7 @@ import pytest
 from pydantic import AnyHttpUrl, SecretStr
 
 import app.market_data.derived as derived_module
+import app.market_data.storage as storage_module
 from app.cli import EXIT_OK, main
 from app.core.config import Settings
 from app.market_data.advanced_quality import AdvancedMarketDataQualityScanner
@@ -36,17 +38,19 @@ from app.market_data.datasets import (
     QualityScanMode,
     QualityScanPlan,
     QualityScanScope,
+    ResamplingAction,
 )
 from app.market_data.derived import DerivedDatasetService, DerivedDatasetStore
-from app.market_data.domain import DataRange
+from app.market_data.domain import Candle, DataRange
 from app.market_data.errors import MarketDataInconsistencyError, MarketDataStorageError
 from app.market_data.locks import DatasetLockManager
 from app.market_data.resampling import DeterministicCandleResampler
 from app.market_data.snapshots import DatasetSnapshotService, MarketDatasetReader
 from app.market_data.storage import (
+    LEGACY_RAW_DATASET_VERSION_ALGORITHM,
+    RAW_DATASET_VERSION_ALGORITHM,
     ParquetCandleStore,
     ParquetUpsertPlan,
-    canonical_candle_bytes,
 )
 from app.market_data.timeframes import get_timeframe
 from app.market_data.transaction import MarketDataTransactionCoordinator
@@ -76,23 +80,18 @@ def _persist_raw(tmp_path: Path, candles) -> tuple[ParquetCandleStore, JsonMarke
     catalog = JsonMarketDataCatalog(tmp_path, clock=lambda: utc(2030, 1, 1))
     timeframe = rows[0].timeframe
     key = dataset_key(INSTRUMENT, timeframe)
-    digest = hashlib.sha256()
-    all_rows = store.read(
-        INSTRUMENT.exchange,
-        INSTRUMENT.market_type,
-        PAIR,
-        timeframe,
-        DataRange(rows[0].open_time, rows[-1].open_time + timeframe.duration),
-    )
-    for item in all_rows:
-        digest.update(canonical_candle_bytes(item))
     first, last, count = store.first_last_count(
         INSTRUMENT.exchange,
         INSTRUMENT.market_type,
         PAIR,
         timeframe,
     )
-    version = digest.hexdigest()
+    version = store.logical_version(
+        INSTRUMENT.exchange,
+        INSTRUMENT.market_type,
+        PAIR,
+        timeframe,
+    )
     started = catalog.start_run(key)
     completed = replace(
         started,
@@ -122,6 +121,7 @@ def _persist_raw(tmp_path: Path, candles) -> tuple[ParquetCandleStore, JsonMarke
         candle_count=count,
         version=version,
         updated_at=utc(2030, 1, 1).isoformat(),
+        version_algorithm=RAW_DATASET_VERSION_ALGORITHM,
     )
     transaction_id = uuid4().hex
     empty = ParquetUpsertPlan(
@@ -133,6 +133,7 @@ def _persist_raw(tmp_path: Path, candles) -> tuple[ParquetCandleStore, JsonMarke
         last,
         count,
         version,
+        version_algorithm=RAW_DATASET_VERSION_ALGORITHM,
     )
     with catalog.acquire_lease() as lease:
         plan = catalog.prepare_completion(
@@ -157,9 +158,10 @@ def _derived_service(
     *,
     failure_hook=None,
     recovery_identity_hook=None,
+    derived_directory: Path = Path("derived"),
 ):
     locks = DatasetLockManager(tmp_path, timeout_seconds=1, stale_after_seconds=60)
-    derived_store = DerivedDatasetStore(tmp_path)
+    derived_store = DerivedDatasetStore(tmp_path, directory=derived_directory)
     service = DerivedDatasetService(
         raw_store=store,
         raw_catalog=catalog,
@@ -238,6 +240,69 @@ def _toctou_recoverer(
         recovery_identity_hook=lambda _path: identity_read_event.set(),
     )
     service.recover()
+
+
+def _incremental_lock_holder(data_dir: Path, planned_event, proceed_event) -> None:
+    store = ParquetCandleStore(data_dir)
+    catalog = JsonMarketDataCatalog(data_dir)
+
+    def hook(step: str) -> None:
+        if step == "incremental:planned":
+            planned_event.set()
+            proceed_event.wait(timeout=10)
+
+    service, _derived_store, _locks = _derived_service(
+        data_dir,
+        store,
+        catalog,
+        failure_hook=hook,
+    )
+    plan = service.plan(
+        INSTRUMENT,
+        "1m",
+        "5m",
+        DataRange(utc(2026, 1, 1), utc(2026, 1, 1) + timedelta(minutes=5)),
+    )
+    service.materialize_incremental(plan)
+
+
+def _concurrent_raw_change(
+    data_dir: Path,
+    raw_key: str,
+    attempted_event,
+    acquired_event,
+) -> None:
+    locks = DatasetLockManager(data_dir, timeout_seconds=5, stale_after_seconds=60)
+    attempted_event.set()
+    with locks.acquire(raw_key):
+        acquired_event.set()
+        store = ParquetCandleStore(data_dir)
+        partition = next(
+            store.root.glob(
+                "exchange=*/market=*/base=*/quote=*/timeframe=*/year=*/month=*/candles.parquet"
+            )
+        )
+        table = pq.ParquetFile(partition).read()
+        pq.write_table(table, partition, compression="snappy")
+
+
+def _concurrent_manifest_change(
+    data_dir: Path,
+    derived_key: str,
+    attempted_event,
+    acquired_event,
+) -> None:
+    locks = DatasetLockManager(data_dir, timeout_seconds=5, stale_after_seconds=60)
+    attempted_event.set()
+    with locks.acquire(derived_key):
+        acquired_event.set()
+        derived_store = DerivedDatasetStore(data_dir)
+        manifest_path = next(derived_store.root.rglob("manifest.json"))
+        manifest = derived_store.load_manifest(manifest_path)
+        derived_store.write_manifest_atomic(
+            manifest_path,
+            replace(manifest, state=DatasetState.INVALID),
+        )
 
 
 def test_resampling_uses_exact_ohlcv_and_optional_sums() -> None:
@@ -619,6 +684,8 @@ def test_raw_to_derived_manifest_snapshot_and_lazy_reader(tmp_path: Path) -> Non
     assert result.materialized_count == 1
     assert manifest.state is DatasetState.COMPLETE
     assert manifest.lineage.source_dataset_version == plan.source_dataset_version
+    assert manifest.source_version_algorithm == RAW_DATASET_VERSION_ALGORITHM
+    assert manifest.lineage.source_version_algorithm == RAW_DATASET_VERSION_ALGORITHM
     assert (
         tuple(
             path.read_bytes()
@@ -842,7 +909,10 @@ def test_recovery_ignores_journal_removed_before_identity_read(
     assert service.recover() == 0
 
 
-def test_incremental_noop_is_stable_and_source_change_is_stale(tmp_path: Path) -> None:
+def test_incremental_noop_is_stable_and_source_change_is_stale(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source = get_timeframe("1m")
     rows = tuple(
         candle(utc(2026, 1, 1) + index * source.duration, timeframe=source) for index in range(5)
@@ -858,13 +928,119 @@ def test_incremental_noop_is_stable_and_source_change_is_stale(tmp_path: Path) -
     service.materialize(plan)
     path = derived_store.manifest_path(plan)
     before = path.read_bytes()
-    service.materialize_incremental(plan)
+    partition = derived_store.partition_path(plan, 2026, 1)
+    mtimes = (path.stat().st_mtime_ns, partition.stat().st_mtime_ns)
+
+    def unexpected_build(_plan) -> None:
+        raise AssertionError("NOOP não pode reconstruir candles")
+
+    monkeypatch.setattr(service, "_build_result", unexpected_build)
+    result = service.materialize_incremental(plan)
+    assert result.action is ResamplingAction.NOOP
+    assert result.candles == ()
+    assert result.source_count == 0
+    assert result.materialized_count == 0
     assert path.read_bytes() == before
+    assert (path.stat().st_mtime_ns, partition.stat().st_mtime_ns) == mtimes
+    monkeypatch.undo()
 
     state = json.loads(catalog.path.read_text(encoding="utf-8"))
     state["datasets"][dataset_key(INSTRUMENT, source)]["version"] = "f" * 64
     catalog.path.write_text(json.dumps(state), encoding="utf-8")
     assert service.verify(plan).state is DatasetState.STALE
+
+
+def test_incremental_does_not_noop_an_invalid_derived_dataset(tmp_path: Path) -> None:
+    source = get_timeframe("1m")
+    store, catalog = _persist_raw(
+        tmp_path,
+        tuple(
+            candle(utc(2026, 1, 1) + index * source.duration, timeframe=source)
+            for index in range(5)
+        ),
+    )
+    service, derived_store, _locks = _derived_service(tmp_path, store, catalog)
+    plan = service.plan(
+        INSTRUMENT,
+        "1m",
+        "5m",
+        DataRange(utc(2026, 1, 1), utc(2026, 1, 1) + timedelta(minutes=5)),
+    )
+    service.materialize(plan)
+    manifest_path = derived_store.manifest_path(plan)
+    manifest = derived_store.load_manifest(manifest_path)
+    derived_store.write_manifest_atomic(
+        manifest_path,
+        replace(manifest, state=DatasetState.INVALID),
+    )
+
+    result = service.materialize_incremental(plan)
+
+    assert result.action is ResamplingAction.MATERIALIZED
+    assert service.verify(plan).state is DatasetState.COMPLETE
+
+
+@pytest.mark.parametrize("concurrent_change", ("raw", "manifest"))
+def test_incremental_holds_raw_and_manifest_leases_through_planning(
+    tmp_path: Path,
+    concurrent_change: str,
+) -> None:
+    source = get_timeframe("1m")
+    store, catalog = _persist_raw(
+        tmp_path,
+        tuple(
+            candle(utc(2026, 1, 1) + index * source.duration, timeframe=source)
+            for index in range(5)
+        ),
+    )
+    service, derived_store, _locks = _derived_service(tmp_path, store, catalog)
+    plan = service.plan(
+        INSTRUMENT,
+        "1m",
+        "5m",
+        DataRange(utc(2026, 1, 1), utc(2026, 1, 1) + timedelta(minutes=5)),
+    )
+    service.materialize(plan)
+    raw_partition = next(
+        store.root.glob(
+            "exchange=*/market=*/base=*/quote=*/timeframe=*/year=*/month=*/candles.parquet"
+        )
+    )
+    table = pq.ParquetFile(raw_partition).read()
+    pq.write_table(table, raw_partition, compression=None)
+
+    context = multiprocessing.get_context("spawn")
+    planned = context.Event()
+    proceed = context.Event()
+    attempted = context.Event()
+    acquired = context.Event()
+    holder = context.Process(
+        target=_incremental_lock_holder,
+        args=(tmp_path, planned, proceed),
+    )
+    target = _concurrent_raw_change if concurrent_change == "raw" else _concurrent_manifest_change
+    key = dataset_key(INSTRUMENT, source) if concurrent_change == "raw" else plan.target.key
+    writer = context.Process(
+        target=target,
+        args=(tmp_path, key, attempted, acquired),
+    )
+    holder.start()
+    assert planned.wait(timeout=10)
+    writer.start()
+    assert attempted.wait(timeout=5)
+    assert not acquired.wait(timeout=0.25)
+    proceed.set()
+    holder.join(timeout=15)
+    writer.join(timeout=15)
+    assert holder.exitcode == 0
+    assert writer.exitcode == 0
+    assert acquired.is_set()
+
+    verified = service.verify(plan)
+    assert verified.state is (
+        DatasetState.STALE if concurrent_change == "raw" else DatasetState.INVALID
+    )
+    assert derived_store.manifest_path(plan).exists()
 
 
 def test_manifest_corruption_and_snapshot_partition_limit(tmp_path: Path) -> None:
@@ -966,6 +1142,18 @@ def test_phase2c_cli_workflow_is_local_and_safe(tmp_path: Path) -> None:
             == EXIT_OK
         )
         assert json.loads(output.getvalue())
+
+    noop_output = StringIO()
+    assert (
+        main(
+            ["market-data", "resample", "run", *common, "--yes"],
+            app_settings=settings,
+            transport=transport,
+            stdout=noop_output,
+        )
+        == EXIT_OK
+    )
+    assert json.loads(noop_output.getvalue())["action"] == "NOOP"
 
     quality_output = StringIO()
     assert (
@@ -1164,6 +1352,90 @@ def test_materialize_recovers_pending_derived_journal_without_cli(tmp_path: Path
     assert healthy.verify(plan).state is DatasetState.COMPLETE
 
 
+def test_recovery_supports_configured_derived_directory(tmp_path: Path) -> None:
+    source = get_timeframe("1m")
+    store, catalog = _persist_raw(
+        tmp_path,
+        tuple(
+            candle(utc(2026, 1, 1) + index * source.duration, timeframe=source)
+            for index in range(5)
+        ),
+    )
+
+    def crash(step: str) -> None:
+        if step == "promoted:0":
+            raise SimulatedCrash
+
+    directory = Path("configured-derived")
+    crashing, _derived_store, _locks = _derived_service(
+        tmp_path,
+        store,
+        catalog,
+        failure_hook=crash,
+        derived_directory=directory,
+    )
+    plan = crashing.plan(
+        INSTRUMENT,
+        "1m",
+        "5m",
+        DataRange(utc(2026, 1, 1), utc(2026, 1, 1) + timedelta(minutes=5)),
+    )
+    with pytest.raises(SimulatedCrash):
+        crashing.materialize(plan)
+
+    healthy, _derived_store, _locks = _derived_service(
+        tmp_path,
+        store,
+        catalog,
+        derived_directory=directory,
+    )
+    assert healthy.recover() == 1
+    healthy.materialize(plan)
+    assert healthy.verify(plan).state is DatasetState.COMPLETE
+
+
+def test_derived_journal_requires_exact_transaction_artifact_names(tmp_path: Path) -> None:
+    source = get_timeframe("1m")
+    store, catalog = _persist_raw(
+        tmp_path,
+        tuple(
+            candle(utc(2026, 1, 1) + index * source.duration, timeframe=source)
+            for index in range(5)
+        ),
+    )
+
+    def crash(step: str) -> None:
+        if step == "promoted:0":
+            raise SimulatedCrash
+
+    crashing, derived_store, _locks = _derived_service(
+        tmp_path,
+        store,
+        catalog,
+        failure_hook=crash,
+    )
+    plan = crashing.plan(
+        INSTRUMENT,
+        "1m",
+        "5m",
+        DataRange(utc(2026, 1, 1), utc(2026, 1, 1) + timedelta(minutes=5)),
+    )
+    with pytest.raises(SimulatedCrash):
+        crashing.materialize(plan)
+    journal = next((derived_store.root / ".transactions").glob("journal-*.json"))
+    record = json.loads(journal.read_text(encoding="utf-8"))
+    transaction_id = record["transaction_id"]
+    temporary = Path(record["artifacts"][0]["temporary"])
+    record["artifacts"][0]["temporary"] = (
+        temporary.parent / f".unexpected-{transaction_id}"
+    ).as_posix()
+    journal.write_text(json.dumps(record), encoding="utf-8")
+
+    healthy, _derived_store, _locks = _derived_service(tmp_path, store, catalog)
+    with pytest.raises(MarketDataStorageError, match="artefatos"):
+        healthy.recover()
+
+
 def test_incremental_baseline_preserves_global_state_and_partition_issue(
     tmp_path: Path,
 ) -> None:
@@ -1241,6 +1513,185 @@ def test_incremental_baseline_preserves_global_state_and_partition_issue(
     assert changed.coverage.internal_gap_count == 1
 
 
+def test_incremental_quality_does_not_reread_unchanged_partitions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    timeframe = get_timeframe("1h")
+    store, catalog = _persist_raw(
+        tmp_path,
+        (
+            candle(utc(2026, 1, 31, 23), timeframe=timeframe),
+            candle(utc(2026, 2, 1), timeframe=timeframe),
+        ),
+    )
+    identity = DatasetIdentity(
+        INSTRUMENT.exchange,
+        INSTRUMENT.market_type,
+        INSTRUMENT.symbol,
+        "1h",
+        DatasetKind.RAW,
+        "canonical_parquet",
+        "source_native",
+        1,
+    )
+    scanner = AdvancedMarketDataQualityScanner(store=store, catalog=catalog)
+    full = scanner.scan(QualityScanPlan(identity, QualityScanMode.FULL))
+    assert full.baseline is not None
+    changed_path = store.root / full.partitions[1].relative_path
+    table = pq.ParquetFile(changed_path).read()
+    pq.write_table(table, changed_path, compression=None)
+
+    calls: list[str] = []
+    original = store.read_partition
+
+    def tracked(path: Path, **kwargs: Any) -> tuple[Candle, ...]:
+        calls.append(path.relative_to(store.root).as_posix())
+        return original(path, **kwargs)
+
+    monkeypatch.setattr(store, "read_partition", tracked)
+    result = scanner.scan(
+        QualityScanPlan(
+            identity,
+            QualityScanMode.INCREMENTAL,
+            baseline=full.baseline,
+        )
+    )
+    assert result.changed_partitions == (full.partitions[1].relative_path,)
+    assert calls == [full.partitions[1].relative_path]
+
+
+def test_incremental_quality_rejects_arbitrary_new_catalog_version(
+    tmp_path: Path,
+) -> None:
+    timeframe = get_timeframe("1h")
+    store, catalog = _persist_raw(
+        tmp_path,
+        (
+            candle(utc(2026, 1, 31, 23), timeframe=timeframe),
+            candle(utc(2026, 2, 1), timeframe=timeframe),
+        ),
+    )
+    identity = DatasetIdentity(
+        INSTRUMENT.exchange,
+        INSTRUMENT.market_type,
+        INSTRUMENT.symbol,
+        "1h",
+        DatasetKind.RAW,
+        "canonical_parquet",
+        "source_native",
+        1,
+    )
+    scanner = AdvancedMarketDataQualityScanner(store=store, catalog=catalog)
+    full_before = scanner.scan(QualityScanPlan(identity, QualityScanMode.FULL))
+    assert full_before.baseline is not None
+
+    changed_path = store.root / full_before.partitions[1].relative_path
+    rows = store.read_partition(
+        changed_path,
+        exchange=INSTRUMENT.exchange,
+        market_type=INSTRUMENT.market_type,
+        pair=PAIR,
+        timeframe=timeframe,
+    )
+    changed = replace(rows[0], high=rows[0].high + Decimal("1"))
+    pq.write_table(
+        storage_module._candles_to_table((changed,)),
+        changed_path,
+        compression="zstd",
+    )
+    state = json.loads(catalog.path.read_text(encoding="utf-8"))
+    key = dataset_key(INSTRUMENT, timeframe)
+    state["datasets"][key]["version"] = "a" * 64
+    catalog.path.write_text(json.dumps(state), encoding="utf-8")
+
+    incorrect = scanner.scan(
+        QualityScanPlan(
+            identity,
+            QualityScanMode.INCREMENTAL,
+            baseline=full_before.baseline,
+        )
+    )
+    assert "logical_checksum_divergence" in {item.code for item in incorrect.issues}
+
+    correct_version = store.logical_version(
+        INSTRUMENT.exchange,
+        INSTRUMENT.market_type,
+        PAIR,
+        timeframe,
+    )
+    state["datasets"][key]["version"] = correct_version
+    catalog.path.write_text(json.dumps(state), encoding="utf-8")
+    incremental = scanner.scan(
+        QualityScanPlan(
+            identity,
+            QualityScanMode.INCREMENTAL,
+            baseline=full_before.baseline,
+        )
+    )
+    full_after = scanner.scan(QualityScanPlan(identity, QualityScanMode.FULL))
+    assert "logical_checksum_divergence" not in {item.code for item in incremental.issues}
+    assert incremental.logical_checksum == full_after.logical_checksum == correct_version
+
+
+def test_legacy_raw_version_is_audited_explicitly_and_rejected_for_incremental(
+    tmp_path: Path,
+) -> None:
+    timeframe = get_timeframe("1h")
+    store, catalog = _persist_raw(
+        tmp_path,
+        (candle(utc(2026, 1, 1), timeframe=timeframe),),
+    )
+    path = store.partition_paths(
+        INSTRUMENT.exchange,
+        INSTRUMENT.market_type,
+        PAIR,
+        timeframe,
+    )[0]
+    rows = store.read_partition(
+        path,
+        exchange=INSTRUMENT.exchange,
+        market_type=INSTRUMENT.market_type,
+        pair=PAIR,
+        timeframe=timeframe,
+    )
+    legacy = hashlib.sha256()
+    for row in rows:
+        legacy.update(storage_module.canonical_candle_bytes(row))
+    state = json.loads(catalog.path.read_text(encoding="utf-8"))
+    key = dataset_key(INSTRUMENT, timeframe)
+    state["datasets"][key]["version"] = legacy.hexdigest()
+    del state["datasets"][key]["version_algorithm"]
+    catalog.path.write_text(json.dumps(state), encoding="utf-8")
+    metadata = catalog.get_dataset(key)
+    assert metadata is not None
+    assert metadata.version_algorithm == LEGACY_RAW_DATASET_VERSION_ALGORITHM
+
+    identity = DatasetIdentity(
+        INSTRUMENT.exchange,
+        INSTRUMENT.market_type,
+        INSTRUMENT.symbol,
+        "1h",
+        DatasetKind.RAW,
+        "canonical_parquet",
+        "source_native",
+        1,
+    )
+    scanner = AdvancedMarketDataQualityScanner(store=store, catalog=catalog)
+    full = scanner.scan(QualityScanPlan(identity, QualityScanMode.FULL))
+    assert full.baseline is not None
+    assert "legacy_version_algorithm" in {item.code for item in full.issues}
+    assert "logical_checksum_divergence" not in {item.code for item in full.issues}
+    with pytest.raises(MarketDataInconsistencyError, match="componível"):
+        scanner.scan(
+            QualityScanPlan(
+                identity,
+                QualityScanMode.INCREMENTAL,
+                baseline=full.baseline,
+            )
+        )
+
+
 def test_incremental_rejects_incompatible_baseline(tmp_path: Path) -> None:
     timeframe = get_timeframe("1h")
     store, catalog = _persist_raw(
@@ -1270,6 +1721,15 @@ def test_incremental_rejects_incompatible_baseline(tmp_path: Path) -> None:
                 identity,
                 QualityScanMode.INCREMENTAL,
                 baseline=invalid,
+            )
+        )
+    wrong_dataset_version = replace(full.baseline, dataset_version="f" * 64)
+    with pytest.raises(MarketDataInconsistencyError, match="baseline"):
+        scanner.scan(
+            QualityScanPlan(
+                identity,
+                QualityScanMode.INCREMENTAL,
+                baseline=wrong_dataset_version,
             )
         )
 
@@ -1412,7 +1872,18 @@ def test_derived_quality_reports_stale_lineage(tmp_path: Path) -> None:
     assert "derived_source_stale" in {item.code for item in stale.issues}
 
 
-@pytest.mark.parametrize("corruption", ("schema", "partition_count", "global_bounds"))
+@pytest.mark.parametrize(
+    "corruption",
+    (
+        "schema",
+        "partition_count",
+        "global_bounds",
+        "target_version",
+        "lineage",
+        "partition_path",
+        "source_checksum",
+    ),
+)
 def test_derived_verify_rejects_manifest_summary_divergence(
     tmp_path: Path,
     corruption: str,
@@ -1446,13 +1917,38 @@ def test_derived_verify_rejects_manifest_summary_divergence(
                 ),
             ),
         )
-    else:
+    elif corruption == "global_bounds":
         corrupted = replace(manifest, first_open_time=utc(2026, 1, 2).isoformat())
+    elif corruption == "target_version":
+        corrupted = replace(manifest, target_version="f" * 64)
+    elif corruption == "lineage":
+        corrupted = replace(
+            manifest,
+            lineage=replace(manifest.lineage, target_timeframe="15m"),
+        )
+    elif corruption == "partition_path":
+        corrupted = replace(
+            manifest,
+            partitions=(
+                replace(
+                    manifest.partitions[0],
+                    relative_path=manifest.source_partitions[0].relative_path,
+                ),
+            ),
+        )
+    else:
+        corrupted = replace(
+            manifest,
+            source_checksum="f" * 64,
+            lineage=replace(manifest.lineage, source_checksum="f" * 64),
+        )
     derived_store.write_manifest_atomic(path, corrupted)
 
     if corruption == "schema":
         with pytest.raises(MarketDataStorageError, match="schema"):
             service.verify(plan)
+    elif corruption == "source_checksum":
+        assert service.verify(plan).state is DatasetState.STALE
     else:
         assert service.verify(plan).state is DatasetState.INVALID
 

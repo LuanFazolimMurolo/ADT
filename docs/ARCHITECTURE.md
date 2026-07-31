@@ -290,6 +290,15 @@ snapshot key. Files, manifest and journal are promoted only after durable
 temporary writes. PREPARED recovery rolls every target back; COMMITTED recovery
 keeps promoted targets and only removes backups.
 
+RAW logical versions use the named `raw-partition-canonical-sha256-v1`
+algorithm: each monthly partition hashes its ordered canonical candle bytes,
+then the dataset version hashes the ordered `(relative path, partition hash)`
+pairs. Storage plans, catalog metadata, chunk receipts, quality baselines and
+derived lineage carry that same value and algorithm marker. Catalogs without
+the marker are decoded as `raw-canonical-stream-sha256-legacy`; FULL quality can
+audit that legacy form, while INCREMENTAL rejects it until a subsequent logical
+write explicitly migrates the dataset to the composable algorithm.
+
 The current RAW layout remains at its Phase 2A path for compatibility. Derived
 data is isolated below `market/derived`, and snapshots below
 `market/snapshots`. A later RAW `market/raw` migration must be explicit and

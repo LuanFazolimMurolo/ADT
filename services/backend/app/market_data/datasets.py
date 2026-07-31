@@ -31,6 +31,11 @@ class GapPolicy(StrEnum):
     MARK_INCOMPLETE = "MARK_INCOMPLETE"
 
 
+class ResamplingAction(StrEnum):
+    MATERIALIZED = "MATERIALIZED"
+    NOOP = "NOOP"
+
+
 class QualityScanMode(StrEnum):
     FULL = "FULL"
     INCREMENTAL = "INCREMENTAL"
@@ -114,6 +119,7 @@ class DatasetLineage:
     open_candle_policy: str
     calendar: str
     materialized_at: str
+    source_version_algorithm: str = "raw-canonical-stream-sha256-legacy"
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +147,7 @@ class DatasetManifest:
     updated_at: str
     state: DatasetState
     lineage: DatasetLineage
+    source_version_algorithm: str = "raw-canonical-stream-sha256-legacy"
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +165,7 @@ class ResamplingPlan:
     calendar: str
     algorithm: str = "canonical_ohlcv"
     algorithm_version: str = "1"
+    source_version_algorithm: str = "raw-canonical-stream-sha256-legacy"
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +176,7 @@ class ResamplingResult:
     source_count: int
     materialized_count: int
     checksum: str
+    action: ResamplingAction = ResamplingAction.MATERIALIZED
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,6 +219,7 @@ class QualityScanBaseline:
     coverage: CoverageSummary
     logical_checksum: str
     global_issues: tuple[AdvancedQualityIssue, ...]
+    dataset_version_algorithm: str = "raw-canonical-stream-sha256-legacy"
 
 
 @dataclass(frozen=True, slots=True)

@@ -490,6 +490,7 @@ async def _run_market_command(
             )
             _print(
                 {
+                    "action": result.action.value,
                     "dataset_key": derived_plan.target.key,
                     "source_candles": result.source_count,
                     "groups": result.materialized_count,

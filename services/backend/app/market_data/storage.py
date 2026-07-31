@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -26,6 +27,9 @@ from app.market_data.domain import (
 )
 from app.market_data.errors import MarketDataInconsistencyError, MarketDataStorageError
 from app.market_data.filesystem import ensure_safe_path, fsync_directory, market_root
+
+RAW_DATASET_VERSION_ALGORITHM = "raw-partition-canonical-sha256-v1"
+LEGACY_RAW_DATASET_VERSION_ALGORITHM = "raw-canonical-stream-sha256-legacy"
 
 DECIMAL_TYPE = pa.decimal128(38, 18)
 PARQUET_SCHEMA = pa.schema(
@@ -72,6 +76,7 @@ class ParquetUpsertPlan:
     last_open_time: datetime | None
     candle_count: int
     checksum: str
+    version_algorithm: str = RAW_DATASET_VERSION_ALGORITHM
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +134,33 @@ class ParquetCandleStore:
         )
         return ensure_safe_path(self._root, candidate)
 
+    def logical_version(
+        self,
+        exchange: Exchange,
+        market_type: MarketType,
+        pair: TradingPair,
+        timeframe: Timeframe,
+    ) -> str:
+        """Calculate the composable logical version of the persisted RAW dataset."""
+        dataset = self.dataset_root(exchange, market_type, pair, timeframe)
+        partitions: list[tuple[str, str]] = []
+        if dataset.exists():
+            for path in sorted(dataset.glob("year=*/month=*/candles.parquet")):
+                rows = self._read_file(
+                    path,
+                    timeframe=timeframe,
+                    expected_exchange=exchange,
+                    expected_market_type=market_type,
+                    expected_pair=pair,
+                )
+                partitions.append(
+                    (
+                        path.relative_to(self._root).as_posix(),
+                        raw_partition_logical_checksum(rows),
+                    )
+                )
+        return compose_raw_dataset_version(partitions)
+
     def plan_upsert(
         self,
         candles: tuple[Candle, ...],
@@ -139,7 +171,14 @@ class ParquetCandleStore:
         if not candles:
             first, last, count = None, None, 0
             return ParquetUpsertPlan(
-                transaction_id, (), 0, 0, first, last, count, hashlib.sha256(b"").hexdigest()
+                transaction_id,
+                (),
+                0,
+                0,
+                first,
+                last,
+                count,
+                compose_raw_dataset_version(()),
             )
 
         identity = _candle_identity(candles[0])
@@ -272,10 +311,26 @@ class ParquetCandleStore:
                         )
                     logical[candle.key] = candle
         logical.update(incoming)
-        checksum = hashlib.sha256()
-        for candle in sorted(logical.values(), key=lambda item: item.open_time):
-            checksum.update(_canonical_candle_bytes(candle))
-        return checksum.hexdigest()
+        grouped: dict[tuple[int, int], list[Candle]] = defaultdict(list)
+        for candle in logical.values():
+            grouped[(candle.open_time.year, candle.open_time.month)].append(candle)
+        partitions = []
+        for (year, month), rows in sorted(grouped.items()):
+            target = self._partition_target(
+                exchange,
+                market_type,
+                pair,
+                timeframe,
+                year,
+                month,
+            )
+            partitions.append(
+                (
+                    target.relative_to(self._root).as_posix(),
+                    raw_partition_logical_checksum(rows),
+                )
+            )
+        return compose_raw_dataset_version(partitions)
 
     def prepare_files(self, plan: ParquetUpsertPlan) -> None:
         """Write and fsync every planned temporary Parquet file."""
@@ -553,6 +608,35 @@ def validate_candle_serialization(candle: Candle, *, require_closed: bool = True
 def canonical_candle_bytes(candle: Candle) -> bytes:
     """Expose the stable logical encoding used by dataset checksums."""
     return _canonical_candle_bytes(candle)
+
+
+def raw_partition_logical_checksum(candles: Iterable[Candle]) -> str:
+    """Hash one canonical partition independently from its Parquet encoding."""
+    digest = hashlib.sha256()
+    previous: datetime | None = None
+    for candle in sorted(candles, key=lambda item: item.open_time):
+        if previous is not None and candle.open_time <= previous:
+            raise MarketDataInconsistencyError(
+                "A partição RAW possui duplicata ou ordem lógica inválida."
+            )
+        digest.update(_canonical_candle_bytes(candle))
+        previous = candle.open_time
+    return digest.hexdigest()
+
+
+def compose_raw_dataset_version(partitions: Iterable[tuple[str, str]]) -> str:
+    """Compose ordered canonical partition hashes into the RAW logical version."""
+    entries = tuple(partitions)
+    relative_paths = [relative for relative, _checksum in entries]
+    if len(relative_paths) != len(set(relative_paths)):
+        raise MarketDataInconsistencyError("A versão RAW contém partições duplicadas.")
+    digest = hashlib.sha256()
+    for relative, checksum in sorted(entries):
+        digest.update(relative.encode())
+        digest.update(b"\0")
+        digest.update(checksum.encode())
+        digest.update(b"\n")
+    return digest.hexdigest()
 
 
 def _validate_decimal128_38_18(value: Decimal) -> None:

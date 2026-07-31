@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
-from hashlib import sha256
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -35,7 +35,12 @@ from app.market_data.errors import (
 )
 from app.market_data.locks import DatasetLease, DatasetLockManager
 from app.market_data.quality import MarketDataQualityValidator
-from app.market_data.storage import ParquetCandleStore, ParquetUpsertPlan
+from app.market_data.storage import (
+    RAW_DATASET_VERSION_ALGORITHM,
+    ParquetCandleStore,
+    ParquetUpsertPlan,
+    compose_raw_dataset_version,
+)
 from app.market_data.transaction import MarketDataTransactionCoordinator
 
 Clock = Callable[[], datetime]
@@ -204,12 +209,23 @@ class HistoricalMarketDataService:
                     first_open_time=first,
                     last_open_time=last,
                     candle_count=count,
-                    checksum=sha256(b"").hexdigest(),
+                    checksum=compose_raw_dataset_version(()),
                 )
             committed_at = self._clock().astimezone(UTC).isoformat()
             with self._catalog.acquire_lease() as catalog_lease:
                 previous = self._catalog.get_dataset(key, lease=catalog_lease)
                 version = self._intended_version(previous, plan)
+                version_algorithm = (
+                    previous.version_algorithm
+                    if previous is not None and plan.stored_count == 0
+                    else RAW_DATASET_VERSION_ALGORITHM
+                )
+                if plan.stored_count == 0:
+                    plan = replace(
+                        plan,
+                        checksum=version,
+                        version_algorithm=version_algorithm,
+                    )
                 metadata = self._dataset_metadata(
                     instrument,
                     timeframe,
@@ -217,6 +233,7 @@ class HistoricalMarketDataService:
                     last=plan.last_open_time,
                     count=plan.candle_count,
                     version=version,
+                    version_algorithm=version_algorithm,
                     catalog_lease=catalog_lease,
                 )
                 receipt = (
@@ -231,8 +248,9 @@ class HistoricalMarketDataService:
                         duplicate_count=plan.duplicate_count,
                         request_count=batch.source_request_count,
                         version=version,
-                        checksum=plan.checksum,
+                        checksum=version,
                         committed_at=committed_at,
+                        version_algorithm=version_algorithm,
                     )
                     if operation is not None
                     else None
@@ -340,6 +358,7 @@ class HistoricalMarketDataService:
         last: datetime | None = None,
         count: int | None = None,
         version: str | None = None,
+        version_algorithm: str | None = None,
         catalog_lease: CatalogLease | None = None,
     ) -> DatasetMetadata:
         if count is None:
@@ -360,7 +379,17 @@ class HistoricalMarketDataService:
             dataset_key(instrument, timeframe),
             lease=catalog_lease,
         )
-        version_payload = f"{first}|{last}|{count}".encode()
+        selected_version = version or (existing.version if existing else None)
+        selected_algorithm = version_algorithm or (
+            existing.version_algorithm if existing else RAW_DATASET_VERSION_ALGORITHM
+        )
+        if selected_version is None:
+            selected_version = self._store.logical_version(
+                instrument.exchange,
+                instrument.market_type,
+                instrument.pair,
+                timeframe,
+            )
         return DatasetMetadata(
             key=dataset_key(instrument, timeframe),
             exchange=instrument.exchange.value,
@@ -372,9 +401,9 @@ class HistoricalMarketDataService:
             first_open_time=first.isoformat() if first else None,
             last_open_time=last.isoformat() if last else None,
             candle_count=count,
-            version=version
-            or (existing.version if existing else sha256(version_payload).hexdigest()),
+            version=selected_version,
             updated_at=self._clock().astimezone(UTC).isoformat(),
+            version_algorithm=selected_algorithm,
         )
 
     @staticmethod

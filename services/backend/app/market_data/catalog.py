@@ -20,6 +20,7 @@ from app.market_data.errors import (
 )
 from app.market_data.filesystem import ensure_safe_path, fsync_directory, market_root
 from app.market_data.locks import DatasetLockManager
+from app.market_data.storage import LEGACY_RAW_DATASET_VERSION_ALGORITHM
 
 Clock = Callable[[], datetime]
 
@@ -40,6 +41,7 @@ class DatasetMetadata:
     candle_count: int
     version: str
     updated_at: str
+    version_algorithm: str = LEGACY_RAW_DATASET_VERSION_ALGORITHM
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +79,7 @@ class ChunkCommitReceipt:
     version: str
     checksum: str
     committed_at: str
+    version_algorithm: str = LEGACY_RAW_DATASET_VERSION_ALGORITHM
 
 
 class CatalogLease:
@@ -445,7 +448,9 @@ class JsonMarketDataCatalog:
         self.validate_lease(lease)
         state = self._load()
         datasets = [
-            DatasetMetadata(**raw) for raw in state["datasets"].values() if isinstance(raw, dict)
+            _decode_dataset_metadata(raw)
+            for raw in state["datasets"].values()
+            if isinstance(raw, dict)
         ]
         return tuple(sorted(datasets, key=lambda item: item.key))
 
@@ -455,7 +460,7 @@ class JsonMarketDataCatalog:
                 return self.get_dataset(key, lease=acquired)
         self.validate_lease(lease)
         raw = self._load()["datasets"].get(key)
-        return DatasetMetadata(**raw) if isinstance(raw, dict) else None
+        return _decode_dataset_metadata(raw) if isinstance(raw, dict) else None
 
     def get_chunk_receipt(
         self,
@@ -474,7 +479,7 @@ class JsonMarketDataCatalog:
         if not isinstance(raw, dict):
             raise MarketDataStorageError("O recibo persistido é inválido.")
         try:
-            return ChunkCommitReceipt(**raw)
+            return _decode_chunk_receipt(raw)
         except TypeError:
             raise MarketDataStorageError("O recibo persistido é inválido.") from None
 
@@ -492,7 +497,7 @@ class JsonMarketDataCatalog:
             if not isinstance(raw, dict):
                 raise MarketDataStorageError("O recibo persistido é inválido.")
             try:
-                receipts.append(ChunkCommitReceipt(**raw))
+                receipts.append(_decode_chunk_receipt(raw))
             except TypeError:
                 raise MarketDataStorageError("O recibo persistido é inválido.") from None
         return tuple(sorted(receipts, key=lambda item: (item.job_id, item.chunk_index)))
@@ -570,3 +575,21 @@ def _sanitize_error_code(value: str) -> str:
 
 def _receipt_key(job_id: str, chunk_index: int) -> str:
     return f"{job_id}:{chunk_index}"
+
+
+def _decode_dataset_metadata(raw: dict[str, object]) -> DatasetMetadata:
+    payload = dict(raw)
+    payload.setdefault("version_algorithm", LEGACY_RAW_DATASET_VERSION_ALGORITHM)
+    try:
+        return DatasetMetadata(**payload)  # type: ignore[arg-type]
+    except TypeError:
+        raise MarketDataStorageError("O dataset persistido é inválido.") from None
+
+
+def _decode_chunk_receipt(raw: dict[str, object]) -> ChunkCommitReceipt:
+    payload = dict(raw)
+    payload.setdefault("version_algorithm", LEGACY_RAW_DATASET_VERSION_ALGORITHM)
+    try:
+        return ChunkCommitReceipt(**payload)  # type: ignore[arg-type]
+    except TypeError:
+        raise MarketDataStorageError("O recibo persistido é inválido.") from None

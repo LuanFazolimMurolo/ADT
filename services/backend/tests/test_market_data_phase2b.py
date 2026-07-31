@@ -33,7 +33,7 @@ from app.market_data.planning import (
 )
 from app.market_data.quality import MarketDataQualityValidator
 from app.market_data.services import HistoricalMarketDataService
-from app.market_data.storage import ParquetCandleStore
+from app.market_data.storage import RAW_DATASET_VERSION_ALGORITHM, ParquetCandleStore
 from app.market_data.timeframes import TIMEFRAMES, get_timeframe
 from app.market_data.transaction import MarketDataTransactionCoordinator
 from tests.market_data_helpers import INSTRUMENT, PAIR, candle, utc
@@ -672,6 +672,23 @@ async def test_executor_checkpoints_each_chunk_and_completes(tmp_path: Path) -> 
     assert result.stored_count == 5
     assert jobs.get(plan.job_id).next_chunk_index == 3
     assert len(adapter.fetch_calls) == 3
+    catalog = JsonMarketDataCatalog(tmp_path)
+    metadata = catalog.get_dataset(dataset_key(INSTRUMENT, get_timeframe("1h")))
+    assert metadata is not None
+    assert metadata.version_algorithm == RAW_DATASET_VERSION_ALGORITHM
+    assert metadata.version == ParquetCandleStore(tmp_path).logical_version(
+        INSTRUMENT.exchange,
+        INSTRUMENT.market_type,
+        PAIR,
+        get_timeframe("1h"),
+    )
+    receipts = catalog.list_chunk_receipts()
+    assert receipts
+    assert all(
+        receipt.version_algorithm == RAW_DATASET_VERSION_ALGORITHM
+        and receipt.version == receipt.checksum
+        for receipt in receipts
+    )
     repeated = await executor.run(plan, PAIR)
     assert repeated == result
     assert len(adapter.fetch_calls) == 3
