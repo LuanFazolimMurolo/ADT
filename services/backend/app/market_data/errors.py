@@ -90,3 +90,59 @@ class MarketJobLockTimeoutError(MarketDataError):
     code = "market_job_lock_timeout"
     default_message = "Outro job já está processando este dataset."
     status_code = 409
+
+
+class InvalidMarketOperationRequestError(InvalidDomainInputError):
+    """The operational request violates the Phase 2D domain contract."""
+
+    code = "invalid_market_operation_request"
+    default_message = "A solicitação operacional de market data é inválida."
+
+
+class InvalidOperationTransitionError(DomainConflictError):
+    """The requested lifecycle transition is not allowed."""
+
+    code = "invalid_operation_transition"
+    default_message = "A transição de estado da operação não é permitida."
+
+
+class OperationIdempotencyConflictError(DomainConflictError):
+    """One idempotency key was reused for a different canonical request."""
+
+    code = "operation_idempotency_conflict"
+    default_message = "A chave de idempotência já identifica outra solicitação."
+
+
+class InvalidDatasetIdError(InvalidDomainInputError):
+    """An opaque HTTP dataset identifier is malformed or non-canonical."""
+
+    code = "invalid_dataset_id"
+    default_message = "O identificador do dataset é inválido."
+
+
+class InvalidOperationLeaseError(DomainConflictError):
+    """A worker lease is invalid, expired or owned by another worker."""
+
+    code = "invalid_operation_lease"
+    default_message = "A lease da operação é inválida."
+
+
+class OperationProgressRegressionError(DomainConflictError):
+    """Persisted operational progress may only move forward."""
+
+    code = "operation_progress_regression"
+    default_message = "O progresso da operação não pode regredir."
+
+
+class MarketOperationTerminalError(DomainConflictError):
+    """A terminal operation cannot be changed."""
+
+    code = "market_operation_terminal"
+    default_message = "A operação de market data já está em estado terminal."
+
+
+class OperationVersionConflictError(DomainConflictError):
+    """An optimistic operation version does not match the expected successor."""
+
+    code = "operation_version_conflict"
+    default_message = "A versão da operação diverge do estado esperado."
