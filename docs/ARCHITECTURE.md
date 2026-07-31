@@ -188,3 +188,45 @@ financial calculations.
 
 Phase 1 does not add strategy execution, market data, backtesting, market
 adapters, Telegram integration, machine learning or real-capital trading.
+
+## Phase 2A market-data boundary
+
+Phase 2A adds a backend-only pipeline that does not alter the Phase 1 HTTP,
+authentication, simulation or ledger paths:
+
+```text
+CLI / future worker
+    → MarketDataAdapter protocol
+    → BinanceSpotAdapter (public REST only)
+    → canonical Decimal + UTC CandleBatch
+    → MarketDataQualityValidator
+    → MarketDataTransactionCoordinator (persistent PREPARED/COMMITTED journal)
+      ↳ ParquetCandleStore (monthly atomic partitions)
+      ↳ JsonMarketDataCatalog (small atomic operational manifest)
+```
+
+`app/market_data/domain.py` owns exchange-independent types. Timeframes live in
+a registry with duration, alignment and per-exchange mapping. Adapters are the
+only modules allowed to understand native symbols, payload positions or source
+interval codes. The reusable public HTTP client is separate from the Supabase
+JWKS client and exposes bounded retries, connection limits, correlation IDs and
+safe metrics.
+
+Candles are not stored in PostgreSQL. `ADT_DATA_DIR/market` contains explicit
+Parquet schemas and a small local catalog. Collision-free base/quote path
+components are checked for lexical and resolved containment, and Parquet row
+identity, strict ordering, unique keys and partition month/year are verified on
+read. Upserts reject conflicting duplicate keys and values that would require
+Decimal or timestamp truncation. Open candles may appear in diagnostics but
+never cross the persistent-storage boundary.
+
+A persistent journal coordinates temporary files, partition backups and the
+catalog backup. Startup rolls back every `PREPARED` transaction and retains
+every `COMMITTED` transaction before cleaning its artifacts, so recovery does
+not infer commit state from the presence of a promoted target. Once
+`COMMITTED` is durably fsynced, cleanup is recoverable maintenance and cannot
+downgrade the completed ingestion result.
+
+No Phase 2A API route or permanent worker exists. Network use is operator
+initiated through the CLI, and all automated adapter tests inject an in-memory
+transport.

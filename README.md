@@ -4,13 +4,14 @@
 
 ## Status
 
-🟡 **Phase 1D implemented; candidate gate and operational homologation pending**
+🟡 **Phase 2A market-data foundation implemented locally**
 
 ⏳ **Formal Phase 1 closure pending operational homologation**
 
-This is the architectural foundation. The system is not yet connected to real exchanges or live markets.
-No migration or administrator bootstrap has been run against a remote Supabase
-project as part of this implementation.
+The backend now has an opt-in public Binance Spot adapter and local Parquet
+datasets. It does not trade, run strategies or contact an exchange unless an
+operator explicitly invokes a network command. No migration or administrator
+bootstrap has been run against a remote Supabase project as part of this work.
 
 ## What is ADT?
 
@@ -28,6 +29,7 @@ ADT is a trading robot designed to:
 - **Frontend**: React + Vite + TypeScript (Vercel)
 - **Backend**: Python + FastAPI (Persistent server)
 - **Database**: Supabase (PostgreSQL + Auth)
+- **Historical market data**: canonical Decimal/UTC candles in monthly Parquet
 - **Paper Trading**: Simulated capital only
 - **Deployment**: Docker + Docker Compose
 
@@ -111,11 +113,32 @@ The complete release gate, security checklist and manual Supabase homologation
 steps are in
 [`docs/PHASE1_HOMOLOGATION.md`](./docs/PHASE1_HOMOLOGATION.md).
 
+### 6. Local market data (Phase 2A)
+
+After configuring `ADT_DATA_DIR`, inspect local datasets without network:
+
+```bash
+cd services/backend
+.venv/bin/python -m app.cli market-data inspect \
+  --exchange binance --market spot --symbol BTC/USDT --timeframe 1h
+```
+
+Fetching is an explicit network operation. Start with a small dry run:
+
+```bash
+.venv/bin/python -m app.cli market-data fetch \
+  --exchange binance --market spot --symbol BTC/USDT --timeframe 1h \
+  --start 2026-01-01T00:00:00Z --end 2026-01-01T06:00:00Z --dry-run
+```
+
+See [Market Data Phase 2A](./docs/MARKET_DATA.md) for the canonical schema,
+partition layout, safety limits and recovery procedure.
+
 ## Project Structure
 
 ```text
 apps/web/          React/Vite public and administrative frontend
-services/backend/  FastAPI, JWT verification and PostgreSQL services
+services/backend/  FastAPI, PostgreSQL services and modular market data
 supabase/          ordered, versioned database migrations
 docs/              specification, architecture and operational guides
 ```

@@ -11,6 +11,7 @@ import ipaddress
 import json
 import socket
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
@@ -43,6 +44,14 @@ _FIELD_ENVIRONMENT_NAMES = {
     "cors_origins": "ADT_CORS_ORIGINS",
     "api_host": "ADT_API_HOST",
     "api_port": "ADT_API_PORT",
+    "data_dir": "ADT_DATA_DIR",
+    "market_http_timeout": "ADT_MARKET_HTTP_TIMEOUT",
+    "market_http_max_connections": "ADT_MARKET_HTTP_MAX_CONNECTIONS",
+    "market_http_retries": "ADT_MARKET_HTTP_RETRIES",
+    "market_http_max_retry_after": "ADT_MARKET_HTTP_MAX_RETRY_AFTER",
+    "market_user_agent": "ADT_MARKET_USER_AGENT",
+    "market_allow_open_candles": "ADT_MARKET_ALLOW_OPEN_CANDLES",
+    "market_max_fetch_candles": "ADT_MARKET_MAX_FETCH_CANDLES",
 }
 
 
@@ -76,7 +85,14 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = Field(default=8000, ge=1, le=65535)
     api_title: str = "ADT API"
-    data_dir: str = "./data"
+    data_dir: Path = Path("./data")
+    market_http_timeout: float = Field(default=10.0, ge=1.0, le=60.0)
+    market_http_max_connections: int = Field(default=4, ge=1, le=32)
+    market_http_retries: int = Field(default=3, ge=0, le=5)
+    market_http_max_retry_after: float = Field(default=30.0, ge=0.0, le=3_600.0)
+    market_user_agent: str = Field(default="ADT-MarketData/0.1", min_length=8, max_length=128)
+    market_allow_open_candles: bool = False
+    market_max_fetch_candles: int = Field(default=10_000, ge=1, le=100_000)
 
     @field_validator("supabase_url")
     @classmethod
@@ -179,6 +195,15 @@ class Settings(BaseSettings):
         if not normalized_value:
             raise ValueError("must not be blank")
         return normalized_value
+
+    @field_validator("market_user_agent")
+    @classmethod
+    def validate_market_user_agent(cls, value: str) -> str:
+        """Require an identifiable single-line public API user agent."""
+        normalized = value.strip()
+        if not normalized or "\n" in normalized or "\r" in normalized:
+            raise ValueError("must be a nonblank single-line identifier")
+        return normalized
 
     @model_validator(mode="after")
     def validate_production_origins(self) -> Settings:

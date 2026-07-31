@@ -14,6 +14,10 @@ _STRUCTURED_FIELDS: Final[tuple[str, ...]] = (
     "duration_ms",
     "error_code",
     "exception_type",
+    "operation",
+    "provider",
+    "attempts",
+    "used_weight",
 )
 
 

@@ -164,15 +164,39 @@ Telegram, machine learning and real-capital trading.
 
 **Goal**: Fetch and store historical candlestick data.
 
+### Phase 2A: local historical-data foundation 🟡 IMPLEMENTED LOCALLY
+
+**Scope**: Canonical market models, configurable timeframes, a public Binance
+Spot adapter, quality validation, monthly Parquet storage, local operational
+catalog and an explicit CLI. No strategy, backtest, order, permanent worker or
+remote Supabase dependency is included.
+
+**Delivered locally**:
+
+- [x] Adapter protocol and Binance Spot public REST adapter
+- [x] Canonical UTC/Decimal candle and instrument models
+- [x] Configured 1m, 5m, 15m, 30m, 1h, 4h and 1d timeframes
+- [x] Bounded reusable public HTTP client with retry/rate-limit handling
+- [x] Journaled Parquet/catalog transaction with idempotent crash recovery
+- [x] Duplicate, order, gap, alignment, OHLCV, overlap and open-candle checks
+- [x] Transactional local dataset/ingestion catalog
+- [x] Local instruments/fetch/inspect/verify CLI
+- [x] Deterministic no-network automated tests and opt-in minimal smoke test
+
+**Deferred**: scheduled workers, administrator API/UI, additional market
+adapters, large backfills and a PostgreSQL operational catalog. The latter
+should be introduced only with a reviewed migration when multi-process
+orchestration requires it.
+
 **Deliverables**:
-- [ ] Market data adapter interface
-- [ ] Binance adapter (OHLCV data)
-- [ ] Data models (Candle, OHLCV)
-- [ ] Parquet storage (efficient, queryable)
-- [ ] Multi-symbol support
-- [ ] Multi-timeframe support (1m, 5m, 1h, 1d)
+- [x] Market data adapter interface
+- [x] Binance adapter (OHLCV data)
+- [x] Data models (Candle, OHLCV)
+- [x] Parquet storage (efficient, queryable)
+- [x] Multi-symbol support
+- [x] Multi-timeframe support (1m, 5m, 1h, 1d)
 - [ ] Historical data sync job
-- [ ] Data validation & cleanup
+- [x] Data validation foundations
 - [ ] Admin interface to trigger sync
 
 **Dependencies**: Phase 1 complete  

@@ -1,6 +1,7 @@
 # ADT Backend
 
-FastAPI service for ADT public status and paper-simulation administration.
+FastAPI service for ADT public status, paper-simulation administration and the
+local Phase 2A historical market-data foundation.
 Phase 1 uses Supabase Auth only as the identity provider; administrator
 authorization and application data come from PostgreSQL.
 
@@ -41,6 +42,14 @@ ADT_LOG_LEVEL=INFO
 ADT_CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 ADT_API_HOST=0.0.0.0
 ADT_API_PORT=8000
+ADT_DATA_DIR=./data
+ADT_MARKET_HTTP_TIMEOUT=10
+ADT_MARKET_HTTP_MAX_CONNECTIONS=4
+ADT_MARKET_HTTP_RETRIES=3
+ADT_MARKET_HTTP_MAX_RETRY_AFTER=30
+ADT_MARKET_USER_AGENT=ADT-MarketData/0.1
+ADT_MARKET_ALLOW_OPEN_CANDLES=false
+ADT_MARKET_MAX_FETCH_CANDLES=10000
 ```
 
 Configuration failures list only missing or invalid variable names; supplied
@@ -126,6 +135,49 @@ Only `active_simulation_summary` remains readable by `anon` and
 secret direct PostgreSQL connection. Never use a `service_role` key as a
 substitute for this backend boundary.
 
+## Market-data CLI
+
+Phase 2A stores candles locally and does not add an HTTP route or worker. The
+commands are:
+
+```bash
+.venv/bin/python -m app.cli market-data instruments \
+  --exchange binance --market spot
+
+.venv/bin/python -m app.cli market-data fetch \
+  --exchange binance --market spot --symbol BTC/USDT --timeframe 1h \
+  --start 2026-01-01T00:00:00Z --end 2026-01-02T00:00:00Z --dry-run
+
+.venv/bin/python -m app.cli market-data inspect \
+  --exchange binance --market spot --symbol BTC/USDT --timeframe 1h
+
+.venv/bin/python -m app.cli market-data verify \
+  --exchange binance --market spot --symbol BTC/USDT --timeframe 1h \
+  --start 2026-01-01T00:00:00Z --end 2026-01-02T00:00:00Z
+```
+
+`instruments` and `fetch` are the only commands that use the public Binance
+market-data endpoint. `--dry-run` fetches and validates but writes neither
+Parquet nor catalog state. Output is a bounded JSON summary and never includes
+configured secrets or raw source errors.
+
+`ADT_MARKET_MAX_FETCH_CANDLES` is checked before instrument lookup or any HTTP
+request. `ADT_MARKET_ALLOW_OPEN_CANDLES=true` permits open candles only in
+adapter and diagnostic/dry-run results; persistent Parquet datasets always
+contain closed candles exclusively.
+
+The optional minimal network smoke test is disabled by default and must be
+selected explicitly:
+
+```bash
+ADT_ALLOW_NETWORK_TESTS=true .venv/bin/pytest \
+  tests/manual/test_market_network_smoke.py -q
+```
+
+Do not include that file in routine automated gates. Full dataset format and
+recovery details are in
+[`docs/MARKET_DATA.md`](../../docs/MARKET_DATA.md).
+
 ## OpenAPI contract
 
 Pydantic/OpenAPI is the contract source for the frontend:
@@ -151,6 +203,8 @@ cd services/backend
 Integration tests initialize a disposable local PostgreSQL cluster and evaluate
 all versioned migration SQL against isolated databases. They do not read
 `SUPABASE_DATABASE_URL` and never contact the remote Supabase project.
+Market adapter tests inject `httpx.MockTransport`; the optional network smoke
+test remains skipped unless `ADT_ALLOW_NETWORK_TESTS=true`.
 
 Run quality checks:
 

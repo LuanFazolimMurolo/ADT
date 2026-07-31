@@ -26,6 +26,13 @@ def isolated_settings_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[N
         "ADT_CORS_ORIGINS",
         "ADT_API_HOST",
         "ADT_API_PORT",
+        "ADT_DATA_DIR",
+        "ADT_MARKET_HTTP_TIMEOUT",
+        "ADT_MARKET_HTTP_MAX_CONNECTIONS",
+        "ADT_MARKET_HTTP_RETRIES",
+        "ADT_MARKET_USER_AGENT",
+        "ADT_MARKET_ALLOW_OPEN_CANDLES",
+        "ADT_MARKET_MAX_FETCH_CANDLES",
     ):
         monkeypatch.delenv(variable_name, raising=False)
     yield
@@ -89,6 +96,14 @@ def test_settings_are_typed_and_normalized(monkeypatch: pytest.MonkeyPatch) -> N
     )
     monkeypatch.setenv("ADT_API_HOST", " 127.0.0.1 ")
     monkeypatch.setenv("ADT_API_PORT", "8123")
+    monkeypatch.setenv("ADT_DATA_DIR", "/tmp/adt-test-data")
+    monkeypatch.setenv("ADT_MARKET_HTTP_TIMEOUT", "12.5")
+    monkeypatch.setenv("ADT_MARKET_HTTP_MAX_CONNECTIONS", "3")
+    monkeypatch.setenv("ADT_MARKET_HTTP_RETRIES", "2")
+    monkeypatch.setenv("ADT_MARKET_HTTP_MAX_RETRY_AFTER", "45")
+    monkeypatch.setenv("ADT_MARKET_USER_AGENT", "ADT-Test-Agent/1.0")
+    monkeypatch.setenv("ADT_MARKET_ALLOW_OPEN_CANDLES", "true")
+    monkeypatch.setenv("ADT_MARKET_MAX_FETCH_CANDLES", "2500")
 
     loaded_settings = get_settings()
 
@@ -100,6 +115,14 @@ def test_settings_are_typed_and_normalized(monkeypatch: pytest.MonkeyPatch) -> N
     ]
     assert loaded_settings.api_host == "127.0.0.1"
     assert loaded_settings.api_port == 8123
+    assert str(loaded_settings.data_dir) == "/tmp/adt-test-data"
+    assert loaded_settings.market_http_timeout == 12.5
+    assert loaded_settings.market_http_max_connections == 3
+    assert loaded_settings.market_http_retries == 2
+    assert loaded_settings.market_http_max_retry_after == 45
+    assert loaded_settings.market_user_agent == "ADT-Test-Agent/1.0"
+    assert loaded_settings.market_allow_open_candles is True
+    assert loaded_settings.market_max_fetch_candles == 2500
     assert loaded_settings.supabase_issuer == "https://project.example.test/auth/v1"
     assert isinstance(loaded_settings.supabase_publishable_key, SecretStr)
     assert isinstance(loaded_settings.supabase_database_url, SecretStr)
@@ -167,3 +190,25 @@ def test_production_requires_database_tls() -> None:
             environment="production",
             cors_origins=["https://admin.example.test"],
         )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("market_http_timeout", 0.5),
+        ("market_http_max_connections", 0),
+        ("market_http_retries", 6),
+        ("market_http_max_retry_after", 3_601),
+        ("market_max_fetch_candles", 100_001),
+        ("market_user_agent", "bad\nagent"),
+    ],
+)
+def test_market_settings_have_safe_limits(field_name: str, value: object) -> None:
+    kwargs = {
+        "supabase_url": AnyHttpUrl(REQUIRED_ENVIRONMENT["SUPABASE_URL"]),
+        "supabase_publishable_key": SecretStr(REQUIRED_ENVIRONMENT["SUPABASE_PUBLISHABLE_KEY"]),
+        "supabase_database_url": SecretStr(REQUIRED_ENVIRONMENT["SUPABASE_DATABASE_URL"]),
+        field_name: value,
+    }
+    with pytest.raises(ValueError):
+        Settings(**kwargs)
