@@ -1,7 +1,9 @@
 # ADT Backend
 
 FastAPI service for ADT public status, paper-simulation administration and the
-local Phase 2A/2B historical market-data foundation and resumable ingestion.
+local Phase 2A–2C historical market-data, resumable ingestion, deterministic
+derived datasets and snapshots. Phase 2D operational administration is
+formally approved but not yet implemented.
 Phase 1 uses Supabase Auth only as the identity provider; administrator
 authorization and application data come from PostgreSQL.
 
@@ -56,6 +58,13 @@ ADT_MARKET_INCREMENTAL_OVERLAP_CANDLES=2
 ADT_MARKET_JOB_LOCK_TIMEOUT=10
 ADT_MARKET_JOB_STALE_AFTER=3600
 ADT_MARKET_JOB_MAX_CHUNKS=10000
+ADT_MARKET_RESAMPLE_MAX_SOURCE_CANDLES=2000000
+ADT_MARKET_RESAMPLE_MAX_GROUPS=500000
+ADT_MARKET_RESAMPLE_GAP_POLICY=STRICT
+ADT_MARKET_QUALITY_MAX_ISSUES=1000
+ADT_MARKET_SNAPSHOT_MAX_PARTITIONS=1200
+ADT_MARKET_DERIVED_DIR=derived
+ADT_MARKET_MANIFEST_SCHEMA_VERSION=1
 ```
 
 Configuration failures list only missing or invalid variable names; supplied
@@ -143,8 +152,8 @@ substitute for this backend boundary.
 
 ## Market-data CLI
 
-Phases 2A and 2B store candles locally and do not add an HTTP route or worker. The
-commands are:
+The implemented Phases 2A–2C store market datasets locally and currently add
+no HTTP route or worker. The commands are:
 
 ```bash
 .venv/bin/python -m app.cli market-data instruments \
@@ -267,6 +276,45 @@ future backtest reader. They do not invoke Binance. Resampling defaults to
 closed aggregates. See [`docs/MARKET_DATA.md`](../../docs/MARKET_DATA.md) for
 the supported matrix, journal recovery, manifests, lineage and filesystem
 limitations.
+
+## Approved Phase 2D boundary
+
+Phase 2D will add authenticated operational administration of RAW market data.
+It is documented now but no API route, migration, worker command or frontend
+screen is implemented yet.
+
+The approved topology is one host, one persistent POSIX `ADT_DATA_DIR`, API and
+worker as separate processes sharing the exact same volume, and one active
+market-data worker per volume. PostgreSQL will own administrative intent,
+idempotency, claim/lease/heartbeat and sanitized visible state. Existing local
+Parquet, catalog, jobs, receipts, journals and `flock` remain authoritative for
+dataset contents and execution recovery.
+
+Reserved worker commands:
+
+```bash
+.venv/bin/python -m app.cli market-data worker run
+.venv/bin/python -m app.cli market-data worker run-once
+```
+
+The HTTP process will only validate, plan, submit and query operations; it will
+never execute a backfill through the request lifecycle or FastAPI
+`BackgroundTasks`. The worker will claim one operation at a time in a short
+PostgreSQL transaction and release that transaction before local locks,
+network, Parquet or `fsync`.
+
+The MVP is limited to RAW backfill planning/submission, RAW incremental update,
+RAW dataset inspection, read-only gaps/quality, operation progress and
+cooperative pause/resume/cancel. DERIVED materialization, snapshots, periodic
+scheduling, multiple hosts/workers, strategies, indicators and backtests
+remain outside Phase 2D.
+
+See the formal scope in
+[`docs/ROADMAP.md`](../../docs/ROADMAP.md#phase-2d-market-data-operational-administration--approved),
+the state machine in
+[`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md#operation-state-machine)
+and the accepted decision in
+[`ADR 0001`](../../docs/adr/0001-phase-2d-operational-market-data-control-plane.md).
 
 The container runs as the unprivileged `adt` user and its Docker healthcheck
 uses readiness. Distributed rate limiting and frontend CSP headers remain

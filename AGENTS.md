@@ -50,14 +50,22 @@ This file instructs AI assistants (like GitHub Copilot, Claude, or ChatGPT) on h
 
 ### Phases
 
-Current Phase: **0 (Foundation)**
+Current Phase: **2D (Market-data operational administration)**
 
-- ✅ Can work on: Basic API, UI, folder structure, logging, testing setup
-- ❌ Cannot work on: Supabase, strategies, backtesting, ML, live trading
+- ✅ Can work on: the approved Phase 2D administrative API, PostgreSQL
+  operational catalog, single-host worker, RAW synchronization administration,
+  minimal admin UI, recovery and tests
+- ❌ Cannot work on: strategies, indicators, backtesting, distributed
+  market-data storage, multi-host coordination, machine learning or live
+  trading
+
+Phase 2D must preserve the RAW, DERIVED and snapshot contracts delivered by
+Phases 2A–2C. Its normative scope and limitations are documented in
+[docs/ROADMAP.md](./docs/ROADMAP.md) and
+[docs/adr/0001-phase-2d-operational-market-data-control-plane.md](./docs/adr/0001-phase-2d-operational-market-data-control-plane.md).
 
 Check [docs/ROADMAP.md](./docs/ROADMAP.md) for phase definitions.
 
 ## Project Structure
 
 Quick reference:
-

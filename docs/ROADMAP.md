@@ -160,9 +160,12 @@ Telegram, machine learning and real-capital trading.
 
 ---
 
-## Phase 2: Market Data Collection
+## Phase 2: Market Data Collection 🚧 PHASE 2D PLANNED
 
 **Goal**: Fetch and store historical candlestick data.
+
+**Status**: Phases 2A–2C are implemented and operationally validated. Phase 2D
+is formally scoped and remains to be implemented before Phase 2 can close.
 
 ### Phase 2A: local historical-data foundation 🟡 IMPLEMENTED LOCALLY
 
@@ -231,6 +234,100 @@ lazy read-only interface for a future backtest engine.
 **Deferred**: the backtest engine itself, strategies, indicators, schedulers,
 distributed locks, non-crypto calendars and remote object-storage snapshots.
 
+### Phase 2D: market-data operational administration 🔵 APPROVED
+
+**Goal**: Allow authenticated administrators to plan, submit and monitor
+asynchronous RAW market-data synchronization while preserving the local
+durability and dataset contracts established in Phases 2A–2C.
+
+**Scope**:
+
+- authenticated administrative API;
+- PostgreSQL operational catalog for administrative intent and public job state;
+- one durable market-data worker, separate from the HTTP process;
+- RAW backfill planning and submission;
+- RAW incremental update submission;
+- RAW dataset listing and inspection;
+- read-only gap and quality inspection;
+- operation progress, result, pause, resume and cooperative cancellation;
+- minimal administrative frontend;
+- restart recovery, reconciliation, heartbeat and sanitized observability.
+
+**Approved topology**:
+
+- one operational host;
+- one persistent POSIX `ADT_DATA_DIR`;
+- API and worker as separate processes on the same host or exact same volume;
+- at most one active market-data worker per volume;
+- PostgreSQL coordinates queue, claim, lease, administrative state and
+  idempotency;
+- local Parquet, catalog, jobs, receipts, journals and `flock` remain
+  authoritative for dataset contents and execution durability.
+
+**Worker contract**:
+
+- claim with `FOR UPDATE SKIP LOCKED` or equivalent;
+- finish the claim transaction before network, local locks or filesystem work;
+- execute at most one operation at a time;
+- maintain a bounded lease and heartbeat;
+- observe pause and cancellation only at safe cooperative boundaries;
+- recover abandoned operations and reconcile PostgreSQL from durable local
+  state;
+- support permanent `run` and bounded `run-once` CLI modes;
+- shut down cleanly on `SIGTERM` and `SIGINT`.
+
+**MVP operations**:
+
+- [ ] Plan RAW backfill
+- [ ] Submit RAW backfill with explicit idempotency key
+- [ ] Submit RAW incremental update
+- [ ] List and inspect RAW datasets
+- [ ] Read RAW gaps and quality
+- [ ] List and inspect operations
+- [ ] Pause, resume and cancel cooperatively
+- [ ] Reconcile abandoned operations after restart
+- [ ] Expose a minimal administrator UI
+
+**Explicitly out of scope**:
+
+- DERIVED materialization and snapshot operations through the API;
+- periodic scheduling or automatic unsupervised submission;
+- PostgreSQL candle storage;
+- distributed storage or cross-host file coordination;
+- multiple active workers per volume;
+- strategies, indicators, rule engines and backtests;
+- non-crypto calendars, additional adapters and real-capital trading.
+
+**Retention**: Operations and events are retained for 30 days by policy. Phase
+2D does not implement automatic cleanup or a retention scheduler.
+
+**Completion criteria**:
+
+- [ ] A reviewed migration creates the operational catalog with RLS enabled and
+  no Data API access
+- [ ] Same idempotency key and payload return the same operation; divergent
+  payload returns a conflict
+- [ ] HTTP requests never execute long-running market-data work
+- [ ] API and worker have separate process lifecycles
+- [ ] No PostgreSQL transaction remains open during network, `flock`, Parquet or
+  `fsync`
+- [ ] Only one operation per dataset and one operation per worker execute at a
+  time
+- [ ] Pause and cancellation are observed only at documented safe boundaries
+- [ ] Crash recovery preserves committed chunks and never refetches a confirmed
+  receipt
+- [ ] A durable local commit is required before PostgreSQL reports `COMPLETED`
+- [ ] `COMMITTED` journal state remains successful across cleanup failure
+- [ ] CLI local workflows remain available without Supabase configuration
+- [ ] RAW, DERIVED and snapshot formats remain compatible
+- [ ] Administrative API, PostgreSQL, worker, frontend and recovery tests pass
+- [ ] Operational validation covers restart, reconciliation and clean shutdown
+
+**Architecture decision**:
+[`docs/adr/0001-phase-2d-operational-market-data-control-plane.md`](./adr/0001-phase-2d-operational-market-data-control-plane.md)
+
+**Status**: Scope and architecture approved; implementation has not started.
+
 **Deliverables**:
 - [x] Market data adapter interface
 - [x] Binance adapter (OHLCV data)
@@ -240,7 +337,7 @@ distributed locks, non-crypto calendars and remote object-storage snapshots.
 - [x] Multi-timeframe support (1m, 5m, 1h, 1d)
 - [x] Historical data sync job
 - [x] Data validation foundations
-- [ ] Admin interface to trigger sync
+- [ ] Admin interface to trigger sync (Phase 2D)
 
 **Dependencies**: Phase 1 complete  
 **Estimated Duration**: 2 weeks  

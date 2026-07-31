@@ -71,7 +71,7 @@ A disciplined, emotion-free automated trading robot for backtesting and paper tr
 
 ## Features by Phase
 
-### Phase 0: Foundation ✅ CURRENT
+### Phase 0: Foundation ✅ COMPLETE
 
 - API structure
 - Basic UI
@@ -85,12 +85,15 @@ A disciplined, emotion-free automated trading robot for backtesting and paper tr
 - Admin dashboard skeleton
 - Basic CRUD operations
 
-### Phase 2: Market Data Collection
+### Phase 2: Market Data Collection 🚧 CURRENT
 
-- Historical candle fetching (pseudocode)
+- Historical candle fetching through a public adapter
 - Parquet storage
 - Multi-symbol, multi-timeframe support
 - Data validation
+- Deterministic derived datasets and immutable local snapshots
+- Approved authenticated operational administration and durable single-host
+  worker (Phase 2D)
 
 ### Phase 3: Strategies & Indicators
 
@@ -204,4 +207,3 @@ trades
 ```
 
 ## API Surface (Phase 1+)
-

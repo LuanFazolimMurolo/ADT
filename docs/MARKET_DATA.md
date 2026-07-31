@@ -1,4 +1,4 @@
-# ADT Market Data — Phases 2A and 2B
+# ADT Market Data — Phases 2A–2D
 
 ## Scope and safety
 
@@ -11,6 +11,15 @@ Phase 2B composes those bounded transactions into resumable historical
 backfills, incremental updates and explicit gap repairs. It remains a local,
 operator-driven facility: there is no scheduler, daemon, HTTP administration
 route or frontend flow. Automated tests never access the network.
+
+Phase 2C adds local quality audits, deterministic derived datasets, lineage,
+immutable snapshots and a lazy reader. It remains offline and never calls the
+adapter.
+
+Phase 2D is approved but not yet implemented. It adds authenticated
+administration of RAW synchronization through PostgreSQL operational state and
+a separate durable worker. It does not expose DERIVED materialization or
+snapshots through the API and does not change any Phase 2A–2C storage format.
 
 ## Phase 2B planning and jobs
 
@@ -273,15 +282,18 @@ ADT_ALLOW_NETWORK_TESTS=true .venv/bin/pytest \
 It uses no credentials and requests at most two one-minute candles. Leave the
 environment variable unset for all routine validation.
 
-## Current limitations
+## Implemented limitations through Phase 2C
 
 - Binance Spot is the only implemented adapter.
-- No scheduler, distributed lock or permanent worker exists.
+- No scheduler or distributed lock exists.
+- The permanent single-volume worker belongs to the approved, not-yet-
+  implemented Phase 2D.
 - Month upserts are bounded, but a single very large monthly partition is still
   read for merge.
 - The local job catalog and file locks coordinate one host, not distributed
   workers or shared filesystems with uncertain advisory-lock semantics.
-- No administrator HTTP endpoint or frontend market-data screen exists.
+- The administrator HTTP endpoint and frontend market-data screen belong to the
+  approved, not-yet-implemented Phase 2D.
 
 ## Phase 2C quality and derived datasets
 
@@ -358,3 +370,131 @@ data or snapshots. Limits are controlled by the typed
 `ADT_MARKET_RESAMPLE_*`, `ADT_MARKET_QUALITY_MAX_ISSUES`,
 `ADT_MARKET_SNAPSHOT_MAX_PARTITIONS`, `ADT_MARKET_DERIVED_DIR` and
 `ADT_MARKET_MANIFEST_SCHEMA_VERSION` settings.
+
+## Phase 2D operational administration
+
+Phase 2D closes Phase 2 by allowing an authenticated administrator to plan,
+submit and observe RAW backfills and incremental updates. It introduces no
+strategy, indicator, backtest, scheduler, candle table or distributed storage.
+
+### Runtime topology
+
+The supported topology is one host, one persistent POSIX `ADT_DATA_DIR`, one
+API process group and exactly one active market-data worker per volume. API and
+worker are separate processes and must resolve the same data directory.
+
+```text
+Admin API → PostgreSQL operation
+                  ↓ claim + commit
+             durable worker
+                  ↓
+        existing local planner/executor
+                  ↓
+       flock → jobs/receipts/journals
+                  ↓
+          RAW Parquet + catalog
+```
+
+The worker commands reserved by the contract are:
+
+```bash
+python -m app.cli market-data worker run
+python -m app.cli market-data worker run-once
+```
+
+`run` continuously claims work until cooperative shutdown. `run-once` claims
+at most one eligible operation, reconciles/executes it and exits; it exists for
+tests and controlled manual operation. Both modes execute at most one operation
+at a time and handle `SIGTERM`/`SIGINT` without interrupting a local journal
+transaction.
+
+### Operational and local authority
+
+PostgreSQL owns administrative intent, idempotency, requester, visible state,
+worker claim, lease, heartbeat, pause/cancel requests and sanitized progress
+and result. Local storage owns candles, dataset catalog, effective plan,
+checkpoints, receipts, journals and commit recovery.
+
+A worker claim uses `FOR UPDATE SKIP LOCKED` or an equivalent atomic statement.
+The claim transaction ends before dataset `flock`, network access, Parquet
+processing or `fsync`. No candle or raw Binance payload is stored in
+PostgreSQL.
+
+A locally durable commit is required before reporting `COMPLETED`. A
+`COMMITTED` journal wins over later cleanup failure. Confirmed receipts advance
+reconciled progress without refetch. Expired `RUNNING` ownership enters
+`RECOVERING`; recovery validates local state before selecting a terminal or
+resumable state.
+
+### Dataset identifiers
+
+HTTP paths never use filesystem paths or raw partition locations. A RAW
+dataset has the canonical identity:
+
+```text
+binance:spot:BTC/USDT:1m
+```
+
+For a path segment, Phase 2D uses an opaque unpadded base64url encoding of the
+UTF-8 canonical identity. The backend decodes it, validates every closed enum,
+parses the canonical trading pair/timeframe and requires canonical re-encoding
+before lookup. Clients may display the canonical identity returned in JSON but
+cannot submit local paths, filenames or encoded arbitrary path material.
+
+### API contract
+
+The approved administrative surface is:
+
+```text
+POST /api/v1/admin/market-data/backfills/plan
+POST /api/v1/admin/market-data/operations
+
+GET /api/v1/admin/market-data/operations
+GET /api/v1/admin/market-data/operations/{operation_id}
+
+POST /api/v1/admin/market-data/operations/{operation_id}/pause
+POST /api/v1/admin/market-data/operations/{operation_id}/resume
+POST /api/v1/admin/market-data/operations/{operation_id}/cancel
+
+GET /api/v1/admin/market-data/datasets
+GET /api/v1/admin/market-data/datasets/{dataset_id}
+GET /api/v1/admin/market-data/datasets/{dataset_id}/quality
+GET /api/v1/admin/market-data/datasets/{dataset_id}/gaps
+```
+
+Planning, dataset inspection, gaps and quality are read-only. Submission
+requires an explicit non-sensitive idempotency key and explicit confirmation
+in the frontend. Same key and canonical payload return the same operation;
+same key with a different operation type, identity, interval or plan checksum
+returns a conflict.
+
+All routes require a valid Supabase JWT and current membership in
+`public.app_admins`. The API applies configured candle, chunk and interval
+limits before creating an operation. The only authorized remote activity is
+public Binance market-data access without credentials or trading endpoints.
+
+### Cooperative state machine
+
+The states are `PENDING`, `CLAIMED`, `RUNNING`, `PAUSE_REQUESTED`, `PAUSED`,
+`CANCEL_REQUESTED`, `CANCELLED`, `COMPLETED`, `FAILED` and `RECOVERING`.
+The normative transition matrix and safe observation boundaries are defined in
+[`docs/ARCHITECTURE.md`](./ARCHITECTURE.md#operation-state-machine).
+
+Pause and cancel are observed before execution, between chunks, before a new
+network request and after a local commit. Neither request interrupts an active
+Parquet/catalog transaction. Resume returns a paused operation to `PENDING`
+for a new claim.
+
+### Frontend and retention
+
+The minimal administrator UI lists RAW datasets, requests a bounded plan,
+displays estimated candles/chunks/requests, confirms submission, polls
+sanitized progress and offers valid pause/resume/cancel actions. It never
+accepts filesystem paths or manual job/manifest editing.
+
+Operations and events have a 30-day retention policy. No cleanup scheduler or
+automatic deletion is implemented in Phase 2D; retention enforcement is a
+future audited operation.
+
+The complete rationale and accepted limitations are recorded in
+[`docs/adr/0001-phase-2d-operational-market-data-control-plane.md`](./adr/0001-phase-2d-operational-market-data-control-plane.md).

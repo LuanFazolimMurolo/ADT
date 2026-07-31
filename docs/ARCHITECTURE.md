@@ -298,3 +298,180 @@ versioned; Phase 2C never moves existing files silently.
 Snapshots use same-filesystem hard links so later atomic replacement of a
 derived partition cannot change the old inode. This is a local-filesystem
 contract, not a distributed/object-store snapshot protocol.
+
+## Phase 2D operational administration boundary
+
+Phase 2D adds an authenticated control plane around RAW operations without
+moving candle or execution durability into PostgreSQL. The HTTP process never
+executes market-data jobs:
+
+```text
+Administrator browser
+    → Supabase JWT
+    → FastAPI administrator dependency
+    → market-data application service
+    → PostgreSQL operational catalog
+          │
+          │ short claim transaction
+          ▼
+    separate market-data worker
+    → existing planner and BackfillExecutor
+    → dataset flock
+    → local jobs.json, receipts and transaction journals
+    → RAW Parquet + catalog.json
+          │
+          └→ sanitized progress/result reconciliation → PostgreSQL
+```
+
+The approved deployment topology is one operational host and one persistent
+POSIX `ADT_DATA_DIR`. API and worker are separate processes, but both must see
+the exact same volume. Only one market-data worker may be active for a volume.
+PostgreSQL claim semantics prevent duplicate queue ownership, while the
+existing dataset `flock` remains the authority that prevents concurrent local
+writers. Neither mechanism is presented as cross-host filesystem coordination.
+
+### Source-of-truth split
+
+PostgreSQL is authoritative for administrative intent, submission
+idempotency, requester identity, externally visible operation state, worker
+claim, lease, heartbeat, cooperative control requests, sanitized progress and
+sanitized results.
+
+Local storage is authoritative for candles, dataset metadata, the effective
+plan, chunk checkpoints, receipts, journals, Parquet commits and execution
+recovery. PostgreSQL stores no candle payload and does not replace
+`catalog.json`, `jobs.json`, receipts, journals or `flock`.
+
+The separation is deliberate. An operation can have stale PostgreSQL progress
+after a crash while already having a durable local chunk. Reconciliation must
+advance PostgreSQL from the verified local state; it must never discard that
+state or issue a new source request for a confirmed receipt.
+
+### Submission and idempotency
+
+Every mutating submission requires an explicit, non-sensitive idempotency key.
+The canonical operation type, exchange, market type, symbol, timeframe,
+half-open UTC interval and plan checksum form the payload identity. Repeating
+the same key and identity returns the existing operation. Reusing the key with
+a different identity is a conflict.
+
+The API validates closed enums and configured candle/chunk/range limits before
+inserting an operation. Clients cannot submit paths, native exchange URLs,
+manifests or job records. Planning is read-only. Submission persists intent in
+a short PostgreSQL transaction and returns without waiting for Binance,
+filesystem locks or Parquet.
+
+### Claim and execution
+
+The worker claims one eligible operation with `FOR UPDATE SKIP LOCKED` or an
+equivalent atomic statement. Claim records bounded lease ownership and
+heartbeat, then commits before the worker:
+
+1. reads or recovers local execution state;
+2. acquires a dataset lease;
+3. performs any public Binance request;
+4. processes candles;
+5. writes Parquet, checkpoints or journals; or
+6. performs `fsync`.
+
+The initial worker concurrency is exactly one operation. A permanent `run`
+mode and a bounded `run-once` mode share the same execution and recovery path.
+`SIGTERM` and `SIGINT` stop claiming work, allow the current critical local
+transaction to reach a durable boundary, publish the latest safe state and
+close database/network resources.
+
+No PostgreSQL transaction remains open while the worker waits for a local lock,
+network response or filesystem durability. The established local order remains
+dataset lock, catalog lock, then files. Phase 2D does not introduce a lock
+order that starts in PostgreSQL and remains held across that sequence.
+
+### Operation state machine
+
+The persisted states are:
+
+- `PENDING`: durable administrative intent, not owned by a worker;
+- `CLAIMED`: worker lease acquired, local reconciliation not yet complete;
+- `RUNNING`: local state reconciled and execution active;
+- `PAUSE_REQUESTED`: an administrator requested a cooperative pause;
+- `PAUSED`: execution stopped at a safe boundary and may be resumed;
+- `CANCEL_REQUESTED`: an administrator requested cooperative cancellation;
+- `CANCELLED`: execution stopped at a safe boundary and will not resume;
+- `COMPLETED`: local result is durably committed and reconciled;
+- `FAILED`: terminal sanitized failure;
+- `RECOVERING`: an expired/abandoned lease is being reconciled with local state.
+
+The allowed transition matrix is:
+
+| Current state | Allowed next states |
+|---|---|
+| `PENDING` | `CLAIMED`, `PAUSE_REQUESTED`, `CANCEL_REQUESTED` |
+| `CLAIMED` | `RUNNING`, `RECOVERING`, `PAUSE_REQUESTED`, `CANCEL_REQUESTED`, `FAILED` |
+| `RUNNING` | `PAUSE_REQUESTED`, `CANCEL_REQUESTED`, `COMPLETED`, `FAILED`, `RECOVERING` |
+| `PAUSE_REQUESTED` | `PAUSED`, `COMPLETED`, `FAILED`, `RECOVERING` |
+| `PAUSED` | `PENDING`, `CANCEL_REQUESTED` |
+| `CANCEL_REQUESTED` | `CANCELLED`, `COMPLETED`, `FAILED`, `RECOVERING` |
+| `RECOVERING` | `RUNNING`, `PAUSED`, `CANCELLED`, `COMPLETED`, `FAILED` |
+| `CANCELLED` | none |
+| `COMPLETED` | none |
+| `FAILED` | none |
+
+Resume is the `PAUSED → PENDING` transition and permits a fresh claim. Pause
+and cancel requests never directly assert that local execution stopped. A
+request racing with a durable final commit may transition to `COMPLETED`,
+because a committed dataset result cannot be undone by a late control request.
+Terminal states are immutable.
+
+The worker observes control requests before execution, between chunks, before
+each new source request and after every local commit. It never interrupts a
+Parquet/catalog journal transaction. The transition implementation must be
+atomic and tested in PostgreSQL; application validation is additional defense,
+not its sole authority.
+
+### Reconciliation and recovery
+
+An expired lease on `CLAIMED`, `RUNNING`, `PAUSE_REQUESTED` or
+`CANCEL_REQUESTED` is moved to `RECOVERING` before reassignment. Recovery first
+validates local journals and checkpoints under the existing dataset lease:
+
+- a durable local commit is required before publishing `COMPLETED`;
+- a `COMMITTED` journal remains successful if cleanup later fails;
+- a confirmed chunk receipt advances progress without another fetch;
+- a `PREPARED` journal follows the existing rollback rules;
+- PostgreSQL progress behind verified local state is advanced;
+- an unresolved contradiction becomes `FAILED` with a stable sanitized code;
+- diagnostic artifacts are retained unless existing validated recovery rules
+  explicitly identify them as safe cleanup.
+
+Recovery is idempotent. Repeating it after any interruption must converge to
+the same state without duplicating a request, chunk or local commit.
+
+### API and frontend boundary
+
+Phase 2D reserves authenticated administrator routes for planning/submitting
+RAW operations, inspecting operations/datasets and requesting cooperative
+lifecycle changes. Dataset HTTP identifiers are canonical opaque encodings of
+validated identity; they are never filesystem paths.
+
+The minimal frontend requests a plan, displays bounded estimates, requires
+explicit confirmation, submits with an idempotency key and polls sanitized
+operation state. It never calculates plans, edits paths/manifests or talks
+directly to PostgreSQL, Binance or local storage.
+
+All routes require both a valid Supabase JWT and membership in
+`public.app_admins`. The operational PostgreSQL tables have RLS enabled and no
+Data API privileges. Only the backend's direct PostgreSQL connection may write
+them. Logs contain operation/request IDs, canonical dataset identity, status,
+bounded counts and stable error codes, never secrets, candle rows, payloads or
+connection details.
+
+### Deliberate limits
+
+Phase 2D covers RAW backfill and incremental synchronization only. DERIVED
+materialization, snapshots, periodic scheduling, multiple workers per volume,
+distributed filesystems, cross-host coordination, non-crypto calendars,
+strategies, indicators and backtests remain outside this boundary.
+
+Operational rows and events have a documented 30-day retention target, but
+Phase 2D performs no automatic cleanup. The architecture decision is recorded
+in
+[`docs/adr/0001-phase-2d-operational-market-data-control-plane.md`](./adr/0001-phase-2d-operational-market-data-control-plane.md).
