@@ -21,7 +21,7 @@ from app.api.routes import (
     system,
 )
 from app.auth import SupabaseJWTVerifier
-from app.core.config import Settings, settings
+from app.core.config import Settings, get_settings
 from app.core.logging import setup_logging
 from app.database import Database
 from app.middleware import RequestContextMiddleware
@@ -74,9 +74,10 @@ def _install_openapi_contract(application: FastAPI) -> None:
     application.openapi = custom_openapi  # type: ignore[method-assign]
 
 
-def create_app(app_settings: Settings = settings) -> FastAPI:
+def create_app(app_settings: Settings | None = None) -> FastAPI:
     """Create the application and bind resources to its lifespan."""
 
+    app_settings = app_settings or get_settings()
     setup_logging(app_settings)
 
     @asynccontextmanager
@@ -146,10 +147,11 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
 
+    runtime_settings: Settings = app.state.settings
     uvicorn.run(
         app,
-        host=settings.api_host,
-        port=settings.api_port,
-        log_level=settings.log_level.lower(),
+        host=runtime_settings.api_host,
+        port=runtime_settings.api_port,
+        log_level=runtime_settings.log_level.lower(),
         log_config=None,
     )

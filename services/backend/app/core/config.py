@@ -72,8 +72,8 @@ class ConfigurationError(RuntimeError):
     """A safe configuration-loading failure suitable for startup output."""
 
 
-class Settings(BaseSettings):
-    """Backend settings loaded from environment variables."""
+class MarketDataSettings(BaseSettings):
+    """Local market-data settings with no Supabase dependency."""
 
     model_config = SettingsConfigDict(
         env_prefix="ADT_",
@@ -83,21 +83,6 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    supabase_url: AnyHttpUrl = Field(validation_alias="SUPABASE_URL")
-    supabase_publishable_key: SecretStr = Field(validation_alias="SUPABASE_PUBLISHABLE_KEY")
-    supabase_database_url: SecretStr = Field(validation_alias="SUPABASE_DATABASE_URL")
-
-    environment: Environment = "development"
-    log_level: LogLevel = "INFO"
-    cors_origins: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: [
-            "http://localhost:5173",
-            "http://localhost:3000",
-        ]
-    )
-    api_host: str = "0.0.0.0"
-    api_port: int = Field(default=8000, ge=1, le=65535)
-    api_title: str = "ADT API"
     data_dir: Path = Path("./data")
     market_http_timeout: float = Field(default=10.0, ge=1.0, le=60.0)
     market_http_max_connections: int = Field(default=4, ge=1, le=32)
@@ -123,6 +108,42 @@ class Settings(BaseSettings):
     market_snapshot_max_partitions: int = Field(default=1_200, ge=1, le=10_000)
     market_derived_dir: Path = Path("derived")
     market_manifest_schema_version: int = Field(default=1, ge=1, le=100)
+
+    @field_validator("market_user_agent")
+    @classmethod
+    def validate_market_user_agent(cls, value: str) -> str:
+        """Require an identifiable single-line public API user agent."""
+        normalized = value.strip()
+        if not normalized or "\n" in normalized or "\r" in normalized:
+            raise ValueError("must be a nonblank single-line identifier")
+        return normalized
+
+    @field_validator("market_derived_dir")
+    @classmethod
+    def validate_market_derived_dir(cls, value: Path) -> Path:
+        if value.is_absolute() or ".." in value.parts or not value.parts:
+            raise ValueError("must be a safe relative path")
+        return value
+
+
+class Settings(MarketDataSettings):
+    """Complete backend settings loaded only by Supabase-dependent commands."""
+
+    supabase_url: AnyHttpUrl = Field(validation_alias="SUPABASE_URL")
+    supabase_publishable_key: SecretStr = Field(validation_alias="SUPABASE_PUBLISHABLE_KEY")
+    supabase_database_url: SecretStr = Field(validation_alias="SUPABASE_DATABASE_URL")
+
+    environment: Environment = "development"
+    log_level: LogLevel = "INFO"
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://localhost:3000",
+        ]
+    )
+    api_host: str = "0.0.0.0"
+    api_port: int = Field(default=8000, ge=1, le=65535)
+    api_title: str = "ADT API"
 
     @field_validator("supabase_url")
     @classmethod
@@ -226,22 +247,6 @@ class Settings(BaseSettings):
             raise ValueError("must not be blank")
         return normalized_value
 
-    @field_validator("market_user_agent")
-    @classmethod
-    def validate_market_user_agent(cls, value: str) -> str:
-        """Require an identifiable single-line public API user agent."""
-        normalized = value.strip()
-        if not normalized or "\n" in normalized or "\r" in normalized:
-            raise ValueError("must be a nonblank single-line identifier")
-        return normalized
-
-    @field_validator("market_derived_dir")
-    @classmethod
-    def validate_market_derived_dir(cls, value: Path) -> Path:
-        if value.is_absolute() or ".." in value.parts or not value.parts:
-            raise ValueError("must be a safe relative path")
-        return value
-
     @model_validator(mode="after")
     def validate_production_origins(self) -> Settings:
         """Production accepts HTTPS origins only and never local browser hosts."""
@@ -324,4 +329,17 @@ def get_settings() -> Settings:
         raise ConfigurationError("; ".join(messages)) from None
 
 
-settings = get_settings()
+def get_market_data_settings() -> MarketDataSettings:
+    """Load only local market-data settings, without requiring Supabase."""
+    try:
+        return MarketDataSettings()
+    except ValidationError as error:
+        errors = error.errors(
+            include_url=False,
+            include_context=False,
+            include_input=False,
+        )
+        invalid_variables = sorted({_environment_name_from_error(item) for item in errors})
+        raise ConfigurationError(
+            "Invalid market-data configuration: " + ", ".join(invalid_variables)
+        ) from None

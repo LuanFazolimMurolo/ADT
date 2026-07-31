@@ -991,6 +991,46 @@ def test_phase2c_cli_workflow_is_local_and_safe(tmp_path: Path) -> None:
         )
         == EXIT_OK
     )
+    raw_quality = json.loads(quality_output.getvalue())
+    assert raw_quality["baseline"] is not None
+    raw_baseline = settings.data_dir / "market" / raw_quality["baseline"]
+    assert raw_baseline.is_file()
+
+    before_derived_quality = set((settings.data_dir / "market" / "quality-baselines").glob("*"))
+    derived_quality_output = StringIO()
+    assert (
+        main(
+            [
+                "market-data",
+                "quality",
+                "scan",
+                "--symbol",
+                "BTC/USDT",
+                "--timeframe",
+                "5m",
+                "--dataset-kind",
+                "DERIVED",
+                "--source-timeframe",
+                "1m",
+                "--mode",
+                "FULL",
+                "--scope",
+                "FULL_DATASET",
+                "--start",
+                "2026-01-01T00:00:00Z",
+                "--end",
+                "2026-01-01T00:05:00Z",
+            ],
+            app_settings=settings,
+            transport=transport,
+            stdout=derived_quality_output,
+        )
+        == EXIT_OK
+    )
+    assert json.loads(derived_quality_output.getvalue())["baseline"] is None
+    assert set((settings.data_dir / "market" / "quality-baselines").glob("*")) == (
+        before_derived_quality
+    )
 
     snapshot_output = StringIO()
     assert (

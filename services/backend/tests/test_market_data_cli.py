@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from io import StringIO
 from pathlib import Path
 
@@ -30,6 +33,88 @@ def _settings(tmp_path: Path, *, max_fetch_candles: int = 10_000) -> Settings:
         market_http_retries=0,
         market_max_fetch_candles=max_fetch_candles,
     )
+
+
+def _without_supabase_environment(tmp_path: Path) -> dict[str, str]:
+    environment = dict(os.environ)
+    for name in (
+        "SUPABASE_URL",
+        "SUPABASE_PUBLISHABLE_KEY",
+        "SUPABASE_DATABASE_URL",
+    ):
+        environment.pop(name, None)
+    environment["ADT_DATA_DIR"] = str(tmp_path)
+    return environment
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    (
+        ("--help",),
+        ("market-data", "--help"),
+    ),
+)
+def test_cli_help_does_not_require_supabase(
+    tmp_path: Path,
+    arguments: tuple[str, ...],
+) -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "app.cli", *arguments],
+        cwd=Path(__file__).parents[1],
+        env=_without_supabase_environment(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "SUPABASE_" not in result.stderr
+    assert "market-data" in result.stdout
+
+
+def test_local_market_data_command_does_not_require_supabase(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "app.cli",
+            "market-data",
+            "backfill",
+            "plan",
+            "--symbol",
+            "BTC/USDT",
+            "--timeframe",
+            "1h",
+            "--start",
+            "2026-01-01T00:00:00Z",
+            "--end",
+            "2026-01-01T01:00:00Z",
+        ],
+        cwd=Path(__file__).parents[1],
+        env=_without_supabase_environment(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert json.loads(result.stdout)["expected_candles"] == 1
+    assert "SUPABASE_" not in result.stderr
+
+
+def test_api_runtime_still_requires_supabase_configuration(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", "import app.main"],
+        cwd=Path(__file__).parents[1],
+        env=_without_supabase_environment(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Missing required environment variables" in result.stderr
+    assert "SUPABASE_URL" in result.stderr
 
 
 def test_cli_fetch_dry_run_uses_mock_transport_and_writes_nothing(tmp_path: Path) -> None:
