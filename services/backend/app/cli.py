@@ -13,7 +13,7 @@ from typing import TextIO
 
 import httpx
 
-from app.core.config import Settings, settings
+from app.core.config import MarketDataSettings, get_market_data_settings
 from app.domain.errors import DomainError
 from app.market_data.advanced_quality import (
     AdvancedMarketDataQualityScanner,
@@ -154,7 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(
     argv: list[str] | None = None,
     *,
-    app_settings: Settings = settings,
+    app_settings: MarketDataSettings | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
@@ -162,10 +162,11 @@ def main(
     """Parse, execute and return a predictable process exit code."""
     args = build_parser().parse_args(argv)
     try:
+        resolved_settings = app_settings or get_market_data_settings()
         return asyncio.run(
             _run_market_command(
                 args,
-                app_settings=app_settings,
+                app_settings=resolved_settings,
                 transport=transport,
                 stdout=stdout,
             )
@@ -189,7 +190,7 @@ def main(
 async def _run_market_command(
     args: argparse.Namespace,
     *,
-    app_settings: Settings,
+    app_settings: MarketDataSettings,
     transport: httpx.AsyncBaseTransport | None,
     stdout: TextIO,
 ) -> int:
@@ -426,7 +427,11 @@ async def _run_market_command(
                     "checksum": scan.logical_checksum,
                     "scope": scan.effective_scope.value,
                     "baseline_used": scan.baseline_used,
-                    "baseline": baseline_path.relative_to(store.root).as_posix(),
+                    "baseline": (
+                        baseline_path.relative_to(store.root).as_posix()
+                        if scan.baseline is not None
+                        else None
+                    ),
                     "issues": [
                         {
                             "code": issue.code,

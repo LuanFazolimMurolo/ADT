@@ -4,7 +4,7 @@ import sys
 from datetime import UTC, datetime
 from typing import Final
 
-from app.core.config import Settings, settings
+from app.core.config import Settings
 
 _STRUCTURED_FIELDS: Final[tuple[str, ...]] = (
     "request_id",
@@ -38,7 +38,7 @@ class JsonLogFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
-def setup_logging(app_settings: Settings = settings) -> None:
+def setup_logging(app_settings: Settings) -> None:
     """Configure structured logging."""
     log_level = getattr(logging, app_settings.log_level.upper(), logging.INFO)
     handler = logging.StreamHandler(sys.stdout)
