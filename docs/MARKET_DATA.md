@@ -282,3 +282,79 @@ environment variable unset for all routine validation.
 - The local job catalog and file locks coordinate one host, not distributed
   workers or shared filesystems with uncertain advisory-lock semantics.
 - No administrator HTTP endpoint or frontend market-data screen exists.
+
+## Phase 2C quality and derived datasets
+
+The advanced auditor has two deterministic modes. `FULL` reads one monthly
+partition at a time, recalculates coverage and logical content checksum, and
+compares bounds/count/version with the catalog. `INCREMENTAL` uses previous
+file checksums and scans only changed partitions; `mtime` is never an
+authority. Findings are bounded, sorted and classified as structure, content,
+coverage, catalog, lineage or abandoned operational artifact.
+
+Resampling uses `Decimal` exclusively. For every complete target window,
+`open` is the first open, `high`/`low` are extrema, `close` is the final close,
+and volumes/trade counts are exact sums when the optional field exists on every
+component. The continuous crypto calendar is anchored in UTC, with `1d`
+starting at midnight. Only the reviewed source/target matrix is accepted.
+
+`STRICT` rejects any incomplete group. `SKIP_INCOMPLETE` records and omits it.
+`MARK_INCOMPLETE` currently has the same persistence behavior as skip because
+the canonical candle has no incomplete marker. No policy fabricates candles,
+and open aggregates are never persisted.
+
+Derived data uses:
+
+```text
+market/derived/exchange=<exchange>/market=<market>/
+  base=<base>/quote=<quote>/source_timeframe=<source>/
+  timeframe=<target>/policy=<policy>/year=YYYY/month=MM/candles.parquet
+```
+
+Each dataset has an atomically replaced, checksummed `manifest.json` containing
+identity, source version, source partition checksums, algorithm version,
+coverage, target partition checksums and logical version. A RAW version or
+source-file checksum change makes verification return `STALE`; target damage
+makes it `INVALID`. Incremental materialization rebuilds the bounded span of
+changed RAW months and merges unaffected derived rows. An unchanged
+incremental run is a logical and physical no-op.
+
+Derived promotion uses a separate persistent PREPARED/COMMITTED journal.
+Recovery is idempotent: PREPARED restores every previous partition and
+manifest, while COMMITTED retains the new dataset and removes only temporary
+files/backups.
+
+Snapshots are immutable local hard-link trees below `market/snapshots`. Their
+logical ID is deterministic from dataset key/version/checksum/range, making
+creation idempotent. The reader verifies snapshot and manifest checksums, reads
+one partition at a time, enforces strict ordering, returns half-open ranges and
+never exposes open candles. Hard links require a single trustworthy local
+filesystem; remote/object storage will need a different immutable-reference
+implementation.
+
+### Phase 2C CLI
+
+```bash
+python -m app.cli market-data quality scan \
+  --symbol BTC/USDT --timeframe 1m --mode FULL
+python -m app.cli market-data resample plan \
+  --symbol BTC/USDT --source-timeframe 1m --target-timeframe 1h \
+  --start 2026-01-01T00:00:00Z --end 2026-02-01T00:00:00Z
+python -m app.cli market-data resample run \
+  --symbol BTC/USDT --source-timeframe 1m --target-timeframe 1h \
+  --start 2026-01-01T00:00:00Z --end 2026-02-01T00:00:00Z --yes
+python -m app.cli market-data resample verify \
+  --symbol BTC/USDT --source-timeframe 1m --target-timeframe 1h \
+  --start 2026-01-01T00:00:00Z --end 2026-02-01T00:00:00Z
+python -m app.cli market-data snapshot create \
+  --symbol BTC/USDT --source-timeframe 1m --target-timeframe 1h \
+  --start 2026-01-01T00:00:00Z --end 2026-02-01T00:00:00Z
+python -m app.cli market-data snapshot inspect --snapshot-id UUID
+python -m app.cli market-data snapshot verify --snapshot-id UUID
+```
+
+All Phase 2C commands are local. Plans and `--dry-run` do not publish derived
+data or snapshots. Limits are controlled by the typed
+`ADT_MARKET_RESAMPLE_*`, `ADT_MARKET_QUALITY_MAX_ISSUES`,
+`ADT_MARKET_SNAPSHOT_MAX_PARTITIONS`, `ADT_MARKET_DERIVED_DIR` and
+`ADT_MARKET_MANIFEST_SCHEMA_VERSION` settings.

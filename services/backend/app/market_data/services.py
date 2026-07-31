@@ -82,6 +82,11 @@ class HistoricalMarketDataService:
             stale_after_seconds=3_600,
         )
 
+    @property
+    def catalog(self) -> JsonMarketDataCatalog:
+        """Expose the local catalog to read-only Phase 2C composition."""
+        return self._catalog
+
     async def ingest(
         self,
         pair: TradingPair,

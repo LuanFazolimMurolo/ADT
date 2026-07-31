@@ -7,7 +7,8 @@ import json
 import math
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -112,6 +113,16 @@ class DatasetLockManager:
 
     def validate(self, lease: DatasetLease, dataset_key: str) -> None:
         lease.validate(self._root, dataset_key)
+
+    @contextmanager
+    def acquire_many(self, dataset_keys: tuple[str, ...]) -> Iterator[tuple[DatasetLease, ...]]:
+        """Acquire unique dataset locks in canonical order to prevent deadlocks."""
+        ordered = tuple(sorted(set(dataset_keys)))
+        if not ordered:
+            raise MarketDataInconsistencyError("Ao menos um dataset deve ser bloqueado.")
+        with ExitStack() as stack:
+            leases = tuple(stack.enter_context(self.acquire(key)) for key in ordered)
+            yield leases
 
 
 def _inspect_lock_metadata(raw: str, stale_after: float, now: datetime) -> None:

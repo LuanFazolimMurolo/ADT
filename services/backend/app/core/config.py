@@ -58,6 +58,13 @@ _FIELD_ENVIRONMENT_NAMES = {
     "market_job_lock_timeout": "ADT_MARKET_JOB_LOCK_TIMEOUT",
     "market_job_stale_after": "ADT_MARKET_JOB_STALE_AFTER",
     "market_job_max_chunks": "ADT_MARKET_JOB_MAX_CHUNKS",
+    "market_resample_max_source_candles": "ADT_MARKET_RESAMPLE_MAX_SOURCE_CANDLES",
+    "market_resample_max_groups": "ADT_MARKET_RESAMPLE_MAX_GROUPS",
+    "market_resample_gap_policy": "ADT_MARKET_RESAMPLE_GAP_POLICY",
+    "market_quality_max_issues": "ADT_MARKET_QUALITY_MAX_ISSUES",
+    "market_snapshot_max_partitions": "ADT_MARKET_SNAPSHOT_MAX_PARTITIONS",
+    "market_derived_dir": "ADT_MARKET_DERIVED_DIR",
+    "market_manifest_schema_version": "ADT_MARKET_MANIFEST_SCHEMA_VERSION",
 }
 
 
@@ -109,6 +116,13 @@ class Settings(BaseSettings):
     market_job_lock_timeout: float = Field(default=10.0, ge=0.0, le=300.0)
     market_job_stale_after: float = Field(default=3_600.0, ge=1.0, le=604_800.0)
     market_job_max_chunks: int = Field(default=10_000, ge=1, le=100_000)
+    market_resample_max_source_candles: int = Field(default=2_000_000, ge=1, le=10_000_000)
+    market_resample_max_groups: int = Field(default=500_000, ge=1, le=2_000_000)
+    market_resample_gap_policy: Literal["STRICT", "SKIP_INCOMPLETE", "MARK_INCOMPLETE"] = "STRICT"
+    market_quality_max_issues: int = Field(default=1_000, ge=1, le=100_000)
+    market_snapshot_max_partitions: int = Field(default=1_200, ge=1, le=10_000)
+    market_derived_dir: Path = Path("derived")
+    market_manifest_schema_version: int = Field(default=1, ge=1, le=100)
 
     @field_validator("supabase_url")
     @classmethod
@@ -220,6 +234,13 @@ class Settings(BaseSettings):
         if not normalized or "\n" in normalized or "\r" in normalized:
             raise ValueError("must be a nonblank single-line identifier")
         return normalized
+
+    @field_validator("market_derived_dir")
+    @classmethod
+    def validate_market_derived_dir(cls, value: Path) -> Path:
+        if value.is_absolute() or ".." in value.parts or not value.parts:
+            raise ValueError("must be a safe relative path")
+        return value
 
     @model_validator(mode="after")
     def validate_production_origins(self) -> Settings:

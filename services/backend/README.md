@@ -259,6 +259,15 @@ The administrator bootstrap has separate operational instructions in
 [`docs/SUPABASE_SETUP.md`](../../docs/SUPABASE_SETUP.md). Running tests does not
 execute `scripts/bootstrap_admin.py`.
 
+Phase 2C adds local-only `market-data quality`, `market-data resample` and
+`market-data snapshot` command groups. They audit existing Parquet, build
+separate deterministic derived datasets, and publish immutable snapshots for a
+future backtest reader. They do not invoke Binance. Resampling defaults to
+`STRICT` gaps, uses the continuous UTC 24/7 calendar and persists only complete
+closed aggregates. See [`docs/MARKET_DATA.md`](../../docs/MARKET_DATA.md) for
+the supported matrix, journal recovery, manifests, lineage and filesystem
+limitations.
+
 The container runs as the unprivileged `adt` user and its Docker healthcheck
 uses readiness. Distributed rate limiting and frontend CSP headers remain
 deployment-edge responsibilities; see the Phase 1 homologation checklist.

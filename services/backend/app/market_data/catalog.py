@@ -145,6 +145,10 @@ class MarketDataCatalog(Protocol):
         self, key: str, *, lease: CatalogLease | None = None
     ) -> DatasetMetadata | None: ...
 
+    def list_chunk_receipts(
+        self, *, lease: CatalogLease | None = None
+    ) -> tuple[ChunkCommitReceipt, ...]: ...
+
     def prepare_completion(
         self,
         run: IngestionRunRecord,
@@ -473,6 +477,25 @@ class JsonMarketDataCatalog:
             return ChunkCommitReceipt(**raw)
         except TypeError:
             raise MarketDataStorageError("O recibo persistido é inválido.") from None
+
+    def list_chunk_receipts(
+        self,
+        *,
+        lease: CatalogLease | None = None,
+    ) -> tuple[ChunkCommitReceipt, ...]:
+        if lease is None:
+            with self.acquire_lease() as acquired:
+                return self.list_chunk_receipts(lease=acquired)
+        self.validate_lease(lease)
+        receipts: list[ChunkCommitReceipt] = []
+        for raw in self._load()["receipts"].values():
+            if not isinstance(raw, dict):
+                raise MarketDataStorageError("O recibo persistido é inválido.")
+            try:
+                receipts.append(ChunkCommitReceipt(**raw))
+            except TypeError:
+                raise MarketDataStorageError("O recibo persistido é inválido.") from None
+        return tuple(sorted(receipts, key=lambda item: (item.job_id, item.chunk_index)))
 
     def acquire_lease(self) -> CatalogLease:
         self._root.mkdir(parents=True, exist_ok=True)

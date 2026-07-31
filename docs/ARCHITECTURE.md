@@ -267,3 +267,34 @@ executor validates the repaired logical interval. The dataset version hashes
 the complete canonical logical content, so it does not depend on chunk order.
 This layer has no route, scheduler, permanent service, PostgreSQL migration or
 frontend dependency.
+
+## Phase 2C derived-dataset boundary
+
+Phase 2C is an offline layer above persisted RAW Parquet. It never calls an
+adapter and never modifies RAW:
+
+```text
+RAW Parquet + catalog version
+    → streaming quality scan
+    → continuous UTC calendar + deterministic Decimal resampler
+    → PREPARED/COMMITTED derived journal
+    → derived Parquet partitions + checksummed lineage manifest
+    → immutable hard-link snapshot
+    → lazy MarketDatasetReader
+```
+
+Dataset locks are always acquired by sorted canonical key. Operations needing
+both source and target acquire RAW and DERIVED together; catalog access remains
+inside that boundary. Snapshot publication additionally uses a canonical
+snapshot key. Files, manifest and journal are promoted only after durable
+temporary writes. PREPARED recovery rolls every target back; COMMITTED recovery
+keeps promoted targets and only removes backups.
+
+The current RAW layout remains at its Phase 2A path for compatibility. Derived
+data is isolated below `market/derived`, and snapshots below
+`market/snapshots`. A later RAW `market/raw` migration must be explicit and
+versioned; Phase 2C never moves existing files silently.
+
+Snapshots use same-filesystem hard links so later atomic replacement of a
+derived partition cannot change the old inode. This is a local-filesystem
+contract, not a distributed/object-store snapshot protocol.

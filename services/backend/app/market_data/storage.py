@@ -399,6 +399,50 @@ class ParquetCandleStore:
         safe_path = ensure_safe_path(self._root, path)
         return safe_path.is_file() and pq.ParquetFile(safe_path).schema_arrow.equals(PARQUET_SCHEMA)
 
+    def partition_paths(
+        self,
+        exchange: Exchange,
+        market_type: MarketType,
+        pair: TradingPair,
+        timeframe: Timeframe,
+        data_range: DataRange | None = None,
+    ) -> tuple[Path, ...]:
+        """List safe monthly partitions without loading their rows."""
+        if data_range is not None:
+            return self._partition_paths(
+                exchange,
+                market_type,
+                pair,
+                timeframe,
+                data_range.start,
+                data_range.end,
+            )
+        dataset = self.dataset_root(exchange, market_type, pair, timeframe)
+        if not dataset.exists():
+            return ()
+        return tuple(
+            ensure_safe_path(self._root, path)
+            for path in sorted(dataset.glob("year=*/month=*/candles.parquet"))
+        )
+
+    def read_partition(
+        self,
+        path: Path,
+        *,
+        exchange: Exchange,
+        market_type: MarketType,
+        pair: TradingPair,
+        timeframe: Timeframe,
+    ) -> tuple[Candle, ...]:
+        """Read and fully validate one explicit partition."""
+        return self._read_file(
+            path,
+            timeframe=timeframe,
+            expected_exchange=exchange,
+            expected_market_type=market_type,
+            expected_pair=pair,
+        )
+
     def _partition_target(
         self,
         exchange: Exchange,
@@ -488,9 +532,9 @@ class ParquetCandleStore:
         return tuple(paths)
 
 
-def validate_candle_serialization(candle: Candle) -> None:
+def validate_candle_serialization(candle: Candle, *, require_closed: bool = True) -> None:
     """Reject values PyArrow would otherwise rescale or truncate."""
-    if not candle.is_closed:
+    if require_closed and not candle.is_closed:
         raise MarketDataInconsistencyError("Candles abertos não podem ser persistidos.")
     for value in (
         candle.open,
@@ -504,6 +548,11 @@ def validate_candle_serialization(candle: Candle) -> None:
             _validate_decimal128_38_18(value)
     datetime_to_epoch_milliseconds(candle.open_time, field_name="open_time")
     datetime_to_epoch_milliseconds(candle.close_time, field_name="close_time")
+
+
+def canonical_candle_bytes(candle: Candle) -> bytes:
+    """Expose the stable logical encoding used by dataset checksums."""
+    return _canonical_candle_bytes(candle)
 
 
 def _validate_decimal128_38_18(value: Decimal) -> None:

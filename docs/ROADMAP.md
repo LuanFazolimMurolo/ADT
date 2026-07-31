@@ -211,6 +211,26 @@ transaction for every chunk.
 **Deferred**: scheduling, permanent workers, distributed coordination,
 administrator API/UI and additional adapters.
 
+### Phase 2C: deterministic backtest datasets 🟡 IMPLEMENTED LOCALLY
+
+**Scope**: Offline quality audits, exact Decimal resampling, transactional
+derived datasets, durable lineage manifests, immutable local snapshots and a
+lazy read-only interface for a future backtest engine.
+
+**Delivered locally**:
+
+- [x] Deterministic FULL and checksum-based INCREMENTAL quality scans
+- [x] Explicit continuous UTC 24/7 calendar and supported timeframe matrix
+- [x] STRICT, SKIP_INCOMPLETE and evaluation-only MARK_INCOMPLETE gap policies
+- [x] Separate journaled derived Parquet datasets with stable logical versions
+- [x] Source partition lineage, stale detection and atomic manifests
+- [x] Idempotent hard-link snapshots and lazy half-open interval reader
+- [x] Quality, resample and snapshot CLI commands with bounded dry-runs
+- [x] Local no-network tests for resampling, recovery, manifests and snapshots
+
+**Deferred**: the backtest engine itself, strategies, indicators, schedulers,
+distributed locks, non-crypto calendars and remote object-storage snapshots.
+
 **Deliverables**:
 - [x] Market data adapter interface
 - [x] Binance adapter (OHLCV data)
