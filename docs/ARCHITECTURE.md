@@ -355,6 +355,11 @@ half-open UTC interval and plan checksum form the payload identity. Repeating
 the same key and identity returns the existing operation. Reusing the key with
 a different identity is a conflict.
 
+The key is scoped to the requesting administrator. PostgreSQL enforces
+uniqueness on `(requested_by, idempotency_key)`, so retries by one administrator
+remain deterministic without creating cross-administrator collisions or
+revealing another administrator's operation.
+
 The API validates closed enums and configured candle/chunk/range limits before
 inserting an operation. Clients cannot submit paths, native exchange URLs,
 manifests or job records. Planning is read-only. Submission persists intent in

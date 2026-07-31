@@ -417,6 +417,7 @@ class MarketOperationSnapshot:
     result: OperationResult | None = None
     failure: SanitizedOperationFailure | None = None
     finished_at: datetime | None = None
+    started_at: datetime | None = None
 
     def __post_init__(self) -> None:
         _require_uuid(self.operation_id)
@@ -434,11 +435,13 @@ class MarketOperationSnapshot:
             raise InvalidMarketOperationRequestError()
         created_at = _operation_utc(self.created_at)
         updated_at = _operation_utc(self.updated_at)
+        started_at = _operation_utc(self.started_at) if self.started_at is not None else None
         finished_at = _operation_utc(self.finished_at) if self.finished_at is not None else None
         if (
             updated_at < created_at
             or self.plan.created_at > created_at
             or self.progress.updated_at > updated_at
+            or (started_at is not None and not created_at <= started_at <= updated_at)
             or (finished_at is not None and not created_at <= finished_at <= updated_at)
         ):
             raise InvalidMarketOperationRequestError()
@@ -461,13 +464,16 @@ class MarketOperationSnapshot:
                 raise InvalidOperationLeaseError()
             if self.lease.claimed_at < created_at:
                 raise InvalidOperationLeaseError()
+            if started_at is not None and started_at > self.lease.claimed_at:
+                raise InvalidOperationLeaseError()
         if self.state in {MarketOperationState.CLAIMED, MarketOperationState.RUNNING} and (
-            self.lease is None
+            self.lease is None or started_at is None
         ):
             raise InvalidOperationLeaseError()
         self._validate_outcome(finished_at)
         object.__setattr__(self, "created_at", created_at)
         object.__setattr__(self, "updated_at", updated_at)
+        object.__setattr__(self, "started_at", started_at)
         object.__setattr__(self, "finished_at", finished_at)
 
     def _validate_outcome(self, finished_at: datetime | None) -> None:
@@ -682,6 +688,7 @@ def validate_operation_update(
         or current.request != previous.request
         or current.plan != previous.plan
         or current.created_at != previous.created_at
+        or (previous.started_at is not None and current.started_at != previous.started_at)
     ):
         raise InvalidMarketOperationRequestError()
     if previous.local_job_id is not None and current.local_job_id != previous.local_job_id:

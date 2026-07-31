@@ -58,6 +58,7 @@ class MarketOperationRepository(Protocol):
         target: MarketOperationState,
         expected_version: int,
         now: datetime,
+        owner_id: UUID | None = None,
     ) -> MarketOperationSnapshot: ...
 
     async def claim_next(
@@ -72,6 +73,8 @@ class MarketOperationRepository(Protocol):
         self,
         *,
         operation_id: UUID,
+        owner_id: UUID,
+        now: datetime,
         lease: WorkerLease,
         expected_version: int,
     ) -> MarketOperationSnapshot: ...
@@ -80,6 +83,8 @@ class MarketOperationRepository(Protocol):
         self,
         *,
         operation_id: UUID,
+        owner_id: UUID,
+        now: datetime,
         progress: OperationProgress,
         local_job_id: str | None,
         expected_version: int,
@@ -89,6 +94,8 @@ class MarketOperationRepository(Protocol):
         self,
         *,
         operation_id: UUID,
+        owner_id: UUID,
+        now: datetime,
         result: OperationResult,
         progress: OperationProgress,
         expected_version: int,
@@ -98,6 +105,8 @@ class MarketOperationRepository(Protocol):
         self,
         *,
         operation_id: UUID,
+        owner_id: UUID,
+        now: datetime,
         failure: SanitizedOperationFailure,
         progress: OperationProgress,
         expected_version: int,

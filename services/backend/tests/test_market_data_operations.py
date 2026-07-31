@@ -198,6 +198,25 @@ def _snapshot(
         MarketOperationState.RUNNING,
     }:
         selected_lease = _lease(operation_id=operation_id)
+    started_at = (
+        selected_lease.claimed_at
+        if state
+        in {
+            MarketOperationState.CLAIMED,
+            MarketOperationState.RUNNING,
+            MarketOperationState.CANCELLED,
+            MarketOperationState.COMPLETED,
+            MarketOperationState.FAILED,
+        }
+        and selected_lease is not None
+        else None
+    )
+    if started_at is None and state in {
+        MarketOperationState.CANCELLED,
+        MarketOperationState.COMPLETED,
+        MarketOperationState.FAILED,
+    }:
+        started_at = created_at
     result = None
     failure = None
     finished_at = None
@@ -230,6 +249,7 @@ def _snapshot(
         result=result,
         failure=failure,
         finished_at=finished_at,
+        started_at=started_at,
     )
 
 

@@ -1,6 +1,12 @@
 """Stable, transport-independent market-data errors."""
 
-from app.domain.errors import DomainConflictError, DomainError, InvalidDomainInputError
+from app.domain.errors import (
+    DomainConflictError,
+    DomainError,
+    InvalidDomainInputError,
+    PersistenceError,
+    ResourceNotFoundError,
+)
 
 
 class MarketDataError(DomainError):
@@ -146,3 +152,17 @@ class OperationVersionConflictError(DomainConflictError):
 
     code = "operation_version_conflict"
     default_message = "A versão da operação diverge do estado esperado."
+
+
+class MarketOperationNotFoundError(ResourceNotFoundError):
+    """The requested operational record does not exist."""
+
+    code = "market_operation_not_found"
+    default_message = "A operação de market data não foi encontrada."
+
+
+class InvalidPersistedOperationError(PersistenceError):
+    """A database row violates the immutable operation-domain contract."""
+
+    code = "invalid_persisted_operation"
+    default_message = "O estado persistido da operação de market data é inválido."
