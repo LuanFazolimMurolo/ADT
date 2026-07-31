@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from pydantic import AnyHttpUrl, SecretStr
 
-from app.core.config import ConfigurationError, Settings, get_settings
+from app.core.config import (
+    ConfigurationError,
+    MarketDataSettings,
+    Settings,
+    get_market_data_settings,
+    get_settings,
+)
 
 REQUIRED_ENVIRONMENT = {
     "SUPABASE_URL": "https://project.example.test",
@@ -39,6 +47,24 @@ def isolated_settings_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[N
         "ADT_MARKET_JOB_LOCK_TIMEOUT",
         "ADT_MARKET_JOB_STALE_AFTER",
         "ADT_MARKET_JOB_MAX_CHUNKS",
+        "ADT_MARKET_RESAMPLE_MAX_SOURCE_CANDLES",
+        "ADT_MARKET_RESAMPLE_MAX_GROUPS",
+        "ADT_MARKET_RESAMPLE_GAP_POLICY",
+        "ADT_MARKET_QUALITY_MAX_ISSUES",
+        "ADT_MARKET_SNAPSHOT_MAX_PARTITIONS",
+        "ADT_MARKET_DERIVED_DIR",
+        "ADT_MARKET_MANIFEST_SCHEMA_VERSION",
+        "ADT_BACKTEST_DIR",
+        "ADT_BACKTEST_MAX_CANDLES",
+        "ADT_BACKTEST_MAX_ORDERS",
+        "ADT_BACKTEST_MAX_OPEN_ORDERS",
+        "ADT_BACKTEST_MAX_EVENTS",
+        "ADT_BACKTEST_HISTORY_WINDOW",
+        "ADT_BACKTEST_DEFAULT_MAKER_FEE_BPS",
+        "ADT_BACKTEST_DEFAULT_TAKER_FEE_BPS",
+        "ADT_BACKTEST_DEFAULT_SLIPPAGE_BPS",
+        "ADT_BACKTEST_ENGINE_VERSION",
+        "ADT_BACKTEST_SCHEMA_VERSION",
     ):
         monkeypatch.delenv(variable_name, raising=False)
     yield
@@ -116,6 +142,17 @@ def test_settings_are_typed_and_normalized(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("ADT_MARKET_JOB_LOCK_TIMEOUT", "2.5")
     monkeypatch.setenv("ADT_MARKET_JOB_STALE_AFTER", "600")
     monkeypatch.setenv("ADT_MARKET_JOB_MAX_CHUNKS", "200")
+    monkeypatch.setenv("ADT_BACKTEST_DIR", "local-backtests")
+    monkeypatch.setenv("ADT_BACKTEST_MAX_CANDLES", "50000")
+    monkeypatch.setenv("ADT_BACKTEST_MAX_ORDERS", "5000")
+    monkeypatch.setenv("ADT_BACKTEST_MAX_OPEN_ORDERS", "250")
+    monkeypatch.setenv("ADT_BACKTEST_MAX_EVENTS", "100000")
+    monkeypatch.setenv("ADT_BACKTEST_HISTORY_WINDOW", "128")
+    monkeypatch.setenv("ADT_BACKTEST_DEFAULT_MAKER_FEE_BPS", "7.5")
+    monkeypatch.setenv("ADT_BACKTEST_DEFAULT_TAKER_FEE_BPS", "12.5")
+    monkeypatch.setenv("ADT_BACKTEST_DEFAULT_SLIPPAGE_BPS", "3.25")
+    monkeypatch.setenv("ADT_BACKTEST_ENGINE_VERSION", "3a-test.2")
+    monkeypatch.setenv("ADT_BACKTEST_SCHEMA_VERSION", "2")
 
     loaded_settings = get_settings()
 
@@ -141,6 +178,17 @@ def test_settings_are_typed_and_normalized(monkeypatch: pytest.MonkeyPatch) -> N
     assert loaded_settings.market_job_lock_timeout == 2.5
     assert loaded_settings.market_job_stale_after == 600
     assert loaded_settings.market_job_max_chunks == 200
+    assert loaded_settings.backtest_dir == Path("local-backtests")
+    assert loaded_settings.backtest_max_candles == 50_000
+    assert loaded_settings.backtest_max_orders == 5_000
+    assert loaded_settings.backtest_max_open_orders == 250
+    assert loaded_settings.backtest_max_events == 100_000
+    assert loaded_settings.backtest_history_window == 128
+    assert loaded_settings.backtest_default_maker_fee_bps == Decimal("7.5")
+    assert loaded_settings.backtest_default_taker_fee_bps == Decimal("12.5")
+    assert loaded_settings.backtest_default_slippage_bps == Decimal("3.25")
+    assert loaded_settings.backtest_engine_version == "3a-test.2"
+    assert loaded_settings.backtest_schema_version == 2
     assert loaded_settings.supabase_issuer == "https://project.example.test/auth/v1"
     assert isinstance(loaded_settings.supabase_publishable_key, SecretStr)
     assert isinstance(loaded_settings.supabase_database_url, SecretStr)
@@ -230,3 +278,65 @@ def test_market_settings_have_safe_limits(field_name: str, value: object) -> Non
     }
     with pytest.raises(ValueError):
         Settings(**kwargs)
+
+
+def test_backtest_settings_load_without_supabase_and_use_conservative_defaults() -> None:
+    settings = get_market_data_settings()
+
+    assert settings.backtest_dir == Path("backtests")
+    assert settings.backtest_max_candles == 1_000_000
+    assert settings.backtest_max_orders == 100_000
+    assert settings.backtest_max_open_orders == 1_000
+    assert settings.backtest_max_events == 2_000_000
+    assert settings.backtest_history_window == 512
+    assert settings.backtest_default_maker_fee_bps == Decimal("10")
+    assert settings.backtest_default_taker_fee_bps == Decimal("10")
+    assert settings.backtest_default_slippage_bps == Decimal("5")
+    assert settings.backtest_engine_version == "3a-1"
+    assert settings.backtest_schema_version == 1
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("backtest_dir", Path("../outside")),
+        ("backtest_dir", Path("/absolute")),
+        ("backtest_max_candles", 10_000_001),
+        ("backtest_max_orders", 1_000_001),
+        ("backtest_max_open_orders", 100_001),
+        ("backtest_max_events", 20_000_001),
+        ("backtest_history_window", 100_001),
+        ("backtest_default_maker_fee_bps", Decimal("1000.01")),
+        ("backtest_default_taker_fee_bps", Decimal("NaN")),
+        ("backtest_default_slippage_bps", Decimal("Infinity")),
+        ("backtest_engine_version", "unsafe/version"),
+        ("backtest_schema_version", 101),
+    ],
+)
+def test_backtest_settings_have_safe_limits(field_name: str, value: object) -> None:
+    with pytest.raises(ValueError):
+        MarketDataSettings(**{field_name: value})
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"backtest_max_orders": 5, "backtest_max_open_orders": 6},
+        {"backtest_max_candles": 5, "backtest_history_window": 6},
+    ],
+)
+def test_backtest_settings_reject_contradictory_limits(overrides: dict[str, int]) -> None:
+    with pytest.raises(ValueError):
+        MarketDataSettings(**overrides)
+
+
+def test_invalid_backtest_environment_is_sanitized(monkeypatch: pytest.MonkeyPatch) -> None:
+    invalid_value = "not-a-decimal-sensitive-marker"
+    monkeypatch.setenv("ADT_BACKTEST_DEFAULT_TAKER_FEE_BPS", invalid_value)
+
+    with pytest.raises(ConfigurationError) as captured_error:
+        get_market_data_settings()
+
+    message = str(captured_error.value)
+    assert "ADT_BACKTEST_DEFAULT_TAKER_FEE_BPS" in message
+    assert invalid_value not in message

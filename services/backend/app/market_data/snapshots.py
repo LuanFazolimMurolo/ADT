@@ -331,6 +331,25 @@ class MarketDatasetReader:
     def manifest(self) -> DatasetManifest:
         return self._opened()[3]
 
+    def verify_unchanged(self) -> DatasetSnapshot:
+        """Reopen and stream the complete snapshot to prove it is unchanged."""
+        snapshot, _metadata, metadata_checksum, manifest = self._opened()
+        if self._manifest_checksum is None:
+            raise MarketDataInconsistencyError("O manifest do snapshot não foi aberto.")
+
+        verifier = MarketDatasetReader(self._store.root.parent)
+        current = verifier.open_snapshot(snapshot.snapshot_id)
+        if (
+            current != snapshot
+            or verifier.manifest() != manifest
+            or verifier._metadata_checksum != metadata_checksum
+            or verifier._manifest_checksum != self._manifest_checksum
+        ):
+            raise MarketDataInconsistencyError("O snapshot mudou desde a abertura.")
+        for _candle in verifier.iter_candles():
+            pass
+        return current
+
     def _opened(self) -> tuple[DatasetSnapshot, Path, str, DatasetManifest]:
         if (
             self._snapshot is None

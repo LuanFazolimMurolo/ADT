@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import re
 import socket
 from collections.abc import Mapping
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
@@ -65,6 +67,17 @@ _FIELD_ENVIRONMENT_NAMES = {
     "market_snapshot_max_partitions": "ADT_MARKET_SNAPSHOT_MAX_PARTITIONS",
     "market_derived_dir": "ADT_MARKET_DERIVED_DIR",
     "market_manifest_schema_version": "ADT_MARKET_MANIFEST_SCHEMA_VERSION",
+    "backtest_dir": "ADT_BACKTEST_DIR",
+    "backtest_max_candles": "ADT_BACKTEST_MAX_CANDLES",
+    "backtest_max_orders": "ADT_BACKTEST_MAX_ORDERS",
+    "backtest_max_open_orders": "ADT_BACKTEST_MAX_OPEN_ORDERS",
+    "backtest_max_events": "ADT_BACKTEST_MAX_EVENTS",
+    "backtest_history_window": "ADT_BACKTEST_HISTORY_WINDOW",
+    "backtest_default_maker_fee_bps": "ADT_BACKTEST_DEFAULT_MAKER_FEE_BPS",
+    "backtest_default_taker_fee_bps": "ADT_BACKTEST_DEFAULT_TAKER_FEE_BPS",
+    "backtest_default_slippage_bps": "ADT_BACKTEST_DEFAULT_SLIPPAGE_BPS",
+    "backtest_engine_version": "ADT_BACKTEST_ENGINE_VERSION",
+    "backtest_schema_version": "ADT_BACKTEST_SCHEMA_VERSION",
 }
 
 
@@ -73,7 +86,7 @@ class ConfigurationError(RuntimeError):
 
 
 class MarketDataSettings(BaseSettings):
-    """Local market-data settings with no Supabase dependency."""
+    """Local market-data and backtest settings with no Supabase dependency."""
 
     model_config = SettingsConfigDict(
         env_prefix="ADT_",
@@ -108,6 +121,29 @@ class MarketDataSettings(BaseSettings):
     market_snapshot_max_partitions: int = Field(default=1_200, ge=1, le=10_000)
     market_derived_dir: Path = Path("derived")
     market_manifest_schema_version: int = Field(default=1, ge=1, le=100)
+    backtest_dir: Path = Path("backtests")
+    backtest_max_candles: int = Field(default=1_000_000, ge=1, le=10_000_000)
+    backtest_max_orders: int = Field(default=100_000, ge=1, le=1_000_000)
+    backtest_max_open_orders: int = Field(default=1_000, ge=1, le=100_000)
+    backtest_max_events: int = Field(default=2_000_000, ge=1, le=20_000_000)
+    backtest_history_window: int = Field(default=512, ge=1, le=100_000)
+    backtest_default_maker_fee_bps: Decimal = Field(
+        default=Decimal("10"),
+        ge=Decimal("0"),
+        le=Decimal("1000"),
+    )
+    backtest_default_taker_fee_bps: Decimal = Field(
+        default=Decimal("10"),
+        ge=Decimal("0"),
+        le=Decimal("1000"),
+    )
+    backtest_default_slippage_bps: Decimal = Field(
+        default=Decimal("5"),
+        ge=Decimal("0"),
+        le=Decimal("1000"),
+    )
+    backtest_engine_version: str = Field(default="3a-1", min_length=1, max_length=64)
+    backtest_schema_version: int = Field(default=1, ge=1, le=100)
 
     @field_validator("market_user_agent")
     @classmethod
@@ -124,6 +160,44 @@ class MarketDataSettings(BaseSettings):
         if value.is_absolute() or ".." in value.parts or not value.parts:
             raise ValueError("must be a safe relative path")
         return value
+
+    @field_validator("backtest_dir")
+    @classmethod
+    def validate_backtest_dir(cls, value: Path) -> Path:
+        """Keep backtest artifacts below ``ADT_DATA_DIR/market``."""
+        if value.is_absolute() or ".." in value.parts or not value.parts:
+            raise ValueError("must be a safe relative path")
+        return value
+
+    @field_validator(
+        "backtest_default_maker_fee_bps",
+        "backtest_default_taker_fee_bps",
+        "backtest_default_slippage_bps",
+    )
+    @classmethod
+    def validate_backtest_basis_points(cls, value: Decimal) -> Decimal:
+        """Reject non-finite financial assumptions explicitly."""
+        if not value.is_finite():
+            raise ValueError("must be finite")
+        return value
+
+    @field_validator("backtest_engine_version")
+    @classmethod
+    def validate_backtest_engine_version(cls, value: str) -> str:
+        """Require one bounded canonical engine-version token."""
+        normalized = value.strip()
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", normalized) is None:
+            raise ValueError("must be a safe version identifier")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_backtest_limits(self) -> MarketDataSettings:
+        """Reject contradictory configured backtest bounds."""
+        if self.backtest_max_open_orders > self.backtest_max_orders:
+            raise ValueError("backtest_max_open_orders must not exceed backtest_max_orders")
+        if self.backtest_history_window > self.backtest_max_candles:
+            raise ValueError("backtest_history_window must not exceed backtest_max_candles")
+        return self
 
 
 class Settings(MarketDataSettings):

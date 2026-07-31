@@ -489,3 +489,29 @@ Operational rows and events have a documented 30-day retention target, but
 Phase 2D performs no automatic cleanup. The architecture decision is recorded
 in
 [`docs/adr/0001-phase-2d-operational-market-data-control-plane.md`](./adr/0001-phase-2d-operational-market-data-control-plane.md).
+
+## Phase 3A deterministic backtesting boundary
+
+Phase 3A consumes immutable Phase 2C snapshots and publishes local results under
+`ADT_DATA_DIR/market/backtests`. The backtest engine is independent from the
+FastAPI request lifecycle, Supabase, Binance and the paper-simulation ledger.
+It supports one crypto Spot instrument, long-only accounting and one strategy
+per run.
+
+The strategy boundary exposes immutable portfolio/order snapshots and a bounded
+history containing only candles already processed. Orders returned from
+`on_candle(T)` become eligible at `T+1`; the engine never exposes the
+`MarketDatasetReader` or a future iterator. Snapshot identity and checksums are
+validated before execution and revalidated after the final candle.
+
+Financial state is derived with `Decimal`. Fills feed both the average-cost Spot
+portfolio and an append-only SHA-256-chained local ledger. Risk validation is
+outside strategy code. A drawdown halt cancels open orders, blocks new intents
+and continues close-based marking.
+
+Results are staged, fsynced and atomically promoted by deterministic `run_id`.
+The manifest records input identity, execution assumptions, counts and artifact
+checksums. Independent verification reconstructs the ledger, portfolio, trades,
+equity and metrics without running the strategy again. The detailed lifecycle,
+CLI and limitations are documented in
+[`docs/BACKTESTING.md`](./BACKTESTING.md).

@@ -345,43 +345,64 @@ durability and dataset contracts established in Phases 2A–2C.
 
 ---
 
-## Phase 3: Strategies & Indicators
+## Phase 3: Deterministic Backtesting and Strategy Foundations 🚧
 
-**Goal**: Build strategy plugin system and indicator library.
+**Goal**: Establish reproducible snapshot-based simulation before production
+strategy development.
 
-**Deliverables**:
-- [ ] Strategy base class & interface
-- [ ] Strategy registry (pluggable)
-- [ ] Indicator library (RSI, EMA, MACD, Bollinger Bands, ATR, etc.)
-- [ ] Rule engine (if/then logic)
-- [ ] Parameter configuration (UI + backend)
-- [ ] Strategy CRUD endpoints
-- [ ] Indicator documentation
-- [ ] Example strategies (SMA crossover, RSI overbought, etc.)
+### Phase 3A: deterministic candle engine ✅ IMPLEMENTED LOCALLY
 
-**Dependencies**: Phase 2 complete  
-**Estimated Duration**: 3 weeks  
-**Blockers**: None
+**Delivered**:
+
+- [x] Immutable Phase 2C snapshot input and final TOCTOU verification
+- [x] Candle-by-candle cycle with no same-candle strategy fill
+- [x] MARKET, LIMIT and STOP_MARKET with GTC, IOC and UTC DAY
+- [x] Decimal-only fees, slippage, precision and Spot long-only accounting
+- [x] External risk validation and drawdown halt
+- [x] Append-only chained local ledger
+- [x] Closed trades and deterministic Phase 3A metrics
+- [x] Atomic immutable artifacts and independent verifier
+- [x] Explicit safe strategy registry and network-free CLI
+- [x] Local unit/integration tests and documentation
+
+**Status**: Implemented locally. Final repository-wide gates and review are
+required before the Phase 3A commit.
+
+### Phase 3B: advanced metrics, comparison and reports ⏳
+
+- [ ] Sharpe, Sortino, CAGR and period normalization
+- [ ] Comparative reports and bounded result visualization contracts
+- [ ] Batch comparison without parameter optimization
+- [ ] Export and report schemas
+
+### Phase 3C: strategy and indicator framework ⏳
+
+- [ ] Production strategy plugin lifecycle and versioning
+- [ ] Indicator library (RSI, EMA, MACD, Bollinger Bands, ATR)
+- [ ] Parameter schemas and strategy CRUD
+- [ ] Example indicator strategies, clearly non-financial
+- [ ] Strategy validation and compatibility contracts
+
+**Explicitly deferred**: optimization, walk-forward, multi-asset portfolios,
+real-time paper trading, market-regime selection and machine learning.
+
+**Dependencies**: Phase 2C immutable snapshots
+**Blockers**: None for local validation
 
 ---
 
-## Phase 4: Backtesting Engine
+## Phase 4: Optimization and Walk-Forward
 
-**Goal**: Simulate trading on historical data.
+**Goal**: Evaluate parameter stability only after Phase 3B/3C contracts exist.
 
 **Deliverables**:
-- [ ] Backtest engine (candle-by-candle simulation)
-- [ ] Look-ahead bias prevention
-- [ ] Fee & slippage modeling
-- [ ] Performance metrics (Sharpe, Sortino, max drawdown, etc.)
-- [ ] Trade journal (entry, exit, PnL)
-- [ ] Backtest results storage
-- [ ] Results visualization (frontend charts)
-- [ ] Batch backtest (multiple strategies/symbols)
-- [ ] Backtest worker (async execution)
+- [ ] Bounded parameter-search plans
+- [ ] Train/validation/test segmentation
+- [ ] Walk-forward execution
+- [ ] Reproducible experiment manifests
+- [ ] Overfitting controls and comparison reports
 
-**Dependencies**: Phase 3 complete  
-**Estimated Duration**: 4 weeks  
+**Dependencies**: Phases 3B and 3C complete
 **Blockers**: None
 
 ---

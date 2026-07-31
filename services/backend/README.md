@@ -319,3 +319,29 @@ and the accepted decision in
 The container runs as the unprivileged `adt` user and its Docker healthcheck
 uses readiness. Distributed rate limiting and frontend CSP headers remain
 deployment-edge responsibilities; see the Phase 1 homologation checklist.
+
+## Deterministic local backtesting
+
+Phase 3A runs only against immutable local snapshots and does not require
+Supabase or network access. Available strategies are the technical `no-op` and
+`buy-and-hold-example` registry entries; arbitrary Python modules cannot be
+loaded from the CLI.
+
+```bash
+.venv/bin/python -m app.cli backtest plan \
+  --snapshot-id <snapshot-id> \
+  --strategy no-op \
+  --initial-capital 10000
+
+.venv/bin/python -m app.cli backtest run \
+  --snapshot-id <snapshot-id> \
+  --strategy no-op \
+  --initial-capital 10000 \
+  --dry-run
+
+.venv/bin/python -m app.cli backtest verify --run-id <run-id>
+```
+
+Persisted runs use `ADT_DATA_DIR/market/ADT_BACKTEST_DIR` and are immutable.
+See [`docs/BACKTESTING.md`](../../docs/BACKTESTING.md) for execution order,
+fill assumptions, risk, ledger, metrics and all operational commands.

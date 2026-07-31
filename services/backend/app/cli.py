@@ -13,6 +13,7 @@ from typing import TextIO
 
 import httpx
 
+from app.backtesting.commands import configure_backtest_parser, run_backtest_command
 from app.core.config import MarketDataSettings, get_market_data_settings
 from app.domain.errors import DomainError
 from app.market_data.advanced_quality import (
@@ -55,6 +56,9 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the stable command surface without performing I/O."""
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     root = parser.add_subparsers(dest="group", required=True)
+    backtest = root.add_parser("backtest", help="Run deterministic local snapshot backtests.")
+    configure_backtest_parser(backtest)
+
     market = root.add_parser("market-data", help="Operate local historical market data.")
     commands = market.add_subparsers(dest="command", required=True)
 
@@ -163,6 +167,12 @@ def main(
     args = build_parser().parse_args(argv)
     try:
         resolved_settings = app_settings or get_market_data_settings()
+        if args.group == "backtest":
+            return run_backtest_command(
+                args,
+                settings=resolved_settings,
+                stdout=stdout,
+            )
         return asyncio.run(
             _run_market_command(
                 args,

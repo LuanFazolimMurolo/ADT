@@ -713,6 +713,7 @@ def test_raw_to_derived_manifest_snapshot_and_lazy_reader(tmp_path: Path) -> Non
     first_candle, last_candle, count = reader.first_last_count()
     assert first_candle == last_candle == result.candles[0]
     assert count == 1
+    assert reader.verify_unchanged() == first
 
 
 def test_derived_failure_rolls_back_previous_manifest(tmp_path: Path) -> None:
@@ -2081,6 +2082,47 @@ def test_reader_detects_metadata_and_manifest_change_after_last_yield(
         with pytest.raises(MarketDataInconsistencyError, match="final|manifest"):
             next(iterator)
         changed_path.write_bytes(changed_path.read_bytes()[:-1])
+
+
+def test_reader_verify_unchanged_detects_partition_changed_after_yield(
+    tmp_path: Path,
+) -> None:
+    source = get_timeframe("1m")
+    store, catalog = _persist_raw(
+        tmp_path,
+        tuple(
+            candle(utc(2026, 1, 1) + index * source.duration, timeframe=source)
+            for index in range(5)
+        ),
+    )
+    service, derived_store, locks = _derived_service(tmp_path, store, catalog)
+    data_range = DataRange(
+        utc(2026, 1, 1),
+        utc(2026, 1, 1) + timedelta(minutes=5),
+    )
+    plan = service.plan(INSTRUMENT, "1m", "5m", data_range)
+    service.materialize(plan)
+    snapshots = DatasetSnapshotService(
+        data_dir=tmp_path,
+        derived_store=derived_store,
+        derived_service=service,
+        lock_manager=locks,
+        max_partitions=10,
+    )
+    snapshot = snapshots.create(plan, data_range)
+    reader = MarketDatasetReader(tmp_path)
+    reader.open_snapshot(snapshot.snapshot_id)
+    iterator = reader.iter_candles()
+    first = next(iterator)
+
+    partition = store.root / "snapshots" / snapshot.snapshot_id / snapshot.partitions[0]
+    changed = replace(first, open=first.open + Decimal("0.1"))
+    pq.write_table(storage_module._candles_to_table((changed,)), partition, compression="zstd")
+
+    with pytest.raises(StopIteration):
+        next(iterator)
+    with pytest.raises(MarketDataInconsistencyError, match="checksum"):
+        reader.verify_unchanged()
 
 
 def test_partition_estimate_counts_every_crossed_month(tmp_path: Path) -> None:

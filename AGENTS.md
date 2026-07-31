@@ -50,21 +50,21 @@ This file instructs AI assistants (like GitHub Copilot, Claude, or ChatGPT) on h
 
 ### Phases
 
-Current Phase: **2D (Market-data operational administration)**
+Current Phase: **3A closure and validation (deterministic backtesting)**
 
-- ✅ Can work on: the approved Phase 2D administrative API, PostgreSQL
-  operational catalog, single-host worker, RAW synchronization administration,
-  minimal admin UI, recovery and tests
-- ❌ Cannot work on: strategies, indicators, backtesting, distributed
-  market-data storage, multi-host coordination, machine learning or live
-  trading
+- ✅ Can work on: immutable-snapshot backtesting, candle-by-candle execution,
+  Spot long-only portfolio accounting, local risk, chained ledger, deterministic
+  metrics, atomic result artifacts, verification, CLI, tests and documentation
+- ❌ Cannot work on: production strategy indicators, optimization, walk-forward,
+  multiple assets, real-time paper trading, live orders, leverage, shorts,
+  derivatives or machine learning
 
-Phase 2D must preserve the RAW, DERIVED and snapshot contracts delivered by
-Phases 2A–2C. Its normative scope and limitations are documented in
-[docs/ROADMAP.md](./docs/ROADMAP.md) and
-[docs/adr/0001-phase-2d-operational-market-data-control-plane.md](./docs/adr/0001-phase-2d-operational-market-data-control-plane.md).
+Phase 3A must consume the Phase 2C snapshot contract and must not alter RAW or
+DERIVED market datasets. Phase 2D operational administration remains a separate
+planned control-plane track and is not implemented by backtest code.
 
-Check [docs/ROADMAP.md](./docs/ROADMAP.md) for phase definitions.
+See [docs/BACKTESTING.md](./docs/BACKTESTING.md) and
+[docs/ROADMAP.md](./docs/ROADMAP.md).
 
 ## Project Structure
 
