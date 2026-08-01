@@ -367,23 +367,26 @@ strategy development.
 
 **Status**: Implemented, validated and versioned as `phase-3a`.
 
-### Phase 3B: advanced metrics, comparison and reports 🟡 IMPLEMENTED LOCALLY
+### Phase 3B: advanced metrics, comparison and reports ✅ IMPLEMENTED AND VERSIONED
 
 - [x] Sharpe, Sortino, CAGR and period normalization
 - [x] Comparative reports and bounded result visualization contracts
 - [x] Batch comparison without parameter optimization
 - [x] Export and report schemas
 
-**Status**: Implemented locally. Final repository-wide gates and review are
-required before the Phase 3B commit.
+**Status**: Implemented, validated and versioned as `phase-3b`.
 
-### Phase 3C: strategy and indicator framework ⏳
+### Phase 3C: strategy and indicator framework 🟡 IMPLEMENTED LOCALLY
 
-- [ ] Production strategy plugin lifecycle and versioning
-- [ ] Indicator library (RSI, EMA, MACD, Bollinger Bands, ATR)
-- [ ] Parameter schemas and strategy CRUD
-- [ ] Example indicator strategies, clearly non-financial
-- [ ] Strategy validation and compatibility contracts
+- [x] Production strategy plugin lifecycle and versioning
+- [x] Indicator library (RSI, EMA, MACD, Bollinger Bands, ATR)
+- [x] Parameter schemas and strategy CRUD
+- [x] Example indicator strategies, clearly non-financial
+- [x] Strategy validation and compatibility contracts
+
+**Current local progress**: deterministic indicators and versioned strategy-plugin
+contracts are implemented. Revisioned strategy-definition CRUD contracts are implemented;
+PostgreSQL persistence and the authenticated administrative HTTP boundary are implemented; the repository-wide closure gate and final review remain before Phase 3C versioning.
 
 **Explicitly deferred**: optimization, walk-forward, multi-asset portfolios,
 real-time paper trading, market-regime selection and machine learning.

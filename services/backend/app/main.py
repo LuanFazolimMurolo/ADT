@@ -16,6 +16,7 @@ from app.api.routes import (
     admin,
     admin_settings,
     admin_simulations,
+    admin_strategies,
     health,
     public,
     system,
@@ -136,6 +137,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(admin.router)
     application.include_router(admin_simulations.router)
     application.include_router(admin_settings.router)
+    application.include_router(admin_strategies.router)
     _install_openapi_contract(application)
 
     return application

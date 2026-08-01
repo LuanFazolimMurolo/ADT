@@ -6,11 +6,13 @@ from app.repositories.market_operation_repository import PostgresMarketOperation
 from app.repositories.public_simulations import PublicSimulationRepository
 from app.repositories.settings import SettingsRepository
 from app.repositories.simulations import SimulationRepository
+from app.repositories.strategy_definitions import PostgresStrategyDefinitionRepository
 
 __all__ = [
     "AdminRepository",
     "CapitalMovementRepository",
     "PostgresMarketOperationRepository",
+    "PostgresStrategyDefinitionRepository",
     "PublicSimulationRepository",
     "SettingsRepository",
     "SimulationRepository",

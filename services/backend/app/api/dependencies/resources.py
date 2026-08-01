@@ -9,6 +9,7 @@ from app.database import Database
 from app.repositories import (
     AdminRepository,
     CapitalMovementRepository,
+    PostgresStrategyDefinitionRepository,
     PublicSimulationRepository,
     SettingsRepository,
     SimulationRepository,
@@ -20,6 +21,7 @@ from app.services import (
     SettingsService,
     SimulationService,
 )
+from app.strategies import StrategyDefinitionService, builtin_indicator_capabilities
 
 
 def get_database(request: Request) -> Database:
@@ -56,6 +58,17 @@ def get_capital_movement_service(
 ) -> CapitalMovementService:
     """Build the append-only capital movement service."""
     return CapitalMovementService(CapitalMovementRepository(database))
+
+
+def get_strategy_definition_service(
+    database: Database = Depends(get_database),
+) -> StrategyDefinitionService:
+    """Build the validated strategy-definition CRUD service."""
+
+    return StrategyDefinitionService(
+        PostgresStrategyDefinitionRepository(database),
+        available_indicators=builtin_indicator_capabilities(),
+    )
 
 
 def get_settings_service(

@@ -9,6 +9,7 @@ from app.api.dependencies.resources import (
     get_public_simulation_service,
     get_settings_service,
     get_simulation_service,
+    get_strategy_definition_service,
 )
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "get_public_simulation_service",
     "get_settings_service",
     "get_simulation_service",
+    "get_strategy_definition_service",
     "require_administrator",
 ]
