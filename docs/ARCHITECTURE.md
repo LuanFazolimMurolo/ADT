@@ -515,3 +515,51 @@ checksums. Independent verification reconstructs the ledger, portfolio, trades,
 equity and metrics without running the strategy again. The detailed lifecycle,
 CLI and limitations are documented in
 [`docs/BACKTESTING.md`](./BACKTESTING.md).
+
+## Phase 4-01 deterministic parameter-search boundary
+
+Phase 4-01 introduces `app/optimization` as a pure backend domain layer above
+the Phase 3C strategy registry:
+
+```text
+explicit finite scalar values + fixed parameters
+    → StrategyPluginDescriptor type/range normalization
+    → canonical parameter/value order + bounded cardinality
+    → StrategyPluginRegistry.build for every complete combination
+    → immutable search space and planner-ready combinations
+```
+
+The layer does not invoke the backtest engine, access `ADT_DATA_DIR`, mutate
+snapshots or datasets, use PostgreSQL, expose HTTP routes, or retain critical
+state in memory. It creates only immutable in-process contracts and fresh
+JSON-compatible projections.
+
+Search-space schema version 1 binds plugin name/version/schema/lifecycle,
+explicit fixed and searchable parameters, typed canonical values,
+`REJECT_SPACE`, cardinality and the requested limit. Canonical JSON uses sorted
+keys and compact ASCII encoding. Decimal text is derived from the exact sign,
+digits and exponent tuple under a bounded 128-character persistence contract,
+so results do not depend on global Decimal precision or rounding. Its final
+length is calculated before coefficient text or zero padding is constructed;
+extreme positive or negative exponents therefore fail without allocation
+proportional to the exponent. Integers are limited to 128 magnitude digits and
+are compared against exact powers of ten before decimal conversion, remaining
+independent of Python's configurable integer-to-string limit.
+
+The payload checksum is ordinary SHA-256. Search-space and combination IDs use
+domain-separated SHA-256 namespaces; a combination binds the space ID, its
+zero-based deterministic index and the existing Phase 3C parameter-document
+checksum. IDs contain no clock, timezone, locale, hash iteration, UUID or random
+state.
+
+The service calculates Cartesian cardinality before constructing a combination,
+defaults to 1,000 combinations and enforces an absolute ceiling of 100,000.
+There is no truncation. The initial strict policy rejects the complete space at
+the first combination refused by the real registered factory. Frozen public
+contracts also reject invalid scalar kinds, non-canonical value order, duplicate
+or overlapping names, unsupported schemas, invalid limits and a cardinality
+different from the exact dimension product when constructed directly. As
+defense in depth, `expand()` repeats these structural, schema, limit,
+cardinality, checksum and ID validations before resolving or calling a strategy
+factory. Temporal segmentation, experiment persistence/planning/execution,
+walk-forward and overfitting analysis remain later Phase 4 deliveries.

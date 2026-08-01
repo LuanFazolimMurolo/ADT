@@ -69,3 +69,39 @@ arquivamento. O arquivamento é uma transição sem retorno e bloqueia execuçã
 A persistência PostgreSQL usa revisão otimista e uma transição irreversível para `ARCHIVED`. A API administrativa expõe listagem paginada, leitura, criação, substituição e arquivamento. Cada parâmetro de entrada carrega `kind` e `value`; valores `decimal` atravessam o JSON como texto base 10 e são convertidos para `Decimal` somente após validação.
 
 A tabela é backend-only: RLS é habilitada, os papéis da Data API não recebem privilégios, exclusões são bloqueadas e toda atualização deve incrementar a revisão exatamente uma vez. O registry continua sendo a única origem de código executável; o banco nunca armazena caminhos de importação ou código de usuário.
+
+## Espaços finitos de parâmetros (Fase 4-01)
+
+`ParameterSearchService` reutiliza o descriptor e o registry da Fase 3C. Cada
+parâmetro pesquisável precisa existir no descriptor e fornece uma sequência
+finita e explícita de valores. Parâmetros fixos passam pela mesma normalização,
+não podem também ser pesquisáveis e aparecem em todas as combinações.
+
+Os únicos escalares aceitos continuam sendo `bool`, `int`, `Decimal` finito e
+`str` não vazia. Não há coerção, e `float`, `None`, geradores, valores aninhados
+e objetos mutáveis são rejeitados. Valores são normalizados e ordenados de forma
+canônica; duplicatas surgidas depois da normalização causam erro explícito.
+Inteiros canônicos são limitados a 128 dígitos de magnitude e validados por
+limites exatos antes de qualquer conversão para texto. O texto de `Decimal`
+continua limitado a 128 caracteres, mas seu tamanho final é pré-calculado antes
+de criar coeficiente ou preenchimento de zeros; expoentes extremos são rejeitados
+sem alocação proporcional ao expoente.
+
+A ordem dos parâmetros vem do `StrategyPluginDescriptor`. Cada configuração
+completa volta a passar por `StrategyPluginRegistry.build()`, preservando a
+factory como fronteira final para invariantes cruzadas como
+`fast_period < slow_period`. A política inicial é `REJECT_SPACE`: a primeira
+combinação inválida rejeita o espaço inteiro e informa seu índice e a regra da
+factory; nenhuma falha é filtrada silenciosamente.
+
+A cardinalidade é calculada antes da materialização, com limite padrão de 1.000
+e teto absoluto de 100.000 combinações. Esta entrega apenas produz contratos
+imutáveis prontos para o futuro planner e não executa backtests.
+
+`FixedParameter`, `SearchParameter` e `ParameterSearchSpace` validam seus
+próprios invariantes mesmo em construção direta: tipos exatos, nomes e ordem
+canônicos, dimensões não vazias, ausência de duplicação ou sobreposição, schema,
+política, hashes, limites e produto exato da cardinalidade. `expand()` repete a
+validação estrutural, de checksum e de ID antes de resolver ou chamar qualquer
+factory, protegendo inclusive contra objetos congelados alterados por mecanismos
+de baixo nível.

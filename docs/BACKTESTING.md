@@ -1,4 +1,4 @@
-# Deterministic Backtesting (Phases 3A–3B)
+# Deterministic Backtesting (Phases 3A–3B and Phase 4-01 input contracts)
 
 Phase 3A implements a local, reproducible, candle-by-candle backtest engine for
 one immutable Phase 2C snapshot. It is a technical simulation facility, not a
@@ -275,7 +275,31 @@ clients are constructed.
 
 ## Deliberate limitations
 
-Phase 3B does not execute batch backtests and does not implement indicators,
-production strategies, parameter optimization, walk-forward analysis, multiple
-assets, partial fills, order-book simulation, frontend chart rendering,
-schedulers, paper trading or live trading.
+Phase 4-01 adds only deterministic, finite parameter-search input contracts. It
+does not call `DeterministicBacktestEngine`, read snapshots or publish result
+artifacts. Every expanded combination contains a deterministic index, complete
+normalized strategy parameters, the existing typed Phase 3C parameter document,
+its SHA-256 checksum and a combination ID bound to the search-space ID.
+
+The search-space schema is version 1. Its canonical JSON records the exact
+plugin identity and schema/lifecycle versions, fixed and searchable parameters,
+typed values, strict combination policy, cardinality and requested limit.
+`Decimal` is encoded as canonical base-10 text without using the process-global
+Decimal context; no `float` is introduced. Canonical output length is checked
+before any zero padding, so an extreme exponent cannot trigger proportional
+allocation. Canonical integers contain at most 128 magnitude digits, enforced
+with exact integer bounds before string conversion. A SHA-256 checksum covers
+the payload, while a domain-separated SHA-256 produces the deterministic
+search-space ID.
+
+The default expansion limit is 1,000 and the absolute ceiling is 100,000.
+Cardinality is rejected before any combination or strategy instance is
+materialized. Under `REJECT_SPACE`, one factory-invalid combination rejects the
+entire space. Public frozen contracts enforce their invariants even when built
+directly, and `expand()` independently rechecks schema, limits, exact
+cardinality, checksum and ID before any factory call.
+
+Batch backtest execution, temporal segmentation, experiment manifests,
+walk-forward analysis, optimization reports, multiple assets, partial fills,
+order-book simulation, frontend chart rendering, schedulers, paper trading and
+live trading remain outside Phase 4-01.

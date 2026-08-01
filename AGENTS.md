@@ -50,18 +50,19 @@ This file instructs AI assistants (like GitHub Copilot, Claude, or ChatGPT) on h
 
 ### Phases
 
-Current Phase: **3A closure and validation (deterministic backtesting)**
+Current Phase: **4 (bounded optimization and walk-forward)**
 
-- ✅ Can work on: immutable-snapshot backtesting, candle-by-candle execution,
-  Spot long-only portfolio accounting, local risk, chained ledger, deterministic
-  metrics, atomic result artifacts, verification, CLI, tests and documentation
-- ❌ Cannot work on: production strategy indicators, optimization, walk-forward,
+- ✅ Can work on: finite deterministic parameter spaces, temporal segmentation,
+  reproducible experiment planning, bounded multi-backtest execution,
+  walk-forward analysis, out-of-sample comparison and overfitting controls
+- ❌ Cannot work on: unbounded/random search, genetic or Bayesian optimization,
   multiple assets, real-time paper trading, live orders, leverage, shorts,
-  derivatives or machine learning
+  derivatives, distributed workers or machine learning
 
-Phase 3A must consume the Phase 2C snapshot contract and must not alter RAW or
-DERIVED market datasets. Phase 2D operational administration remains a separate
-planned control-plane track and is not implemented by backtest code.
+Phase 4 must reuse the Phase 3C plugin descriptors and factories and the Phase
+3A/3B immutable backtest contracts. It must not alter RAW or DERIVED market
+datasets. Phase 2D operational administration remains a separate control-plane
+track and is not implemented by optimization code.
 
 See [docs/BACKTESTING.md](./docs/BACKTESTING.md) and
 [docs/ROADMAP.md](./docs/ROADMAP.md).

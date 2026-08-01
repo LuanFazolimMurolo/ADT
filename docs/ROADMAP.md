@@ -376,7 +376,7 @@ strategy development.
 
 **Status**: Implemented, validated and versioned as `phase-3b`.
 
-### Phase 3C: strategy and indicator framework 🟡 IMPLEMENTED LOCALLY
+### Phase 3C: strategy and indicator framework ✅ IMPLEMENTED AND VERSIONED
 
 - [x] Production strategy plugin lifecycle and versioning
 - [x] Indicator library (RSI, EMA, MACD, Bollinger Bands, ATR)
@@ -384,9 +384,9 @@ strategy development.
 - [x] Example indicator strategies, clearly non-financial
 - [x] Strategy validation and compatibility contracts
 
-**Current local progress**: deterministic indicators and versioned strategy-plugin
-contracts are implemented. Revisioned strategy-definition CRUD contracts are implemented;
-PostgreSQL persistence and the authenticated administrative HTTP boundary are implemented; the repository-wide closure gate and final review remain before Phase 3C versioning.
+**Status**: Deterministic indicators, versioned strategy-plugin contracts,
+revisioned strategy-definition CRUD, PostgreSQL persistence and the authenticated
+administrative HTTP boundary are implemented, validated and versioned as Phase 3C.
 
 **Explicitly deferred**: optimization, walk-forward, multi-asset portfolios,
 real-time paper trading, market-regime selection and machine learning.
@@ -396,16 +396,34 @@ real-time paper trading, market-regime selection and machine learning.
 
 ---
 
-## Phase 4: Optimization and Walk-Forward
+## Phase 4: Optimization and Walk-Forward 🚧
 
 **Goal**: Evaluate parameter stability only after Phase 3B/3C contracts exist.
 
-**Deliverables**:
-- [ ] Bounded parameter-search plans
-- [ ] Train/validation/test segmentation
-- [ ] Walk-forward execution
-- [ ] Reproducible experiment manifests
-- [ ] Overfitting controls and comparison reports
+**Deliveries**:
+
+- [x] **4-01 — Deterministic parameter-search contracts**: explicit discrete
+  `bool`, `int`, `Decimal` and `str` values; fixed parameters; canonical schema
+  v1 documents; SHA-256 checksums and IDs; bounded Cartesian expansion; strict
+  factory validation. This delivery executes no backtest.
+- [ ] **4-02 — Temporal segmentation**: deterministic train, validation and test
+  windows.
+- [ ] **4-03 — Reproducible experiment planning**: immutable plans and manifests.
+- [ ] **4-04 — Experiment executor**: bounded execution of multiple backtests.
+- [ ] **4-05 — Walk-forward**: deterministic rolling evaluation.
+- [ ] **4-06 — Overfitting, stability and reports**: out-of-sample comparison and
+  explicit stability controls.
+
+**4-01 safety limits**: 1,000 combinations by default and an absolute ceiling
+of 100,000. Cardinality is validated before combinations are materialized. The
+strict `REJECT_SPACE` policy rejects the complete space at the first combination
+that the registered strategy factory rejects; invalid combinations are never
+silently omitted.
+
+**Explicitly deferred after 4-01**: temporal segmentation, experiment planning
+or execution, walk-forward, optimization reports, real-time paper trading,
+multi-asset portfolios, distributed workers, machine learning and any unbounded
+or random search.
 
 **Dependencies**: Phases 3B and 3C complete
 **Blockers**: None
