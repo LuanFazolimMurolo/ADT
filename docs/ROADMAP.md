@@ -406,8 +406,11 @@ real-time paper trading, market-regime selection and machine learning.
   `bool`, `int`, `Decimal` and `str` values; fixed parameters; canonical schema
   v1 documents; SHA-256 checksums and IDs; bounded Cartesian expansion; strict
   factory validation. This delivery executes no backtest.
-- [ ] **4-02 — Temporal segmentation**: deterministic train, validation and test
-  windows.
+- [x] **4-02 — Temporal segmentation**: versioned deterministic
+  `CONTIGUOUS_THREE_WAY` contracts over immutable STRICT snapshots, with exact
+  candle counts, half-open UTC evaluation ranges, retrospective warmup context,
+  canonical SHA-256 checksums/IDs and strict document round-trip. This delivery
+  executes no backtest.
 - [ ] **4-03 — Reproducible experiment planning**: immutable plans and manifests.
 - [ ] **4-04 — Experiment executor**: bounded execution of multiple backtests.
 - [ ] **4-05 — Walk-forward**: deterministic rolling evaluation.
@@ -420,10 +423,10 @@ strict `REJECT_SPACE` policy rejects the complete space at the first combination
 that the registered strategy factory rejects; invalid combinations are never
 silently omitted.
 
-**Explicitly deferred after 4-01**: temporal segmentation, experiment planning
-or execution, walk-forward, optimization reports, real-time paper trading,
-multi-asset portfolios, distributed workers, machine learning and any unbounded
-or random search.
+**Explicitly deferred after 4-02**: experiment planning or execution,
+walk-forward, rolling windows, purge/embargo windows, optimization reports,
+real-time paper trading, multi-asset portfolios, distributed workers, machine
+learning and any unbounded or random search.
 
 **Dependencies**: Phases 3B and 3C complete
 **Blockers**: None

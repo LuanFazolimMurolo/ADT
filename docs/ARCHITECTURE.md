@@ -561,5 +561,61 @@ or overlapping names, unsupported schemas, invalid limits and a cardinality
 different from the exact dimension product when constructed directly. As
 defense in depth, `expand()` repeats these structural, schema, limit,
 cardinality, checksum and ID validations before resolving or calling a strategy
-factory. Temporal segmentation, experiment persistence/planning/execution,
-walk-forward and overfitting analysis remain later Phase 4 deliveries.
+factory. Experiment persistence/planning/execution, walk-forward and
+overfitting analysis remain later Phase 4 deliveries.
+
+## Phase 4-02 deterministic temporal-segmentation boundary
+
+Phase 4-02 extends `app/optimization` with a second pure domain layer. It
+accepts the existing Phase 2C `DatasetSnapshot` and `DatasetManifest` contracts
+plus one explicit selected `DataRange`; it performs no snapshot I/O:
+
+```text
+immutable STRICT snapshot + manifest + selected [start, end)
+    + train/validation/test candle counts + one warmup count
+    → exact timeframe-slot arithmetic
+    → TRAIN → VALIDATION → TEST contiguous evaluation ranges
+    → immutable canonical plan and segment documents
+```
+
+Schema version 1 supports only `CONTIGUOUS_THREE_WAY`. All boundaries are
+explicit UTC and use half-open intervals. The three positive integer counts
+must consume the selected coverage exactly, without gaps, overlaps, embargo or
+implicit remainder. Timeframe resolution and alignment use the Phase 2A
+registry. The initial layer accepts only `STRICT` derived snapshots because a
+gap-tolerant range cannot prove its actual candle count from duration alone.
+
+One non-negative `warmup_candles` value applies to all segments. A segment is
+scored only over `[evaluation_start, evaluation_end)`, while its read context is
+`[evaluation_start - warmup, evaluation_end)`. Context is retrospective, may
+cross an earlier evaluation boundary, never changes scored membership and must
+remain inside the snapshot's available coverage. There is no strategy-based
+warmup inference and no candle materialization.
+
+The minimal snapshot reference binds snapshot ID/checksum, dataset key/version,
+the existing dataset identity (exchange, market type, symbol, timeframe and
+construction metadata), strict gap policy, available coverage and selected
+coverage. Canonical JSON uses the Phase 4-01 codec. Ordinary SHA-256 covers
+segment and final plan payloads; domain-separated SHA-256 identifies the plan
+and binds each segment ID to that plan. Frozen public contracts validate direct
+construction, and service/document boundaries repeat temporal, structural,
+snapshot, checksum and ID validation to detect low-level mutation.
+
+Snapshot authentication is not reimplemented in the optimization package.
+Snapshot creation, `MarketDatasetReader` and temporal segmentation share the
+pure Phase 2C helpers `build_snapshot_id()` and `validate_snapshot_contract()`.
+Consequently, a snapshot is accepted only when its deterministic ID, fixed
+manifest path, dataset identity/version/checksum, COMPLETE manifest, coverage
+and exact canonically ordered partition projection agree. Malformed contracts
+are checked by type before attribute access or timeframe lookup and are exposed
+to the temporal boundary as stable domain failures.
+
+Segment role and index form one invariant rather than independent fields:
+`0/TRAIN`, `1/VALIDATION` and `2/TEST`. Direct construction and later service
+revalidation reject every other association even if an attacker recalculates
+the segment checksum and ID.
+
+This delivery does not expand parameter spaces, execute a backtest, publish an
+artifact, persist an experiment or implement walk-forward. Phase 4-03 is the
+first layer allowed to join parameter search, temporal segmentation and a
+backtest configuration into a reproducible experiment plan.

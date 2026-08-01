@@ -1,4 +1,4 @@
-# Deterministic Backtesting (Phases 3A–3B and Phase 4-01 input contracts)
+# Deterministic Backtesting (Phases 3A–3B and Phase 4 input contracts)
 
 Phase 3A implements a local, reproducible, candle-by-candle backtest engine for
 one immutable Phase 2C snapshot. It is a technical simulation facility, not a
@@ -273,6 +273,49 @@ The CLI uses a fixed strategy registry and never imports a module supplied by a
 user. Output is bounded JSON. Backtest commands are routed before market HTTP
 clients are constructed.
 
+## Phase 4-02 temporal input contracts
+
+Temporal segmentation is a pure planning-input contract and does not call the
+backtest engine. `TemporalSegmentationService` validates an immutable Phase 2C
+snapshot against its manifest, requires a `STRICT` derived dataset and divides
+an explicit selected coverage into exactly three evaluation ranges:
+
+```text
+TRAIN [start, validation_start)
+VALIDATION [validation_start, test_start)
+TEST [test_start, selected_end)
+```
+
+The version 1 `CONTIGUOUS_THREE_WAY` policy accepts only positive integer
+`train_candles`, `validation_candles` and `test_candles`. Their sum must equal
+the exact timeframe-slot count of the selected range. All UTC boundaries use
+the existing timeframe registry and `[start, end)` semantics; therefore a
+boundary candle belongs only to the segment that starts there. There are no
+gaps, overlaps, purge windows, embargoes, percentages or implicit rounding.
+
+A single non-negative `warmup_candles` value applies to every segment. The
+future reader interval is `[context_start, evaluation_end)`, but only
+`[evaluation_start, evaluation_end)` is scored. Validation context may include
+earlier TRAIN candles and TEST context may include earlier VALIDATION candles;
+they remain context only. Insufficient prior snapshot history is rejected
+instead of truncating warmup, synthesizing candles or reading future data.
+
+Schema version 1 binds the snapshot ID/checksum, dataset identity/version,
+instrument, timeframe, available and selected coverage, counts, policy, warmup
+and all three segments. The canonical envelope supports strict round-trip and
+rejects missing/extra fields, unknown enums, unsupported versions and modified
+hashes. Payload checksums use SHA-256. Plan and segment IDs use distinct
+domain-separated SHA-256 namespaces, and every segment ID is bound to its plan
+ID. Frozen contracts and the consuming service both revalidate all invariants.
+
+The snapshot ID is never caller-chosen text. The temporal service uses the same
+pure Phase 2C identity and contract validation used by snapshot creation and
+`MarketDatasetReader`, including the canonical manifest path and exact ordered
+partition set. It maps malformed snapshot/manifest fields to stable temporal
+domain errors before accessing attributes or resolving a timeframe. Segment
+indexes are likewise inseparable from their roles: only `0/TRAIN`,
+`1/VALIDATION` and `2/TEST` are valid.
+
 ## Deliberate limitations
 
 Phase 4-01 adds only deterministic, finite parameter-search input contracts. It
@@ -299,7 +342,8 @@ entire space. Public frozen contracts enforce their invariants even when built
 directly, and `expand()` independently rechecks schema, limits, exact
 cardinality, checksum and ID before any factory call.
 
-Batch backtest execution, temporal segmentation, experiment manifests,
-walk-forward analysis, optimization reports, multiple assets, partial fills,
-order-book simulation, frontend chart rendering, schedulers, paper trading and
-live trading remain outside Phase 4-01.
+Phase 4-02 adds only temporal contracts. It does not read candles, execute a
+backtest, expand parameter combinations or publish result artifacts. Experiment
+manifests and execution, walk-forward analysis, purge/embargo windows,
+optimization reports, multiple assets, frontend orchestration, schedulers,
+paper trading and live trading remain outside this delivery.
