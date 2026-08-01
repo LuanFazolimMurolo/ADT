@@ -316,6 +316,52 @@ domain errors before accessing attributes or resolving a timeframe. Segment
 indexes are likewise inseparable from their roles: only `0/TRAIN`,
 `1/VALIDATION` and `2/TEST` are valid.
 
+## Phase 4-03 reproducible experiment plans
+
+`ExperimentPlanningService` joins one legitimate immutable snapshot and
+manifest, one validated Phase 4-02 temporal plan, one factory-validated Phase
+4-01 parameter space, an exact registered plugin and deterministic Phase 3A
+backtest settings. It produces no execution result. Its complete versioned
+manifest contains the nested canonical input documents, expanded combinations
+and one immutable `PlannedRunSpec` for every combination multiplied by the
+three temporal segments.
+
+Planned specs use a single canonical order: combination index is primary and
+segment index is secondary. Global indexes are contiguous. Snapshot/temporal,
+plugin/search structure, cardinality and backtest configuration are prechecked
+before factory expansion or spec construction. The default is 3,000 planned
+runs and the conservative absolute ceiling is 30,000; no plan is truncated or
+partially returned.
+
+The top level records each complete normalized typed parameter document,
+snapshot, temporal plan, plugin and common configuration once. A documented
+spec contains compact canonical references to its combination and segment plus
+its index, purpose, checksum and ID. The public object reconstructs and exposes
+the retrospective context range, scored evaluation range, warmup and existing
+`BacktestConfig`. The config reads the context range; a future Phase 4-04
+executor must exclude warmup observations from evaluation and metrics.
+
+Plugin name/version and `engine_version` must already be safe tokens without
+surrounding whitespace. The backtest schema must be a non-boolean integer in
+the official supported Phase 3A set (currently 1 or 2). Nested combination
+tuples and typed documents are revalidated by the shared Phase 4-01 boundary.
+
+Roles have fixed purposes: TRAIN is `TRAINING`, VALIDATION is
+`MODEL_SELECTION`, and TEST is `FINAL_HOLDOUT`. Only VALIDATION is eligible for
+future model selection. The schema records `TEST_IS_FINAL_HOLDOUT`; this layer
+does not compare metrics, rank parameters or select a winner.
+
+SHA-256 checksums cover every spec and the complete manifest. Domain-separated
+SHA-256 generates `experiment_id` and `run_spec_id`, binding all semantic
+inputs, policies, ordering and limits. A `run_spec_id` identifies future work;
+it is not the Phase 3A `run_id` of a completed backtest. The strict codec rejects
+unknown schemas/enums, missing or extra fields, noncanonical UTC/Decimal data,
+changed ordering/cardinality and altered hashes.
+
+Planning is candle-free and side-effect-free: it does not call the engine,
+publish artifacts, write `ADT_DATA_DIR`, connect to a database or network, or
+start subprocesses/workers. Those responsibilities remain deferred to 4-04.
+
 ## Deliberate limitations
 
 Phase 4-01 adds only deterministic, finite parameter-search input contracts. It

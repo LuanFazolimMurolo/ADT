@@ -411,7 +411,14 @@ real-time paper trading, market-regime selection and machine learning.
   candle counts, half-open UTC evaluation ranges, retrospective warmup context,
   canonical SHA-256 checksums/IDs and strict document round-trip. This delivery
   executes no backtest.
-- [ ] **4-03 — Reproducible experiment planning**: immutable plans and manifests.
+- [x] **4-03 — Reproducible experiment planning**: pure immutable manifests
+  binding one legitimate snapshot, one three-way temporal plan, one finite
+  parameter space, registered plugin identity, deterministic backtest settings
+  and every ordered combination-by-segment planned run. TEST is explicitly a
+  final holdout and this delivery executes no backtest. Planning defaults to
+  3,000 runs, has a conservative absolute ceiling of 30,000, validates all
+  structure/configuration before factories and documents runs through compact
+  canonical combination/segment references.
 - [ ] **4-04 — Experiment executor**: bounded execution of multiple backtests.
 - [ ] **4-05 — Walk-forward**: deterministic rolling evaluation.
 - [ ] **4-06 — Overfitting, stability and reports**: out-of-sample comparison and
@@ -423,10 +430,10 @@ strict `REJECT_SPACE` policy rejects the complete space at the first combination
 that the registered strategy factory rejects; invalid combinations are never
 silently omitted.
 
-**Explicitly deferred after 4-02**: experiment planning or execution,
-walk-forward, rolling windows, purge/embargo windows, optimization reports,
-real-time paper trading, multi-asset portfolios, distributed workers, machine
-learning and any unbounded or random search.
+**Explicitly deferred after 4-03**: experiment execution, result publication,
+selection/ranking, walk-forward, rolling windows, purge/embargo windows,
+optimization reports, real-time paper trading, multi-asset portfolios,
+distributed workers, machine learning and any unbounded or random search.
 
 **Dependencies**: Phases 3B and 3C complete
 **Blockers**: None

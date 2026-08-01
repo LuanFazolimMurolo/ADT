@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import TypeAlias
 
-from app.optimization.canonical import decimal_text, integer_text
+from app.optimization.canonical import decimal_text, deterministic_id, integer_text
 from app.optimization.errors import (
     DuplicateSearchParameterValueError,
     EmptyParameterSearchSpaceError,
@@ -20,8 +20,13 @@ from app.optimization.errors import (
     SearchParameterConflictError,
     UnsupportedSearchSpaceSchemaError,
 )
-from app.strategies.definitions import StrategyParameterDocument
+from app.strategies.definitions import (
+    StoredStrategyParameter,
+    StrategyParameterDocument,
+    strategy_parameter_checksum,
+)
 from app.strategies.domain import StrategyParameterKind
+from app.strategies.errors import InvalidStrategyDefinitionError
 
 DEFAULT_MAX_COMBINATIONS = 1_000
 ABSOLUTE_MAX_COMBINATIONS = 100_000
@@ -95,12 +100,7 @@ class ParameterCombination:
     combination_id: str
 
     def __post_init__(self) -> None:
-        if isinstance(self.index, bool) or self.index < 0:
-            raise ValueError("combination index must be non-negative")
-        if _SHA256.fullmatch(self.parameters_checksum) is None:
-            raise ValueError("parameter checksum must be lowercase SHA-256")
-        if _SHA256.fullmatch(self.combination_id) is None:
-            raise ValueError("combination id must be lowercase SHA-256")
+        validate_parameter_combination_structure(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,12 +112,29 @@ class ParameterSearchExpansion:
     rejected_combinations: int = 0
 
     def __post_init__(self) -> None:
-        if self.rejected_combinations != 0:
-            raise ValueError("REJECT_SPACE expansions cannot contain rejected combinations")
+        if not isinstance(self.space, ParameterSearchSpace):
+            raise IncompatibleSearchSpaceDocumentError("expansion search space is invalid")
+        validate_search_space_structure(self.space)
+        if not isinstance(self.combinations, tuple):
+            raise IncompatibleSearchSpaceDocumentError("expanded combinations must be a tuple")
+        if (
+            isinstance(self.rejected_combinations, bool)
+            or not isinstance(self.rejected_combinations, int)
+            or self.rejected_combinations != 0
+        ):
+            raise IncompatibleSearchSpaceDocumentError(
+                "REJECT_SPACE expansions cannot contain rejected combinations"
+            )
         if len(self.combinations) != self.space.cardinality:
-            raise ValueError("expanded combination count diverges from cardinality")
+            raise IncompatibleSearchSpaceDocumentError(
+                "expanded combination count diverges from cardinality"
+            )
+        for item in self.combinations:
+            validate_parameter_combination(item, self.space)
         if tuple(item.index for item in self.combinations) != tuple(range(self.space.cardinality)):
-            raise ValueError("combination indexes must be contiguous and deterministic")
+            raise IncompatibleSearchSpaceDocumentError(
+                "combination indexes must be contiguous and deterministic"
+            )
 
 
 def validate_fixed_parameter(parameter: FixedParameter) -> None:
@@ -154,6 +171,8 @@ def validate_search_parameter(parameter: SearchParameter) -> None:
 def validate_search_space_structure(space: ParameterSearchSpace) -> int:
     """Revalidate all structural invariants without invoking any strategy factory."""
 
+    if not isinstance(space, ParameterSearchSpace):
+        raise IncompatibleSearchSpaceDocumentError("parameter search space is invalid")
     if (
         isinstance(space.schema_version, bool)
         or not isinstance(space.schema_version, int)
@@ -210,6 +229,149 @@ def validate_search_space_structure(space: ParameterSearchSpace) -> int:
     _validate_sha256(space.checksum, "search-space checksum")
     _validate_sha256(space.search_space_id, "search-space id")
     return calculated
+
+
+def validate_parameter_combination_structure(combination: ParameterCombination) -> None:
+    """Validate one combination without needing its parent search-space identity."""
+
+    if not isinstance(combination, ParameterCombination):
+        raise IncompatibleSearchSpaceDocumentError("parameter combination is invalid")
+    if (
+        isinstance(combination.index, bool)
+        or not isinstance(combination.index, int)
+        or combination.index < 0
+    ):
+        raise IncompatibleSearchSpaceDocumentError(
+            "combination index must be a non-negative integer"
+        )
+    parameters = combination.parameters
+    if not isinstance(parameters, tuple):
+        raise IncompatibleSearchSpaceDocumentError("combination parameters must be a tuple")
+    parameter_names: list[str] = []
+    parameter_values: list[SearchScalar] = []
+    for entry in parameters:
+        if not isinstance(entry, tuple) or len(entry) != 2:
+            raise IncompatibleSearchSpaceDocumentError(
+                "each normalized parameter must be a two-item tuple"
+            )
+        raw_name, raw_value = entry
+        _validate_parameter_name(raw_name)
+        if not isinstance(raw_value, (bool, int, Decimal, str)):
+            raise IncompatibleSearchParameterTypeError(
+                "normalized parameter value has an unsupported type"
+            )
+        parameter_names.append(raw_name)
+        parameter_values.append(raw_value)
+    _validate_unique_canonical_names(parameter_names, "combination")
+
+    document = combination.parameter_document
+    decoded = decode_parameter_document_scalars(document)
+    document_names = [name for name, _kind, _value in decoded]
+    if parameter_names != document_names:
+        raise IncompatibleSearchSpaceDocumentError(
+            "normalized parameters diverge from parameter document names"
+        )
+    for parameter_value, (_name, kind, document_value) in zip(
+        parameter_values, decoded, strict=True
+    ):
+        canonical_scalar_key(kind, parameter_value)
+        if type(parameter_value) is not type(document_value) or parameter_value != document_value:
+            raise IncompatibleSearchSpaceDocumentError(
+                "normalized parameters diverge from their typed document"
+            )
+
+    _validate_sha256(combination.parameters_checksum, "parameter checksum")
+    _validate_sha256(combination.combination_id, "combination id")
+    try:
+        expected_checksum = strategy_parameter_checksum(document)
+    except InvalidStrategyDefinitionError as error:
+        raise IncompatibleSearchSpaceDocumentError("parameter document is incompatible") from error
+    if combination.parameters_checksum != expected_checksum:
+        raise IncompatibleSearchSpaceDocumentError("parameter checksum does not match")
+
+
+def validate_parameter_combination(
+    combination: ParameterCombination,
+    space: ParameterSearchSpace,
+) -> None:
+    """Bind a structurally valid combination to one exact search space."""
+
+    if not isinstance(space, ParameterSearchSpace):
+        raise IncompatibleSearchSpaceDocumentError("parameter search space is invalid")
+    validate_search_space_structure(space)
+    validate_parameter_combination_structure(combination)
+    if combination.index >= space.cardinality:
+        raise IncompatibleSearchSpaceDocumentError("combination index exceeds search space")
+    expected_id = deterministic_id(
+        "adt-parameter-combination-v1",
+        {
+            "schema_version": 1,
+            "search_space_id": space.search_space_id,
+            "index": combination.index,
+            "parameters_checksum": combination.parameters_checksum,
+        },
+    )
+    if combination.combination_id != expected_id:
+        raise IncompatibleSearchSpaceDocumentError("combination identifier does not match")
+
+
+def decode_parameter_document_scalars(
+    document: StrategyParameterDocument,
+) -> tuple[tuple[str, StrategyParameterKind, SearchScalar], ...]:
+    """Strictly decode a typed Phase 3C document without plugin coercion."""
+
+    if not isinstance(document, tuple):
+        raise IncompatibleSearchSpaceDocumentError("parameter document must be a tuple")
+    result: list[tuple[str, StrategyParameterKind, SearchScalar]] = []
+    names: list[str] = []
+    for item in document:
+        if not isinstance(item, StoredStrategyParameter):
+            raise IncompatibleSearchSpaceDocumentError("parameter document entry is invalid")
+        raw_name = item.name
+        raw_kind = item.kind
+        raw_value = item.value
+        _validate_parameter_name(raw_name)
+        if not isinstance(raw_kind, StrategyParameterKind):
+            raise IncompatibleSearchSpaceDocumentError("parameter document kind is invalid")
+        try:
+            recreated = StoredStrategyParameter(raw_name, raw_kind, raw_value)
+        except (InvalidStrategyDefinitionError, TypeError, ValueError) as error:
+            raise IncompatibleSearchSpaceDocumentError(
+                "parameter document entry is incompatible"
+            ) from error
+        if recreated != item:
+            raise IncompatibleSearchSpaceDocumentError("parameter document entry is not canonical")
+        value: SearchScalar
+        if raw_kind is StrategyParameterKind.DECIMAL:
+            if not isinstance(raw_value, str):
+                raise IncompatibleSearchSpaceDocumentError("Decimal parameter text is invalid")
+            try:
+                value = Decimal(raw_value)
+            except InvalidOperation:
+                raise IncompatibleSearchSpaceDocumentError(
+                    "Decimal parameter text is invalid"
+                ) from None
+            if decimal_text(value) != raw_value:
+                raise IncompatibleSearchSpaceDocumentError(
+                    "Decimal parameter text is not canonical"
+                )
+        elif raw_kind is StrategyParameterKind.BOOLEAN:
+            if not isinstance(raw_value, bool):
+                raise IncompatibleSearchSpaceDocumentError("boolean parameter is invalid")
+            value = raw_value
+        elif raw_kind is StrategyParameterKind.INTEGER:
+            if isinstance(raw_value, bool) or not isinstance(raw_value, int):
+                raise IncompatibleSearchSpaceDocumentError("integer parameter is invalid")
+            integer_text(raw_value)
+            value = raw_value
+        else:
+            if not isinstance(raw_value, str):
+                raise IncompatibleSearchSpaceDocumentError("string parameter is invalid")
+            value = raw_value
+        names.append(raw_name)
+        result.append((raw_name, raw_kind, value))
+    _validate_unique_canonical_names(names, "parameter document")
+    return tuple(result)
 
 
 def calculate_cardinality(

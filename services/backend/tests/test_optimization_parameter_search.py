@@ -598,6 +598,14 @@ def test_combination_documents_checksums_and_ids_are_stable_and_unique() -> None
     assert all(item.parameter_document for item in first.combinations)
 
 
+@pytest.mark.parametrize("index", ["invalid", True, -1])
+def test_combination_constructor_rejects_invalid_index_without_type_error(index: object) -> None:
+    combination = _service().expand(_valid_space()).combinations[0]
+
+    with pytest.raises(IncompatibleSearchSpaceDocumentError):
+        replace(combination, index=index)  # type: ignore[arg-type]
+
+
 def test_contracts_are_frozen_and_defensively_copy_input_sequences() -> None:
     values = [2, 3]
     space = _service().create(

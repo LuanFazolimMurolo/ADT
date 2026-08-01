@@ -160,3 +160,105 @@ class TemporalChecksumError(IncompatibleTemporalDocumentError):
 class TemporalIdentifierError(IncompatibleTemporalDocumentError):
     code = "temporal_identifier_mismatch"
     default_message = "Um identificador do plano temporal não confere."
+
+
+class ExperimentPlanningError(InvalidDomainInputError):
+    """Base failure for deterministic experiment-planning contracts."""
+
+    code = "experiment_planning_error"
+    default_message = "O plano de experimento é inválido."
+
+
+class UnsupportedExperimentSchemaError(ExperimentPlanningError):
+    code = "unsupported_experiment_schema"
+    default_message = "A versão do plano de experimento não é suportada."
+
+
+class IncompatibleExperimentSnapshotError(ExperimentPlanningError):
+    code = "incompatible_experiment_snapshot"
+    default_message = "O snapshot é incompatível com o experimento."
+
+
+class IncompatibleExperimentTemporalPlanError(ExperimentPlanningError):
+    code = "incompatible_experiment_temporal_plan"
+    default_message = "O plano temporal é incompatível com o experimento."
+
+
+class IncompatibleExperimentSearchSpaceError(ExperimentPlanningError):
+    code = "incompatible_experiment_search_space"
+    default_message = "O espaço de parâmetros é incompatível com o experimento."
+
+
+class IncompatibleExperimentPluginError(ExperimentPlanningError):
+    code = "incompatible_experiment_plugin"
+    default_message = "O plugin de estratégia é incompatível com o experimento."
+
+
+class InvalidExperimentBacktestConfigurationError(ExperimentPlanningError):
+    code = "invalid_experiment_backtest_configuration"
+    default_message = "A configuração de backtest do experimento é inválida."
+
+
+class InvalidExperimentCardinalityError(ExperimentPlanningError):
+    code = "invalid_experiment_cardinality"
+    default_message = "A cardinalidade do experimento é inválida."
+
+
+class InvalidRunSpecLimitError(ExperimentPlanningError):
+    code = "invalid_run_spec_limit"
+    default_message = "O limite de especificações planejadas é inválido."
+
+
+class RunSpecLimitExceededError(InvalidExperimentCardinalityError):
+    code = "run_spec_limit_exceeded"
+    default_message = "A cardinalidade do experimento excede o limite permitido."
+
+
+class ExperimentRunOrderError(ExperimentPlanningError):
+    code = "experiment_run_order_error"
+    default_message = "As especificações planejadas estão fora da ordem canônica."
+
+
+class ExperimentRunIndexError(ExperimentPlanningError):
+    code = "experiment_run_index_error"
+    default_message = "Um índice de especificação planejada é inválido."
+
+
+class InvalidExperimentRunPurposeError(ExperimentPlanningError):
+    code = "invalid_experiment_run_purpose"
+    default_message = "O propósito temporal da especificação é inválido."
+
+
+class ExperimentHoldoutPolicyError(ExperimentPlanningError):
+    code = "experiment_holdout_policy_error"
+    default_message = "A política de holdout do experimento é inválida."
+
+
+class DuplicatePlannedRunSpecError(ExperimentPlanningError):
+    code = "duplicate_planned_run_spec"
+    default_message = "O experimento contém uma especificação planejada duplicada."
+
+
+class IncompatibleExperimentDocumentError(ExperimentPlanningError):
+    code = "incompatible_experiment_document"
+    default_message = "O documento do experimento é incompatível."
+
+
+class ExperimentChecksumError(IncompatibleExperimentDocumentError):
+    code = "experiment_checksum_mismatch"
+    default_message = "O checksum do experimento não confere."
+
+
+class ExperimentIdentifierError(IncompatibleExperimentDocumentError):
+    code = "experiment_identifier_mismatch"
+    default_message = "O identificador do experimento não confere."
+
+
+class PlannedRunSpecChecksumError(IncompatibleExperimentDocumentError):
+    code = "planned_run_spec_checksum_mismatch"
+    default_message = "O checksum da especificação planejada não confere."
+
+
+class PlannedRunSpecIdentifierError(IncompatibleExperimentDocumentError):
+    code = "planned_run_spec_identifier_mismatch"
+    default_message = "O identificador da especificação planejada não confere."

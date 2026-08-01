@@ -619,3 +619,61 @@ This delivery does not expand parameter spaces, execute a backtest, publish an
 artifact, persist an experiment or implement walk-forward. Phase 4-03 is the
 first layer allowed to join parameter search, temporal segmentation and a
 backtest configuration into a reproducible experiment plan.
+
+## Phase 4-03 reproducible experiment-planning boundary
+
+Phase 4-03 is a pure composition layer above the existing contracts:
+
+```text
+legitimate Phase 2C snapshot + manifest
+    + validated Phase 4-02 TRAIN / VALIDATION / TEST plan
+    + validated and factory-expanded Phase 4-01 parameter space
+    + exact registered Phase 3C plugin identity
+    + canonical projection of common Phase 3A BacktestConfig fields
+    → immutable experiment manifest
+    → one planned run spec per combination × temporal segment
+```
+
+The planner reuses Phase 2C snapshot validation, the temporal service and the
+parameter-search service. Snapshot/temporal integrity, plugin and search-space
+structure, cardinality and the common backtest configuration are checked before
+parameter expansion can invoke a strategy factory. There are exactly three runs
+per combination, a default limit of 3,000 planned runs and a conservative
+absolute limit of 30,000. No truncation or partial plan is possible. Canonical
+ordering is `combination_index` first and `segment_index` second.
+
+The experiment-wide backtest projection contains only common deterministic
+fields. Every planned spec contains an actual existing `BacktestConfig` bound
+to the immutable snapshot, normalized strategy descriptor and segment context
+range. The separate evaluation range remains explicit: retrospective warmup is
+read context, never scored membership. Phase 4-04 must preserve that distinction
+when it adds execution.
+
+`engine_version` is rejected unless it is already an exact safe token without
+leading or trailing whitespace. The backtest schema is an integer (never a
+boolean) from the official Phase 3A supported-version set, currently versions 1
+and 2. Phase 4-03 reuses the Phase 4-01 pure combination validator for nested
+parameter tuple, typed document, checksum and search-space-bound ID invariants.
+
+Run purposes are inseparable from temporal roles: TRAIN is `TRAINING`,
+VALIDATION is `MODEL_SELECTION`, and TEST is `FINAL_HOLDOUT`. Only VALIDATION is
+marked eligible for future selection. The manifest records the strict
+`TEST_IS_FINAL_HOLDOUT` policy; Phase 4-03 contains no ranking or selection.
+
+Schema version 1 embeds the complete canonical 4-01 and 4-02 documents,
+combination parameter documents, plugin versions, backtest settings, ordered
+specs, limits and policies. Each documented run is compact: it references its
+top-level combination by index, ID and parameter checksum and its temporal
+segment by index, ID and checksum; context, evaluation, snapshot, plugin and
+backtest config are reconstructed from top-level contracts. Ordinary SHA-256
+protects payloads. Domain-separated
+SHA-256 identifies experiments and planned specs; planned-spec IDs bind their
+experiment and are deliberately distinct from Phase 3A completed-result
+`run_id` values. Frozen contracts, strict decoding and consuming-service
+revalidation cover low-level mutation, ordering, cardinality, holdout, checksum
+and identity drift.
+
+This boundary reads no candles, calls no backtest engine, creates no result
+artifact or Phase 3A run ID, performs no filesystem/database/network write and
+starts no worker, thread or subprocess. Bounded execution and atomic result
+publication belong exclusively to Phase 4-04.
