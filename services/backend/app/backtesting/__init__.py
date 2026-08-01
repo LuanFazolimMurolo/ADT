@@ -1,9 +1,18 @@
-"""Deterministic local backtesting contracts for ADT Phase 3A."""
+"""Deterministic local backtesting contracts for ADT Phases 3A and 3B."""
 
 from app.backtesting.artifacts import (
     BacktestArtifactStore,
     build_backtest_result,
     build_run_id,
+)
+from app.backtesting.comparison_batch import (
+    BacktestComparisonBatch,
+    ComparisonBatchGroup,
+    ComparisonBatchGroupResult,
+    ComparisonBatchRequest,
+    build_comparison_batch,
+    comparison_batch_request_from_mapping,
+    load_comparison_batch_request,
 )
 from app.backtesting.domain import (
     ArtifactChecksum,
@@ -39,6 +48,15 @@ from app.backtesting.engine import (
     DeterministicBacktestEngine,
     LocalMarketSnapshotReader,
 )
+from app.backtesting.exports import (
+    ComparisonExportManifest,
+    ComparisonExportResult,
+    ComparisonExportVerification,
+    ComparisonReportExportStore,
+    ComparisonReportExportVerifier,
+    build_comparison_report_id,
+    render_comparison_csv,
+)
 from app.backtesting.ledger import (
     BacktestLedger,
     LedgerEntry,
@@ -56,16 +74,31 @@ from app.backtesting.portfolio import (
 )
 from app.backtesting.query import BacktestRunReader
 from app.backtesting.registry import StrategyRegistration, StrategyRegistry
+from app.backtesting.reports import (
+    BacktestComparisonEntry,
+    BacktestComparisonReport,
+    ComparisonMetric,
+    build_comparison_report,
+    comparison_report_from_mapping,
+)
 from app.backtesting.risk import (
     DeterministicRiskManager,
     RiskDecision,
     RiskRejectionCode,
 )
 from app.backtesting.verifier import BacktestResultVerifier, BacktestVerification
+from app.backtesting.visualization import (
+    BacktestVisualization,
+    BacktestVisualizationPoint,
+    build_backtest_visualization,
+)
 
 __all__ = [
     "ArtifactChecksum",
     "BacktestArtifactStore",
+    "BacktestComparisonBatch",
+    "BacktestComparisonEntry",
+    "BacktestComparisonReport",
     "BacktestConfig",
     "BacktestExecutionResult",
     "BacktestLedger",
@@ -78,7 +111,18 @@ __all__ = [
     "BacktestSnapshotReader",
     "BacktestStatus",
     "BacktestVerification",
+    "BacktestVisualization",
+    "BacktestVisualizationPoint",
     "ClosedTrade",
+    "ComparisonBatchGroup",
+    "ComparisonBatchGroupResult",
+    "ComparisonBatchRequest",
+    "ComparisonMetric",
+    "ComparisonExportManifest",
+    "ComparisonExportResult",
+    "ComparisonExportVerification",
+    "ComparisonReportExportStore",
+    "ComparisonReportExportVerifier",
     "DeterministicBacktestEngine",
     "DeterministicRiskManager",
     "EquityPoint",
@@ -111,6 +155,14 @@ __all__ = [
     "TimeInForce",
     "apply_fill",
     "build_backtest_result",
+    "build_backtest_visualization",
+    "build_comparison_batch",
+    "build_comparison_report",
+    "build_comparison_report_id",
+    "comparison_batch_request_from_mapping",
+    "comparison_report_from_mapping",
+    "load_comparison_batch_request",
+    "render_comparison_csv",
     "build_run_id",
     "calculate_metrics",
     "derive_closed_trades",

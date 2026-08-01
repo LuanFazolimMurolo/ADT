@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
+
+import pytest
 
 from app.backtesting.domain import (
     EquityPoint,
@@ -14,7 +17,7 @@ from app.backtesting.domain import (
     PortfolioSnapshot,
     SimulatedOrder,
 )
-from app.backtesting.metrics import calculate_metrics, derive_closed_trades
+from app.backtesting.metrics import calculate_metrics, derive_closed_trades, metrics_for_schema
 from tests.market_data_helpers import utc
 
 
@@ -201,3 +204,159 @@ def test_metrics_calculate_drawdown_exposure_turnover_and_benchmark() -> None:
     assert metrics.turnover == Decimal("22")
     assert metrics.buy_and_hold_return == Decimal("20")
     assert metrics.strategy_vs_buy_and_hold == Decimal("-18")
+
+
+def _equity_point(
+    index: int,
+    event_time: datetime,
+    equity: str,
+    *,
+    peak: str | None = None,
+) -> EquityPoint:
+    equity_value = Decimal(equity)
+    peak_value = equity_value if peak is None else Decimal(peak)
+    drawdown = peak_value - equity_value
+    drawdown_pct = Decimal("0") if peak_value == 0 else drawdown / peak_value * Decimal("100")
+    return EquityPoint(
+        candle_index=index,
+        event_time=event_time,
+        close_price=Decimal("100"),
+        quote_cash=equity_value,
+        base_quantity=Decimal("0"),
+        equity=equity_value,
+        peak_equity=peak_value,
+        drawdown=drawdown,
+        drawdown_pct=drawdown_pct,
+    )
+
+
+def _final_portfolio(equity: str) -> PortfolioSnapshot:
+    value = Decimal(equity)
+    return PortfolioSnapshot(
+        quote_cash=value,
+        base_quantity=Decimal("0"),
+        average_entry_price=Decimal("0"),
+        realized_pnl=value - Decimal("1000"),
+        unrealized_pnl=Decimal("0"),
+        total_fees=Decimal("0"),
+        total_slippage_cost=Decimal("0"),
+        equity=value,
+        peak_equity=value,
+        drawdown=Decimal("0"),
+        cost_basis=Decimal("0"),
+        drawdown_pct=Decimal("0"),
+    )
+
+
+def test_one_year_period_normalization_and_cagr_are_exact() -> None:
+    point = _equity_point(0, utc(2027, 1, 1), "2000")
+    metrics = calculate_metrics(
+        _Execution((), (), (point,), _final_portfolio("2000")),
+        initial_equity=Decimal("1000"),
+        period_start=utc(2026, 1, 1),
+    )
+
+    assert metrics.return_periods == 1
+    assert metrics.elapsed_seconds == Decimal("31536000")
+    assert metrics.periods_per_year == Decimal("1")
+    assert metrics.cagr == Decimal("100")
+    assert metrics.annualized_volatility == Decimal("0")
+    assert metrics.annualized_downside_deviation == Decimal("0")
+    assert metrics.sharpe_ratio is None
+    assert metrics.sortino_ratio is None
+
+
+def test_sharpe_sortino_and_dispersion_use_zero_rate_and_population_variance() -> None:
+    points = (
+        _equity_point(0, utc(2026, 1, 2), "1100"),
+        _equity_point(1, utc(2026, 1, 3), "990", peak="1100"),
+        _equity_point(2, utc(2026, 1, 4), "1089", peak="1100"),
+    )
+    metrics = calculate_metrics(
+        _Execution((), (), points, _final_portfolio("1089")),
+        initial_equity=Decimal("1000"),
+        period_start=utc(2026, 1, 1),
+    )
+
+    assert metrics.return_periods == 3
+    assert metrics.periods_per_year == Decimal("365")
+    assert metrics.sharpe_ratio is not None
+    assert metrics.sortino_ratio is not None
+    assert metrics.annualized_volatility is not None
+    assert metrics.annualized_downside_deviation is not None
+    assert metrics.sharpe_ratio.quantize(Decimal("0.000001")) == Decimal("6.754628")
+    assert metrics.sortino_ratio.quantize(Decimal("0.000001")) == Decimal("11.030261")
+    assert metrics.annualized_volatility.quantize(Decimal("0.000001")) == Decimal("180.123414")
+    assert metrics.annualized_downside_deviation.quantize(Decimal("0.000001")) == Decimal(
+        "110.302614"
+    )
+
+
+def test_irregular_observations_are_normalized_by_actual_elapsed_time() -> None:
+    points = (
+        _equity_point(0, utc(2026, 1, 1, 12), "1000"),
+        _equity_point(1, utc(2026, 1, 3), "1000"),
+    )
+    metrics = calculate_metrics(
+        _Execution((), (), points, _final_portfolio("1000")),
+        initial_equity=Decimal("1000"),
+        period_start=utc(2026, 1, 1),
+    )
+
+    assert metrics.return_periods == 2
+    assert metrics.elapsed_seconds == Decimal("172800")
+    assert metrics.periods_per_year == Decimal("365")
+
+
+def test_zero_final_equity_has_minus_one_hundred_percent_cagr() -> None:
+    point = _equity_point(0, utc(2027, 1, 1), "0", peak="1000")
+    metrics = calculate_metrics(
+        _Execution((), (), (point,), _final_portfolio("0")),
+        initial_equity=Decimal("1000"),
+        period_start=utc(2026, 1, 1),
+    )
+
+    assert metrics.cagr == Decimal("-100")
+    assert metrics.annualized_downside_deviation == Decimal("100")
+    assert metrics.sharpe_ratio is None
+    assert metrics.sortino_ratio == Decimal("-1")
+
+
+def test_period_start_and_equity_observations_must_be_strictly_ordered() -> None:
+    point = _equity_point(0, utc(2026, 1, 1), "1000")
+
+    with pytest.raises(ValueError, match="period_start"):
+        calculate_metrics(
+            _Execution((), (), (point,), _final_portfolio("1000")),
+            initial_equity=Decimal("1000"),
+            period_start=point.event_time,
+        )
+
+
+def test_schema_one_projection_preserves_phase_3a_metric_artifacts() -> None:
+    point = _equity_point(0, utc(2027, 1, 1), "1100")
+    metrics = calculate_metrics(
+        _Execution((), (), (point,), _final_portfolio("1100")),
+        initial_equity=Decimal("1000"),
+        period_start=utc(2026, 1, 1),
+    )
+
+    legacy = metrics_for_schema(metrics, 1)
+    current = metrics_for_schema(metrics, 2)
+
+    assert "sharpe_ratio" not in legacy
+    assert "cagr" not in legacy
+    assert current["sharpe_ratio"] is None
+    assert current["cagr"] == "10"
+
+
+def test_metric_projection_rejects_unimplemented_schema_version() -> None:
+    point = _equity_point(0, utc(2026, 1, 2), "1000")
+    metrics = calculate_metrics(
+        _Execution((), (), (point,), _final_portfolio("1000")),
+        initial_equity=Decimal("1000"),
+        period_start=utc(2026, 1, 1),
+    )
+
+    with pytest.raises(ValueError, match="schema_version is not supported"):
+        metrics_for_schema(metrics, 3)

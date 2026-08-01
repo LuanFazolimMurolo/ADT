@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import TextIO, cast
 
 from app.backtesting.artifacts import (
@@ -14,6 +15,7 @@ from app.backtesting.artifacts import (
     build_backtest_result,
     build_run_id,
 )
+from app.backtesting.comparison_batch import load_comparison_batch_request
 from app.backtesting.domain import (
     BacktestConfig,
     BacktestRunId,
@@ -25,8 +27,13 @@ from app.backtesting.domain import (
 )
 from app.backtesting.engine import DeterministicBacktestEngine
 from app.backtesting.errors import SnapshotChangedError, SnapshotInvalidError
+from app.backtesting.exports import (
+    ComparisonReportExportStore,
+    ComparisonReportExportVerifier,
+)
 from app.backtesting.query import BacktestRunReader
 from app.backtesting.registry import StrategyRegistry
+from app.backtesting.reports import ComparisonMetric
 from app.backtesting.serialization import canonical_value
 from app.backtesting.strategy import BacktestStrategy
 from app.core.config import MarketDataSettings
@@ -49,7 +56,7 @@ class PreparedBacktest:
 
 
 def configure_backtest_parser(parser: argparse.ArgumentParser) -> None:
-    """Add the stable Phase 3A command surface to one root parser."""
+    """Add the stable Phase 3A and 3B command surface to one root parser."""
     commands = parser.add_subparsers(dest="backtest_command", required=True)
     registry = StrategyRegistry()
     for name in ("plan", "run"):
@@ -97,6 +104,28 @@ def configure_backtest_parser(parser: argparse.ArgumentParser) -> None:
             command.add_argument("--offset", type=_nonnegative_int, default=0)
             command.add_argument("--limit", type=_bounded_page_size, default=20)
 
+    for name in ("compare", "compare-export"):
+        compare = commands.add_parser(name)
+        compare.add_argument("--run-id", action="append", required=True)
+        compare.add_argument(
+            "--sort-by",
+            choices=tuple(metric.value for metric in ComparisonMetric),
+            default=ComparisonMetric.TOTAL_RETURN.value,
+        )
+        compare.add_argument("--ascending", action="store_true")
+        if name == "compare-export":
+            compare.add_argument("--yes", action="store_true")
+
+    visualize = commands.add_parser("visualize")
+    visualize.add_argument("--run-id", required=True)
+    visualize.add_argument("--max-points", type=_bounded_visualization_points, default=500)
+
+    compare_batch = commands.add_parser("compare-batch")
+    compare_batch.add_argument("--request-file", type=Path, required=True)
+
+    compare_verify = commands.add_parser("compare-verify")
+    compare_verify.add_argument("--report-id", required=True)
+
 
 def run_backtest_command(
     args: argparse.Namespace,
@@ -106,7 +135,21 @@ def run_backtest_command(
 ) -> int:
     """Execute one local command without constructing an HTTP client."""
     command = args.backtest_command
-    if command in {"inspect", "verify", "orders", "trades"}:
+    if command == "compare-verify":
+        verification = ComparisonReportExportVerifier(settings.data_dir).verify(args.report_id)
+        _emit(verification, stdout)
+        return EXIT_OK
+
+    if command in {
+        "inspect",
+        "verify",
+        "orders",
+        "trades",
+        "compare",
+        "compare-export",
+        "compare-batch",
+        "visualize",
+    }:
         reader = BacktestRunReader(
             settings.data_dir,
             directory=settings.backtest_dir,
@@ -119,8 +162,39 @@ def run_backtest_command(
             _emit(reader.verify(args.run_id), stdout)
         elif command == "orders":
             _emit(reader.orders(args.run_id, offset=args.offset, limit=args.limit), stdout)
-        else:
+        elif command == "trades":
             _emit(reader.trades(args.run_id, offset=args.offset, limit=args.limit), stdout)
+        elif command == "visualize":
+            _emit(reader.visualization(args.run_id, max_points=args.max_points), stdout)
+        elif command == "compare-batch":
+            try:
+                request = load_comparison_batch_request(args.request_file)
+                batch = reader.compare_batch(request)
+            except ValueError as error:
+                raise InvalidDomainInputError(str(error)) from error
+            _emit(batch, stdout)
+        else:
+            try:
+                comparison = reader.compare(
+                    args.run_id,
+                    sort_by=ComparisonMetric(args.sort_by),
+                    descending=not args.ascending,
+                )
+            except ValueError as error:
+                raise InvalidDomainInputError(str(error)) from error
+            if command == "compare":
+                _emit(comparison, stdout)
+                return EXIT_OK
+            if not args.yes:
+                raise InvalidDomainInputError(
+                    "A exportação comparativa exige confirmação explícita --yes."
+                )
+            export = ComparisonReportExportStore(
+                settings.data_dir,
+                lock_timeout_seconds=settings.market_job_lock_timeout,
+                lock_stale_after_seconds=settings.market_job_stale_after,
+            ).publish(comparison)
+            _emit(export, stdout)
         return EXIT_OK
 
     prepared = prepare_backtest(args, settings=settings)
@@ -316,6 +390,13 @@ def _nonnegative_int(value: str) -> int:
         raise argparse.ArgumentTypeError("use an integer") from error
     if parsed < 0:
         raise argparse.ArgumentTypeError("integer must be nonnegative")
+    return parsed
+
+
+def _bounded_visualization_points(value: str) -> int:
+    parsed = _nonnegative_int(value)
+    if parsed < 2 or parsed > 2_000:
+        raise argparse.ArgumentTypeError("max-points must be between 2 and 2000")
     return parsed
 
 

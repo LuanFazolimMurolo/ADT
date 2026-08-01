@@ -94,3 +94,18 @@ class BacktestRunMissingError(ResourceNotFoundError):
 class UnsupportedStrategyError(InvalidDomainInputError):
     code = "unsupported_strategy"
     default_message = "A estratégia solicitada não está registrada para execução local."
+
+
+class BacktestComparisonExportMissingError(ResourceNotFoundError):
+    code = "backtest_comparison_export_missing"
+    default_message = "O relatório comparativo solicitado não existe."
+
+
+class BacktestComparisonExportCorruptError(PersistenceError):
+    code = "backtest_comparison_export_corrupt"
+    default_message = "Os artefatos do relatório comparativo estão corrompidos."
+
+
+class BacktestComparisonExportConflictError(DomainConflictError):
+    code = "backtest_comparison_export_conflict"
+    default_message = "O relatório comparativo existente diverge do conteúdo solicitado."

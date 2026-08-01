@@ -1,12 +1,15 @@
-"""Closed-trade derivation and deterministic Phase 3A metrics."""
+"""Closed-trade derivation and deterministic Phase 3B metrics."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from decimal import Decimal
-from typing import Protocol
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal, localcontext
+from typing import Protocol, cast
 
 from app.backtesting.domain import (
+    SUPPORTED_BACKTEST_SCHEMA_VERSIONS,
     BacktestMetrics,
     ClosedTrade,
     EquityPoint,
@@ -16,8 +19,25 @@ from app.backtesting.domain import (
     PortfolioSnapshot,
     SimulatedOrder,
 )
+from app.backtesting.serialization import canonical_value
+from app.market_data.domain import require_utc
 
 _HUNDRED = Decimal("100")
+_MICROSECONDS = Decimal("1000000")
+_SECONDS_PER_YEAR = Decimal("31536000")
+_CALCULATION_PRECISION = 50
+_ADVANCED_METRIC_FIELDS = frozenset(
+    {
+        "return_periods",
+        "elapsed_seconds",
+        "periods_per_year",
+        "cagr",
+        "annualized_volatility",
+        "annualized_downside_deviation",
+        "sharpe_ratio",
+        "sortino_ratio",
+    }
+)
 
 
 class ExecutionMetricsView(Protocol):
@@ -95,11 +115,157 @@ def derive_closed_trades(fills: Sequence[Fill]) -> tuple[ClosedTrade, ...]:
     return tuple(trades)
 
 
+@dataclass(frozen=True, slots=True)
+class _TemporalMetrics:
+    return_periods: int
+    elapsed_seconds: Decimal
+    periods_per_year: Decimal | None
+    cagr: Decimal | None
+    annualized_volatility: Decimal | None
+    annualized_downside_deviation: Decimal | None
+    sharpe_ratio: Decimal | None
+    sortino_ratio: Decimal | None
+
+
+def metrics_for_schema(metrics: BacktestMetrics, schema_version: int) -> dict[str, object]:
+    """Project metrics to the immutable artifact contract for one schema version."""
+    if schema_version not in SUPPORTED_BACKTEST_SCHEMA_VERSIONS:
+        raise ValueError("schema_version is not supported")
+    value = canonical_value(metrics)
+    if not isinstance(value, dict):  # pragma: no cover - canonical dataclass invariant
+        raise TypeError("canonical metrics must be a mapping")
+    typed_value = cast(dict[str, object], value)
+    if schema_version == 1:
+        return {
+            key: item for key, item in typed_value.items() if key not in _ADVANCED_METRIC_FIELDS
+        }
+    return typed_value
+
+
+def _duration_seconds(start: datetime, end: datetime) -> Decimal:
+    delta = end - start
+    microseconds = (delta.days * 86_400 + delta.seconds) * 1_000_000 + delta.microseconds
+    return Decimal(microseconds) / _MICROSECONDS
+
+
+def _calculate_temporal_metrics(
+    curve: Sequence[EquityPoint],
+    *,
+    initial_equity: Decimal,
+    period_start: datetime | None,
+) -> _TemporalMetrics:
+    if period_start is None:
+        start_time = curve[0].event_time
+        start_equity = curve[0].equity
+        observations = curve[1:]
+    else:
+        start_time = require_utc(period_start, field_name="period_start")
+        if start_time >= curve[0].event_time:
+            raise ValueError("period_start must precede the first equity observation")
+        start_equity = initial_equity
+        observations = curve
+
+    if not observations:
+        return _TemporalMetrics(
+            return_periods=0,
+            elapsed_seconds=Decimal("0"),
+            periods_per_year=None,
+            cagr=None,
+            annualized_volatility=None,
+            annualized_downside_deviation=None,
+            sharpe_ratio=None,
+            sortino_ratio=None,
+        )
+
+    previous_time = start_time
+    previous_equity = start_equity
+    returns: list[Decimal] = []
+    return_series_available = previous_equity > 0
+    for point in observations:
+        if point.event_time <= previous_time:
+            raise ValueError("equity observation times must be strictly increasing")
+        if return_series_available:
+            if previous_equity <= 0:
+                return_series_available = False
+                returns = []
+            else:
+                returns.append(point.equity / previous_equity - Decimal("1"))
+        previous_time = point.event_time
+        previous_equity = point.equity
+
+    elapsed_seconds = _duration_seconds(start_time, observations[-1].event_time)
+    if elapsed_seconds <= 0:  # pragma: no cover - guarded by timestamp ordering
+        raise ValueError("metric period must have positive duration")
+
+    return_periods = len(observations)
+    with localcontext() as context:
+        context.prec = _CALCULATION_PRECISION
+        periods_per_year = Decimal(return_periods) * _SECONDS_PER_YEAR / elapsed_seconds
+        annualization_factor = periods_per_year.sqrt()
+
+        cagr: Decimal | None
+        if start_equity <= 0:
+            cagr = None
+        elif observations[-1].equity == 0:
+            cagr = -_HUNDRED
+        else:
+            equity_ratio = observations[-1].equity / start_equity
+            annual_exponent = _SECONDS_PER_YEAR / elapsed_seconds
+            cagr = ((equity_ratio.ln() * annual_exponent).exp() - Decimal("1")) * _HUNDRED
+
+        if not return_series_available or len(returns) != return_periods:
+            annualized_volatility = None
+            annualized_downside_deviation = None
+            sharpe_ratio = None
+            sortino_ratio = None
+        else:
+            divisor = Decimal(return_periods)
+            mean_return = sum(returns, Decimal("0")) / divisor
+            variance = (
+                sum(
+                    ((period_return - mean_return) ** 2 for period_return in returns),
+                    Decimal("0"),
+                )
+                / divisor
+            )
+            downside_variance = (
+                sum(
+                    (min(period_return, Decimal("0")) ** 2 for period_return in returns),
+                    Decimal("0"),
+                )
+                / divisor
+            )
+            volatility = variance.sqrt()
+            downside_deviation = downside_variance.sqrt()
+            annualized_volatility = volatility * annualization_factor * _HUNDRED
+            annualized_downside_deviation = downside_deviation * annualization_factor * _HUNDRED
+            sharpe_ratio = (
+                None if volatility == 0 else mean_return / volatility * annualization_factor
+            )
+            sortino_ratio = (
+                None
+                if downside_deviation == 0
+                else mean_return / downside_deviation * annualization_factor
+            )
+
+    return _TemporalMetrics(
+        return_periods=return_periods,
+        elapsed_seconds=elapsed_seconds,
+        periods_per_year=periods_per_year,
+        cagr=cagr,
+        annualized_volatility=annualized_volatility,
+        annualized_downside_deviation=annualized_downside_deviation,
+        sharpe_ratio=sharpe_ratio,
+        sortino_ratio=sortino_ratio,
+    )
+
+
 def calculate_metrics(
     execution: ExecutionMetricsView,
     *,
     initial_equity: Decimal,
     trades: Sequence[ClosedTrade] | None = None,
+    period_start: datetime | None = None,
 ) -> BacktestMetrics:
     if initial_equity <= 0 or not initial_equity.is_finite():
         raise ValueError("initial_equity must be positive and finite")
@@ -136,6 +302,11 @@ def calculate_metrics(
     last_price = curve[-1].close_price
     buy_and_hold = None if first_price == 0 else (last_price - first_price) / first_price * _HUNDRED
     strategy_vs = None if buy_and_hold is None else total_return - buy_and_hold
+    temporal = _calculate_temporal_metrics(
+        curve,
+        initial_equity=initial_equity,
+        period_start=period_start,
+    )
     statuses = [order.status for order in execution.orders]
     return BacktestMetrics(
         initial_equity=initial_equity,
@@ -168,4 +339,12 @@ def calculate_metrics(
         turnover=turnover,
         buy_and_hold_return=buy_and_hold,
         strategy_vs_buy_and_hold=strategy_vs,
+        return_periods=temporal.return_periods,
+        elapsed_seconds=temporal.elapsed_seconds,
+        periods_per_year=temporal.periods_per_year,
+        cagr=temporal.cagr,
+        annualized_volatility=temporal.annualized_volatility,
+        annualized_downside_deviation=temporal.annualized_downside_deviation,
+        sharpe_ratio=temporal.sharpe_ratio,
+        sortino_ratio=temporal.sortino_ratio,
     )

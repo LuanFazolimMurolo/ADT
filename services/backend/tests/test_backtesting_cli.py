@@ -249,3 +249,192 @@ def test_parser_rejects_arbitrary_strategy_module() -> None:
     with pytest.raises(SystemExit) as captured:
         build_parser().parse_args(arguments)
     assert captured.value.code == 2
+
+
+def test_compare_parser_accepts_explicit_metric_and_direction() -> None:
+    args = build_parser().parse_args(
+        [
+            "backtest",
+            "compare",
+            "--run-id",
+            "a" * 64,
+            "--run-id",
+            "b" * 64,
+            "--sort-by",
+            "sharpe_ratio",
+            "--ascending",
+        ]
+    )
+
+    assert args.backtest_command == "compare"
+    assert args.run_id == ["a" * 64, "b" * 64]
+    assert args.sort_by == "sharpe_ratio"
+    assert args.ascending is True
+
+
+def test_compare_command_emits_bounded_local_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _Reader:
+        def __init__(self, data_dir: Path, **kwargs: object) -> None:
+            captured["data_dir"] = data_dir
+            captured["kwargs"] = kwargs
+
+        def compare(
+            self,
+            run_ids: list[str],
+            *,
+            sort_by: object,
+            descending: bool,
+        ) -> dict[str, object]:
+            captured["run_ids"] = run_ids
+            captured["sort_by"] = getattr(sort_by, "value")
+            captured["descending"] = descending
+            return {
+                "contract_version": 1,
+                "run_count": 2,
+                "entries": [],
+            }
+
+    monkeypatch.setattr(commands_module, "BacktestRunReader", _Reader)
+    args = build_parser().parse_args(
+        [
+            "backtest",
+            "compare",
+            "--run-id",
+            "a" * 64,
+            "--run-id",
+            "b" * 64,
+            "--sort-by",
+            "sharpe_ratio",
+        ]
+    )
+    output = StringIO()
+
+    code = run_backtest_command(args, settings=_settings(tmp_path), stdout=output)
+
+    assert code == EXIT_OK
+    assert json.loads(output.getvalue())["contract_version"] == 1
+    assert captured["run_ids"] == ["a" * 64, "b" * 64]
+    assert captured["sort_by"] == "sharpe_ratio"
+    assert captured["descending"] is True
+
+
+def test_compare_export_requires_explicit_confirmation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Reader:
+        def __init__(self, data_dir: Path, **kwargs: object) -> None:
+            del data_dir, kwargs
+
+        def compare(self, *args: object, **kwargs: object) -> dict[str, object]:
+            del args, kwargs
+            return {"contract_version": 1}
+
+    monkeypatch.setattr(commands_module, "BacktestRunReader", _Reader)
+    errors = StringIO()
+
+    code = main(
+        [
+            "backtest",
+            "compare-export",
+            "--run-id",
+            "a" * 64,
+            "--run-id",
+            "b" * 64,
+        ],
+        app_settings=_settings(tmp_path),
+        stdout=StringIO(),
+        stderr=errors,
+    )
+
+    assert code == EXIT_DOMAIN_FAILURE
+    assert "--yes" in errors.getvalue()
+
+
+def test_compare_export_publishes_verified_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    comparison = {"contract_version": 1, "run_count": 2}
+
+    class _Reader:
+        def __init__(self, data_dir: Path, **kwargs: object) -> None:
+            del data_dir, kwargs
+
+        def compare(self, *args: object, **kwargs: object) -> dict[str, object]:
+            del args, kwargs
+            return comparison
+
+    class _Store:
+        def __init__(self, data_dir: Path, **kwargs: object) -> None:
+            captured["data_dir"] = data_dir
+            captured["kwargs"] = kwargs
+
+        def publish(self, report: object) -> dict[str, object]:
+            captured["report"] = report
+            return {
+                "report_id": "c" * 64,
+                "relative_path": f"backtest-reports/{'c' * 64}",
+                "reused": False,
+                "run_count": 2,
+                "sort_by": "total_return",
+                "descending": True,
+            }
+
+    monkeypatch.setattr(commands_module, "BacktestRunReader", _Reader)
+    monkeypatch.setattr(commands_module, "ComparisonReportExportStore", _Store)
+    output = StringIO()
+
+    code = run_backtest_command(
+        build_parser().parse_args(
+            [
+                "backtest",
+                "compare-export",
+                "--run-id",
+                "a" * 64,
+                "--run-id",
+                "b" * 64,
+                "--yes",
+            ]
+        ),
+        settings=_settings(tmp_path),
+        stdout=output,
+    )
+
+    assert code == EXIT_OK
+    assert json.loads(output.getvalue())["report_id"] == "c" * 64
+    assert captured["report"] is comparison
+
+
+def test_compare_verify_emits_local_verification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _Verifier:
+        def __init__(self, data_dir: Path) -> None:
+            captured["data_dir"] = data_dir
+
+        def verify(self, report_id: str) -> dict[str, object]:
+            captured["report_id"] = report_id
+            return {"report_id": report_id, "run_count": 2}
+
+    monkeypatch.setattr(commands_module, "ComparisonReportExportVerifier", _Verifier)
+    output = StringIO()
+
+    code = run_backtest_command(
+        build_parser().parse_args(["backtest", "compare-verify", "--report-id", "d" * 64]),
+        settings=_settings(tmp_path),
+        stdout=output,
+    )
+
+    assert code == EXIT_OK
+    assert json.loads(output.getvalue())["run_count"] == 2
+    assert captured["report_id"] == "d" * 64

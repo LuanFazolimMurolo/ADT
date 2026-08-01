@@ -292,8 +292,8 @@ def test_backtest_settings_load_without_supabase_and_use_conservative_defaults()
     assert settings.backtest_default_maker_fee_bps == Decimal("10")
     assert settings.backtest_default_taker_fee_bps == Decimal("10")
     assert settings.backtest_default_slippage_bps == Decimal("5")
-    assert settings.backtest_engine_version == "3a-1"
-    assert settings.backtest_schema_version == 1
+    assert settings.backtest_engine_version == "3b-1"
+    assert settings.backtest_schema_version == 2
 
 
 @pytest.mark.parametrize(
@@ -310,7 +310,7 @@ def test_backtest_settings_load_without_supabase_and_use_conservative_defaults()
         ("backtest_default_taker_fee_bps", Decimal("NaN")),
         ("backtest_default_slippage_bps", Decimal("Infinity")),
         ("backtest_engine_version", "unsafe/version"),
-        ("backtest_schema_version", 101),
+        ("backtest_schema_version", 3),
     ],
 )
 def test_backtest_settings_have_safe_limits(field_name: str, value: object) -> None:

@@ -16,6 +16,7 @@ _BPS_DENOMINATOR = Decimal("10000")
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SAFE_TAG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+SUPPORTED_BACKTEST_SCHEMA_VERSIONS = frozenset({1, 2})
 
 StrategyParameterValue: TypeAlias = None | bool | int | str | Decimal
 StrategyParameters: TypeAlias = tuple[tuple[str, StrategyParameterValue], ...]
@@ -475,8 +476,8 @@ class BacktestConfig:
         engine_version = self.engine_version.strip()
         if _SAFE_TOKEN.fullmatch(engine_version) is None:
             raise ValueError("engine_version must be a safe identifier")
-        if self.schema_version < 1:
-            raise ValueError("schema_version must be positive")
+        if self.schema_version not in SUPPORTED_BACKTEST_SCHEMA_VERSIONS:
+            raise ValueError("schema_version is not supported")
         object.__setattr__(self, "engine_version", engine_version)
 
 
@@ -527,7 +528,7 @@ class ClosedTrade:
 
 @dataclass(frozen=True, slots=True)
 class BacktestMetrics:
-    """Deterministic Phase 3A metrics derived from execution events."""
+    """Deterministic Phase 3B metrics derived from execution events."""
 
     initial_equity: Decimal
     final_equity: Decimal
@@ -559,6 +560,14 @@ class BacktestMetrics:
     turnover: Decimal
     buy_and_hold_return: Decimal | None
     strategy_vs_buy_and_hold: Decimal | None
+    return_periods: int
+    elapsed_seconds: Decimal
+    periods_per_year: Decimal | None
+    cagr: Decimal | None
+    annualized_volatility: Decimal | None
+    annualized_downside_deviation: Decimal | None
+    sharpe_ratio: Decimal | None
+    sortino_ratio: Decimal | None
 
     def __post_init__(self) -> None:
         decimal_values = (
@@ -599,9 +608,25 @@ class BacktestMetrics:
             self.average_bars_held,
             self.buy_and_hold_return,
             self.strategy_vs_buy_and_hold,
+            self.periods_per_year,
+            self.cagr,
+            self.annualized_volatility,
+            self.annualized_downside_deviation,
+            self.sharpe_ratio,
+            self.sortino_ratio,
         ):
             if optional_metric is not None:
                 _require_finite(optional_metric, "optional metric")
+        _require_nonnegative(self.elapsed_seconds, "elapsed_seconds")
+        for nonnegative_optional in (
+            self.periods_per_year,
+            self.annualized_volatility,
+            self.annualized_downside_deviation,
+        ):
+            if nonnegative_optional is not None and nonnegative_optional < 0:
+                raise ValueError("annualized dispersion metrics must be nonnegative")
+        if self.cagr is not None and self.cagr < Decimal("-100"):
+            raise ValueError("cagr must not be below -100 percent")
         counts = (
             self.number_of_orders,
             self.filled_orders,
@@ -612,9 +637,15 @@ class BacktestMetrics:
             self.number_of_closed_trades,
             self.winning_trades,
             self.losing_trades,
+            self.return_periods,
         )
         if any(value < 0 for value in counts):
             raise ValueError("metric counts must be nonnegative")
+        if self.return_periods == 0:
+            if self.elapsed_seconds != 0 or self.periods_per_year is not None:
+                raise ValueError("zero return periods require zero elapsed time")
+        elif self.elapsed_seconds <= 0 or self.periods_per_year is None:
+            raise ValueError("return periods require positive elapsed time")
 
 
 @dataclass(frozen=True, slots=True)
@@ -663,7 +694,10 @@ class BacktestManifest:
     def __post_init__(self) -> None:
         if self.status is not BacktestStatus.COMPLETE:
             raise ValueError("published backtest manifest must be COMPLETE")
-        if _SAFE_TOKEN.fullmatch(self.engine_version) is None or self.schema_version < 1:
+        if (
+            _SAFE_TOKEN.fullmatch(self.engine_version) is None
+            or self.schema_version not in SUPPORTED_BACKTEST_SCHEMA_VERSIONS
+        ):
             raise ValueError("manifest engine or schema version is invalid")
         if _SAFE_TOKEN.fullmatch(self.snapshot_id) is None:
             raise ValueError("manifest snapshot_id is invalid")

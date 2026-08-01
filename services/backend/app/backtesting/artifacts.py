@@ -27,7 +27,7 @@ from app.backtesting.errors import (
     BacktestResultCorruptError,
     SnapshotChangedError,
 )
-from app.backtesting.metrics import calculate_metrics, derive_closed_trades
+from app.backtesting.metrics import calculate_metrics, derive_closed_trades, metrics_for_schema
 from app.backtesting.serialization import (
     canonical_checksum,
     canonical_json_bytes,
@@ -112,12 +112,14 @@ def build_backtest_result(
         execution,
         initial_equity=config.initial_capital,
         trades=trades,
+        period_start=config.data_range.start,
     )
+    metrics_value = metrics_for_schema(metrics, config.schema_version)
     logical_checksum = build_logical_result_checksum(
         run_id=run_id,
         execution=execution,
         trades=trades,
-        metrics=metrics,
+        metrics=metrics_value,
     )
     return BacktestResult(
         run_id=run_id,
@@ -268,7 +270,7 @@ class BacktestArtifactStore:
             {
                 "run_id": result.run_id.value,
                 "final_portfolio": result.final_portfolio,
-                "metrics": result.metrics,
+                "metrics": metrics_for_schema(result.metrics, config.schema_version),
                 "logical_result_checksum": result.logical_result_checksum,
                 "risk_halt": execution.risk_halt,
                 "candles_processed": execution.candles_processed,

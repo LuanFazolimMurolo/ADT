@@ -1,4 +1,4 @@
-# Deterministic Backtesting (Phase 3A)
+# Deterministic Backtesting (Phases 3A–3B)
 
 Phase 3A implements a local, reproducible, candle-by-candle backtest engine for
 one immutable Phase 2C snapshot. It is a technical simulation facility, not a
@@ -87,8 +87,118 @@ closed-trade, win-rate, profit-factor, expectancy, exposure, turnover and
 buy-and-hold comparison metrics. Undefined divisions are represented as `null`,
 not infinity.
 
-Sharpe, Sortino, CAGR, comparative reports and statistical analysis remain for
-Phase 3B.
+Phase 3B adds time-normalized metrics from the immutable equity curve:
+
+- `return_periods` and exact `elapsed_seconds`;
+- observed `periods_per_year`, derived from actual UTC timestamps;
+- CAGR using a fixed 365-day crypto year;
+- annualized population volatility and downside deviation;
+- Sharpe and Sortino ratios using a zero risk-free rate.
+
+The first production return period starts at the configured half-open backtest
+range start and ends at the first closed candle. Later periods are measured
+between consecutive candle close timestamps. Observation timestamps must be
+strictly increasing. A zero denominator is represented as `null`, never
+infinity. Decimal calculations use an explicit high-precision local context.
+
+Schema version 1 retains the exact Phase 3A metric payload and checksum.
+Schema version 2 includes the advanced Phase 3B fields. This allows the current
+verifier to validate previously published Phase 3A artifacts without rewriting
+or mutating them.
+
+The second Phase 3B delivery adds a versioned comparison report contract. It:
+
+- accepts between 2 and 100 unique run IDs;
+- verifies every immutable run before reading its summary;
+- projects only bounded, visualization-safe identity and metric fields;
+- supports deterministic ordering by return, CAGR, Sharpe, Sortino, drawdown,
+  net profit or profit factor;
+- keeps undefined advanced metrics last and uses run ID as a stable tie-breaker;
+- exposes whether all entries share the same snapshot, data range and initial
+  capital, instead of silently implying an apples-to-apples comparison;
+- reads schema version 1 runs with unavailable advanced metrics represented as
+  `null`.
+
+The local command is:
+
+```bash
+python -m app.cli backtest compare \
+  --run-id <RUN_A> \
+  --run-id <RUN_B> \
+  --sort-by sharpe_ratio
+```
+
+Use `--ascending` when lower values should appear first. The command performs no
+network request and does not create or mutate artifacts.
+
+The third Phase 3B delivery publishes a portable, content-addressed comparison
+export only after every source run passes full verification:
+
+```bash
+python -m app.cli backtest compare-export \
+  --run-id <RUN_A> \
+  --run-id <RUN_B> \
+  --sort-by sharpe_ratio \
+  --yes
+```
+
+Exports are written atomically under
+`ADT_DATA_DIR/market/backtest-reports/<report_id>/` and contain exactly
+`manifest.json`, `report.json` and `report.csv`. The report ID is derived from
+the complete canonical comparison report, so repeated exports are idempotent.
+The manifest binds ordered run IDs, logical result checksums and file checksums.
+The CSV uses a fixed column order and represents undefined metrics as empty
+cells. Verify an export independently with:
+
+```bash
+python -m app.cli backtest compare-verify --report-id <REPORT_ID>
+```
+
+The fourth Phase 3B delivery adds two read-only, network-free contracts.
+
+A verified equity curve can be projected to at most 2,000 uniformly sampled
+points for a chart or administrative preview:
+
+```bash
+python -m app.cli backtest visualize \
+  --run-id <RUN_ID> \
+  --max-points 500
+```
+
+The contract preserves the first and last observations, returns only timestamp,
+close, equity and drawdown percentage, and includes the verified logical-result
+checksum. The complete run is verified before Parquet is read. The source
+artifact remains unchanged and no chart file is written.
+
+Multiple explicit comparisons can be evaluated in one bounded request without
+creating a parameter grid or selecting a strategy automatically. The JSON file
+must contain between 1 and 20 named groups, at most 500 run references and at
+most 100 unique runs:
+
+```json
+{
+  "contract_version": 1,
+  "groups": [
+    {
+      "name": "baseline",
+      "run_ids": ["<RUN_A>", "<RUN_B>"],
+      "sort_by": "sharpe_ratio",
+      "descending": true
+    }
+  ]
+}
+```
+
+Run it with:
+
+```bash
+python -m app.cli backtest compare-batch --request-file ./comparison-batch.json
+```
+
+Every unique run is verified exactly once and reused across groups. The response
+has a deterministic `batch_id` bound to all ordered comparison reports. Batch
+comparison is read-only: it does not execute backtests, search parameter spaces,
+rank a strategy for deployment or publish artifacts.
 
 ## Result artifacts
 
@@ -165,6 +275,7 @@ clients are constructed.
 
 ## Deliberate limitations
 
-Phase 3A does not implement indicators, production strategies, optimization,
-walk-forward analysis, batch runs, multiple assets, partial fills, order-book
-simulation, frontend charts, schedulers, paper trading or live trading.
+Phase 3B does not execute batch backtests and does not implement indicators,
+production strategies, parameter optimization, walk-forward analysis, multiple
+assets, partial fills, order-book simulation, frontend chart rendering,
+schedulers, paper trading or live trading.

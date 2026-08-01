@@ -34,11 +34,10 @@ from app.backtesting.domain import (
 from app.backtesting.engine import BacktestExecutionResult
 from app.backtesting.errors import BacktestResultCorruptError
 from app.backtesting.ledger import LedgerEntry, LedgerEntryType, verify_ledger
-from app.backtesting.metrics import calculate_metrics, derive_closed_trades
+from app.backtesting.metrics import calculate_metrics, derive_closed_trades, metrics_for_schema
 from app.backtesting.portfolio import apply_fill, initialize_portfolio, mark_to_market
 from app.backtesting.serialization import (
     canonical_checksum,
-    canonical_value,
     file_checksum,
     read_json_envelope,
 )
@@ -168,7 +167,7 @@ class BacktestResultVerifier:
         fills = tuple(_decode_fill(item) for item in _read_jsonl(root / "fills.jsonl"))
         ledger = tuple(_decode_ledger(item) for item in _read_jsonl(root / "ledger.jsonl"))
         trades = tuple(_decode_trade(item) for item in _read_jsonl(root / "trades.jsonl"))
-        equity = _read_equity(root / "equity.parquet")
+        equity = read_equity_artifact(root / "equity.parquet")
         _verify_sequences(orders, fills)
         ledger_verification = verify_ledger(ledger)
         if not equity:
@@ -214,14 +213,27 @@ class BacktestResultVerifier:
             final_portfolio=final_portfolio,
             risk_halt=_bool(result_raw.get("risk_halt")),
         )
-        metrics = calculate_metrics(execution, initial_equity=initial_capital, trades=trades)
-        if canonical_value(metrics) != result_raw.get("metrics"):
+        config_range = _dict(config_raw, "data_range")
+        try:
+            period_start = datetime.fromisoformat(_str(config_range.get("start")))
+            metrics = calculate_metrics(
+                execution,
+                initial_equity=initial_capital,
+                trades=trades,
+                period_start=period_start,
+            )
+        except ValueError:
+            raise BacktestResultCorruptError(
+                "As métricas publicadas não são reproduzíveis."
+            ) from None
+        metrics_value = metrics_for_schema(metrics, _int(config_raw.get("schema_version")))
+        if metrics_value != result_raw.get("metrics"):
             raise BacktestResultCorruptError("As métricas publicadas não são reproduzíveis.")
         logical_checksum = build_logical_result_checksum(
             run_id=run_id,
             execution=execution,
             trades=trades,
-            metrics=metrics,
+            metrics=metrics_value,
         )
         if logical_checksum != manifest.get(
             "logical_result_checksum"
@@ -346,7 +358,7 @@ def _read_jsonl(path: Path) -> Iterator[dict[str, Any]]:
         raise BacktestResultCorruptError("Um artefato JSONL é inválido.") from None
 
 
-def _read_equity(path: Path) -> tuple[EquityPoint, ...]:
+def read_equity_artifact(path: Path) -> tuple[EquityPoint, ...]:
     try:
         rows = pq.read_table(path).to_pylist()
         return tuple(

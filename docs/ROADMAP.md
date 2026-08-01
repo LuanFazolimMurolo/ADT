@@ -365,15 +365,17 @@ strategy development.
 - [x] Explicit safe strategy registry and network-free CLI
 - [x] Local unit/integration tests and documentation
 
+**Status**: Implemented, validated and versioned as `phase-3a`.
+
+### Phase 3B: advanced metrics, comparison and reports 🟡 IMPLEMENTED LOCALLY
+
+- [x] Sharpe, Sortino, CAGR and period normalization
+- [x] Comparative reports and bounded result visualization contracts
+- [x] Batch comparison without parameter optimization
+- [x] Export and report schemas
+
 **Status**: Implemented locally. Final repository-wide gates and review are
-required before the Phase 3A commit.
-
-### Phase 3B: advanced metrics, comparison and reports ⏳
-
-- [ ] Sharpe, Sortino, CAGR and period normalization
-- [ ] Comparative reports and bounded result visualization contracts
-- [ ] Batch comparison without parameter optimization
-- [ ] Export and report schemas
+required before the Phase 3B commit.
 
 ### Phase 3C: strategy and indicator framework ⏳
 

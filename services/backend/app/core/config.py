@@ -142,8 +142,8 @@ class MarketDataSettings(BaseSettings):
         ge=Decimal("0"),
         le=Decimal("1000"),
     )
-    backtest_engine_version: str = Field(default="3a-1", min_length=1, max_length=64)
-    backtest_schema_version: int = Field(default=1, ge=1, le=100)
+    backtest_engine_version: str = Field(default="3b-1", min_length=1, max_length=64)
+    backtest_schema_version: int = Field(default=2, ge=1, le=2)
 
     @field_validator("market_user_agent")
     @classmethod
