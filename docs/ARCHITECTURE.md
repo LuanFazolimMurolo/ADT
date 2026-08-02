@@ -832,3 +832,52 @@ and replaced after directory fsync; valid divergent targets are never removed.
 Phase 4-05 deliberately computes no global score, stability statistic,
 overfitting measure or production recommendation. Those analyses remain
 exclusive to Phase 4-06.
+
+## Phase 4-06 deterministic stability-report boundary
+
+Phase 4-06 consumes one already verified Phase 4-05 plan/execution pair. It
+never re-ranks candidates, reads non-selected TEST artifacts or changes a fold
+winner. The caller must provide an independent source validator that closes
+over the official 4-05 plan, experiment-manifest and artifact verification
+frontier; structural validity alone is not sufficient.
+
+Schema version 1 exposes only `DETERMINISTIC_OOS_STABILITY`. Its policy must use
+the exact comparison metric and direction that selected each fold, and makes
+all controls explicit: minimum completed folds, minimum completion ratio,
+minimum fraction of selected TEST scores that are not worse than VALIDATION,
+maximum median and worst signed degradation, and maximum parameter-turnover
+ratio. No threshold is inferred from the data.
+
+For `MAXIMIZE`, signed degradation is `VALIDATION - TEST`; for `MINIMIZE`, it is
+`TEST - VALIDATION`. Positive values therefore always mean worse out-of-sample
+performance. Ratios are stored as exact numerator/denominator pairs rather than
+rounded floats. Distributions contain bounded exact `Decimal` minimum, median
+and maximum values. The parameter-stability fingerprint is derived only from
+the normalized winner parameters, not from fold-specific combination IDs, so
+the same configuration remains stable across independent experiment plans.
+
+Every source fold produces one ordered observation. Completed folds bind the
+selection ID, selected parameter fingerprint, VALIDATION score, selected TEST
+score, degradation and transition flag. Failed folds remain visible but carry
+no synthetic metrics. The report emits separate overfitting, parameter
+stability and aggregate assessments. `POSSIBLE_OVERFITTING` is an explicit
+control signal, not a statistical proof, probability estimate or production
+recommendation. Phase 4-06 intentionally implements no PSR/DSR, PBO, Reality
+Check, cross-validation, global strategy ranking or automatic promotion.
+
+The complete report is recomputed from the authenticated walk-forward source
+before publication or reuse. Fold observations and the report have separate
+SHA-256 domains. Strict canonical JSON rejects missing/extra fields, unknown
+enums, floats, non-canonical decimals, altered aggregates, control results,
+assessments, checksums or IDs. A conservative fixed upper bound charges 8 KiB
+per fold plus a 64 KiB envelope before observations are materialized; the exact
+final document remains capped at 16 MiB.
+
+Reports are published below
+`$ADT_DATA_DIR/market/optimization/stability/<walk_forward_execution_id>/<report_id>`
+using the locked, fsynced `PREPARED`/`COMMITTED` protocol. The repository
+requires a semantic validator, verifies staged and renamed content, reuses only
+identical valid reports and recovers only corrupt targets under the execution
+lock. The report stores compact metrics and source identities, never candles,
+orders, equity curves or duplicated backtest artifacts. No CLI is added in
+4-06.

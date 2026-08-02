@@ -396,7 +396,7 @@ real-time paper trading, market-regime selection and machine learning.
 
 ---
 
-## Phase 4: Optimization and Walk-Forward 🚧
+## Phase 4: Optimization and Walk-Forward ✅ COMPLETE
 
 **Goal**: Evaluate parameter stability only after Phase 3B/3C contracts exist.
 
@@ -444,8 +444,13 @@ real-time paper trading, market-regime selection and machine learning.
   failed holdout; plan-bound validation and recoverable canonical
   PREPARED/COMMITTED publication. No global score or overfitting analysis is
   produced.
-- [ ] **4-06 — Overfitting, stability and reports**: out-of-sample comparison and
-  explicit stability controls.
+- [x] **4-06 — Overfitting, stability and reports**: deterministic analysis of
+  the already selected holdouts; exact VALIDATION→TEST degradation,
+  TEST-not-worse and completion ratios; parameter-set turnover independent of
+  fold-local IDs; explicit bounded controls and separate overfitting,
+  parameter-stability and aggregate assessments; canonical recomputable
+  reports with atomic publication. No statistical proof, global strategy
+  ranking or production recommendation is produced.
 
 **4-01 safety limits**: 1,000 combinations by default and an absolute ceiling
 of 100,000. Cardinality is validated before combinations are materialized. The
@@ -453,10 +458,11 @@ strict `REJECT_SPACE` policy rejects the complete space at the first combination
 that the registered strategy factory rejects; invalid combinations are never
 silently omitted.
 
-**Explicitly deferred after 4-05**: overfitting and stability analysis, global
-out-of-sample comparison/ranking, purge/embargo windows, optimization reports,
-real-time paper trading, multi-asset portfolios, distributed workers, machine
-learning and any unbounded or random search.
+**Explicitly deferred after Phase 4**: advanced statistical overfitting tests
+(PSR/DSR, PBO, Reality Check and CPCV), purge/embargo windows, sensitivity and
+Monte Carlo analysis, global strategy ranking or automatic production
+promotion, multi-asset optimization, distributed workers, machine learning and
+any unbounded or random search. Real-time paper trading begins only in Phase 5.
 
 **Dependencies**: Phases 3B and 3C complete
 **Blockers**: None

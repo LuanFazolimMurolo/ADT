@@ -492,6 +492,7 @@ experiment execution references, decisions and selected TEST metrics. They do
 not aggregate fold performance. There is no 4-05 CLI; a safe consolidated
 operator workflow remains deferred. Stability, overfitting and global
 comparison reports belong to Phase 4-06.
+
 Before serialization, publication, reuse or independent published verification,
 the final manifest is reconciled fold-by-fold with the original plan and each
 referenced 4-04 execution. Conservative byte calculators charge the complete
@@ -500,6 +501,44 @@ envelopes for folds, rejection evidence and holdout metrics before expansion.
 A corrupt final target is removed under the plan lock and safely republished;
 a valid identical target is reused and valid divergent content remains a
 conflict.
+
+## Phase 4-06 stability and overfitting controls
+
+The stability service accepts only a Phase 4-05 execution that has passed an
+independent semantic validator. Its policy must repeat the walk-forward
+selection metric and direction and explicitly provide all thresholds. This
+keeps the report reproducible and prevents an analyst from silently changing
+the objective after observing TEST.
+
+For each completed fold, Phase 4-06 compares the frozen winner's VALIDATION
+score with that same winner's verified TEST score. Positive signed degradation
+always means TEST became worse, regardless of whether the metric is maximized
+or minimized. Failed folds remain in the denominator of the completion ratio
+and receive no invented score. The report includes:
+
+- exact completion and TEST-not-worse ratios;
+- exact parameter transition and turnover ratios;
+- VALIDATION, TEST and degradation minimum/median/maximum distributions;
+- six explicit pass/fail controls;
+- separate overfitting, parameter-stability and aggregate assessments.
+
+Parameter turnover compares a domain-separated fingerprint of the canonical
+parameter set. It does not compare fold-local combination IDs. TEST values from
+non-selected candidates remain outside the analysis, and the report cannot
+change a winner, select a runner-up or rank strategies globally.
+
+`POSSIBLE_OVERFITTING` means one or more explicit degradation controls failed;
+it is not a p-value, probability or proof. Advanced methods such as Deflated or
+Probabilistic Sharpe Ratio, PBO, White's Reality Check, CPCV, purge/embargo,
+Monte Carlo and sensitivity surfaces remain deferred. The report also makes no
+paper-trading or production recommendation.
+
+Canonical reports are bounded to 16 MiB and published under
+`market/optimization/stability/<walk_forward_execution_id>/<report_id>` through
+locked PREPARED/COMMITTED staging. Publication requires report recomputation
+against the verified 4-05 source. Repeated publication reuses only identical
+valid content; a corrupt target can be replaced under the same lock. There is
+no 4-06 CLI.
 
 ## Deliberate limitations
 

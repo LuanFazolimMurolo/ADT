@@ -50,11 +50,11 @@ This file instructs AI assistants (like GitHub Copilot, Claude, or ChatGPT) on h
 
 ### Phases
 
-Current Phase: **4 (bounded optimization and walk-forward)**
+Current Phase: **4 complete; Phase 5 is next and not started**
 
-- ✅ Can work on: finite deterministic parameter spaces, temporal segmentation,
-  reproducible experiment planning, bounded multi-backtest execution,
-  walk-forward analysis, out-of-sample comparison and overfitting controls
+- ✅ Phase 4 is available as a stable boundary: finite deterministic search,
+  temporal planning, bounded execution, walk-forward selection and explicit
+  out-of-sample stability controls
 - ❌ Cannot work on: unbounded/random search, genetic or Bayesian optimization,
   multiple assets, real-time paper trading, live orders, leverage, shorts,
   derivatives, distributed workers or machine learning

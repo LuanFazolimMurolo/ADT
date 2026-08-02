@@ -116,3 +116,14 @@ política, hashes, limites e produto exato da cardinalidade. `expand()` repete a
 validação estrutural, de checksum e de ID antes de resolver ou chamar qualquer
 factory, protegendo inclusive contra objetos congelados alterados por mecanismos
 de baixo nível.
+
+
+## Phase 4-06 parameter-stability reporting
+
+The stability report does not create, mutate or promote strategy plugins. It
+compares the normalized parameter set selected in each completed walk-forward
+fold by a domain-separated fingerprint that is independent of the fold's
+experiment and combination IDs. Equal canonical parameters therefore count as
+stable even when planned in different folds; any changed parameter counts as a
+transition. This signal is reported with explicit thresholds and never changes
+the registered plugin version, lifecycle, factory or selected holdout.

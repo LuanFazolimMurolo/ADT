@@ -421,3 +421,55 @@ class WalkForwardIdentifierError(IncompatibleWalkForwardDocumentError):
 class WalkForwardPublicationError(WalkForwardError):
     code = "walk_forward_publication_error"
     default_message = "A publicação walk-forward falhou."
+
+
+class StabilityAnalysisError(InvalidDomainInputError):
+    """Base failure for deterministic Phase 4-06 analysis contracts."""
+
+    code = "stability_analysis_error"
+    default_message = "O contrato de estabilidade da otimização é inválido."
+
+
+class InvalidStabilityPolicyError(StabilityAnalysisError):
+    code = "invalid_stability_policy"
+    default_message = "A política de estabilidade da otimização é inválida."
+
+
+class IncompatibleStabilitySourceError(StabilityAnalysisError):
+    code = "incompatible_stability_source"
+    default_message = "A execução walk-forward é incompatível com a análise de estabilidade."
+
+
+class InvalidStabilityMetricError(StabilityAnalysisError):
+    code = "invalid_stability_metric"
+    default_message = "Uma métrica da análise de estabilidade é inválida."
+
+
+class StabilityLimitExceededError(StabilityAnalysisError):
+    code = "stability_limit_exceeded"
+    default_message = "Um limite operacional da análise de estabilidade foi excedido."
+
+
+class IncompatibleStabilityReportError(StabilityAnalysisError):
+    code = "incompatible_stability_report"
+    default_message = "O relatório de estabilidade é incompatível."
+
+
+class IncompatibleStabilityDocumentError(StabilityAnalysisError):
+    code = "incompatible_stability_document"
+    default_message = "O documento do relatório de estabilidade é incompatível."
+
+
+class StabilityChecksumError(IncompatibleStabilityDocumentError):
+    code = "stability_checksum_error"
+    default_message = "O checksum do relatório de estabilidade não confere."
+
+
+class StabilityIdentifierError(IncompatibleStabilityDocumentError):
+    code = "stability_identifier_error"
+    default_message = "A identidade do relatório de estabilidade não confere."
+
+
+class StabilityPublicationError(StabilityAnalysisError):
+    code = "stability_publication_error"
+    default_message = "A publicação do relatório de estabilidade falhou."
