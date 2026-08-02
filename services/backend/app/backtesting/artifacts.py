@@ -20,6 +20,9 @@ from app.backtesting.domain import (
     BacktestResult,
     BacktestRunId,
     BacktestStatus,
+    evaluation_range_for,
+    strategy_lifecycle_version_for,
+    validate_backtest_config,
 )
 from app.backtesting.engine import BacktestExecutionResult
 from app.backtesting.errors import (
@@ -66,6 +69,7 @@ def build_run_id_from_values(config_value: object, snapshot_value: object) -> Ba
 
 
 def build_run_id(config: BacktestConfig, snapshot: DatasetSnapshot) -> BacktestRunId:
+    validate_backtest_config(config)
     return build_run_id_from_values(
         config,
         {
@@ -112,7 +116,7 @@ def build_backtest_result(
         execution,
         initial_equity=config.initial_capital,
         trades=trades,
-        period_start=config.data_range.start,
+        period_start=evaluation_range_for(config).start,
     )
     metrics_value = metrics_for_schema(metrics, config.schema_version)
     logical_checksum = build_logical_result_checksum(
@@ -161,11 +165,18 @@ class BacktestArtifactStore:
     def root(self) -> Path:
         return self._root
 
+    def relative_run_path(self, run_id: str) -> str:
+        """Return the canonical published path for one validated run identity."""
+
+        typed = BacktestRunId(run_id)
+        return (self._root / typed.value).relative_to(self._market).as_posix()
+
     def publish(
         self,
         config: BacktestConfig,
         execution: BacktestExecutionResult,
     ) -> BacktestResult:
+        validate_backtest_config(config)
         result = build_backtest_result(config, execution)
         run_id = result.run_id
         trades = result.trades
@@ -204,6 +215,8 @@ class BacktestArtifactStore:
                     for name in _ARTIFACT_NAMES
                 )
                 now = self._clock().astimezone(UTC)
+                evaluation_range = evaluation_range_for(config)
+                strategy_lifecycle_version = strategy_lifecycle_version_for(config)
                 manifest = BacktestManifest(
                     run_id=run_id,
                     engine_version=config.engine_version,
@@ -214,7 +227,7 @@ class BacktestArtifactStore:
                     dataset_version=execution.snapshot.dataset_version,
                     dataset_checksum=execution.snapshot.checksum,
                     snapshot_data_range=execution.snapshot.data_range,
-                    data_range=config.data_range,
+                    data_range=evaluation_range,
                     strategy=config.strategy,
                     strategy_parameters_checksum=canonical_checksum(config.strategy.parameters),
                     initial_capital=config.initial_capital,
@@ -228,6 +241,9 @@ class BacktestArtifactStore:
                     logical_result_checksum=logical_checksum,
                     created_at=now,
                     completed_at=self._clock().astimezone(UTC),
+                    context_range=config.data_range,
+                    evaluation_range=evaluation_range,
+                    strategy_lifecycle_version=strategy_lifecycle_version,
                 )
                 write_json_envelope(staging / "manifest.json", "manifest", manifest)
                 _fsync_file(staging / "manifest.json")

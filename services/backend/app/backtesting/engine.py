@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import ParamSpec, Protocol, TypeVar
+from typing import ParamSpec, Protocol, TypeVar, cast
 
 from app.backtesting.domain import (
     BacktestConfig,
@@ -23,6 +23,8 @@ from app.backtesting.domain import (
     PortfolioSnapshot,
     SimulatedOrder,
     TimeInForce,
+    evaluation_range_for,
+    strategy_lifecycle_version_for,
 )
 from app.backtesting.errors import (
     MaximumCandlesExceededError,
@@ -48,7 +50,7 @@ from app.backtesting.portfolio import (
 from app.backtesting.risk import DeterministicRiskManager
 from app.backtesting.strategy import BacktestStrategy, StrategyContext
 from app.market_data.datasets import DatasetSnapshot
-from app.market_data.domain import Candle, MarketType
+from app.market_data.domain import Candle, DataRange, MarketType
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -59,7 +61,7 @@ class BacktestSnapshotReader(Protocol):
 
     def open_snapshot(self, snapshot_id: str) -> DatasetSnapshot: ...
 
-    def iter_candles(self) -> Iterator[Candle]: ...
+    def iter_candles(self, data_range: DataRange | None = None) -> Iterator[Candle]: ...
 
     def verify_unchanged(self) -> DatasetSnapshot: ...
 
@@ -75,8 +77,8 @@ class LocalMarketSnapshotReader:
     def open_snapshot(self, snapshot_id: str) -> DatasetSnapshot:
         return self._reader.open_snapshot(snapshot_id)
 
-    def iter_candles(self) -> Iterator[Candle]:
-        return self._reader.iter_candles()
+    def iter_candles(self, data_range: DataRange | None = None) -> Iterator[Candle]:
+        return self._reader.iter_candles(data_range)
 
     def verify_unchanged(self) -> DatasetSnapshot:
         return self._reader.verify_unchanged()
@@ -113,6 +115,27 @@ class DeterministicBacktestEngine:
     ) -> BacktestExecutionResult:
         if strategy.descriptor != config.strategy:
             raise StrategyFailureError("A identidade da estratégia diverge da configuração.")
+        try:
+            evaluation_range = evaluation_range_for(config)
+            lifecycle_version = strategy_lifecycle_version_for(config)
+        except ValueError as error:
+            raise StrategyFailureError("A configuração de lifecycle é inválida.") from error
+        has_warmup = evaluation_range.start > config.data_range.start
+        warmup_callback: Callable[[StrategyContext, Candle], None] | None = None
+        if lifecycle_version == 1:
+            if has_warmup:
+                raise StrategyFailureError("Lifecycle 1 não permite candles de warmup.")
+        else:
+            try:
+                candidate = getattr(strategy, "on_warmup_candle")
+            except (AttributeError, TypeError) as exc:
+                raise StrategyFailureError(
+                    "A estratégia não suporta o lifecycle de warmup exigido."
+                ) from exc
+            if not callable(candidate):
+                raise StrategyFailureError("A estratégia não fornece callback de warmup chamável.")
+            warmup_callback = cast(Callable[[StrategyContext, Candle], None], candidate)
+
         snapshot = self._open_snapshot(config.snapshot_id)
         if (
             config.data_range.start < snapshot.data_range.start
@@ -132,7 +155,7 @@ class DeterministicBacktestEngine:
         )
         portfolio = initialize_portfolio(config.initial_capital)
         ledger = BacktestLedger()
-        ledger.record_initial_capital(config.initial_capital, config.data_range.start)
+        ledger.record_initial_capital(config.initial_capital, evaluation_range.start)
         orders: list[SimulatedOrder] = []
         fills: list[Fill] = []
         equity: list[EquityPoint] = []
@@ -141,13 +164,13 @@ class DeterministicBacktestEngine:
         last_fill: Fill | None = None
         last_candle: Candle | None = None
         previous_open_time: datetime | None = None
+        context_candles_seen = 0
         candles_processed = 0
-
         start_context = self._context(
             snapshot=snapshot,
             candle_index=-1,
             current_candle=None,
-            history=history,
+            history=(),
             portfolio=portfolio,
             orders=orders,
             last_fill=None,
@@ -155,14 +178,38 @@ class DeterministicBacktestEngine:
         )
         pending_start_intents = self._strategy_call(strategy.on_start, start_context)
 
-        for candle in self._reader.iter_candles():
+        for candle in self._reader.iter_candles(config.data_range):
             if candle.open_time < config.data_range.start:
                 continue
             if candle.open_time >= config.data_range.end:
                 break
-            if candles_processed >= config.max_candles:
+            if context_candles_seen >= config.max_candles:
                 raise MaximumCandlesExceededError()
             self._validate_candle(candle, previous_open_time, last_candle)
+            context_candles_seen += 1
+            previous_open_time = candle.open_time
+            last_candle = candle
+            if candle.open_time < evaluation_range.start:
+                history.append(candle)
+                warmup_context = self._context(
+                    snapshot=snapshot,
+                    candle_index=context_candles_seen - 1,
+                    current_candle=candle,
+                    history=tuple(history),
+                    portfolio=portfolio,
+                    orders=orders,
+                    last_fill=None,
+                    risk_halt=False,
+                )
+                warmup_result = self._strategy_call(
+                    cast(Callable[[StrategyContext, Candle], None], warmup_callback),
+                    warmup_context,
+                    candle,
+                )
+                if warmup_result is not None:
+                    raise StrategyFailureError("on_warmup_candle não pode produzir intents")
+                continue
+
             candle_index = candles_processed
             previous_history = tuple(history)
 
@@ -288,8 +335,6 @@ class DeterministicBacktestEngine:
                 risk_halt=risk_halt,
             )
             self._check_event_limit(config, orders, fills, ledger, equity)
-            previous_open_time = candle.open_time
-            last_candle = candle
             candles_processed += 1
 
         if candles_processed == 0 or last_candle is None:

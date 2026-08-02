@@ -558,6 +558,7 @@ def test_version_one_golden_checksums_and_ids_remain_stable() -> None:
     space = _valid_space()
     combinations = service.expand(space).combinations
 
+    assert space.plugin_lifecycle_version == 1
     assert space.checksum == "3b12c577ef1d5fe7733e1d2161f18718a215ed4153d8ede82fc4f43dfd29ea41"
     assert space.search_space_id == (
         "252c4b755877fb317cdd6783a30fc678bde947191813891f0ff98a4fcc7b23b0"
@@ -565,6 +566,27 @@ def test_version_one_golden_checksums_and_ids_remain_stable() -> None:
     assert [item.combination_id for item in combinations] == [
         "38898d3841e6504be7b74620b4a247320530aa28af74af2e4e65e7280c25bdc7",
         "a12a54e517c139423162f95c05e677b89988479b5ac58784c0f014a7ac0dbd37",
+    ]
+
+
+def test_version_two_has_separate_golden_checksums_and_ids() -> None:
+    service = _service()
+    space = service.create(
+        "ema-cross-example",
+        "2",
+        {"fast_period": [2, 3]},
+        fixed_parameters={"slow_period": 5, "quantity": Decimal("0.1")},
+    )
+    combinations = service.expand(space).combinations
+
+    assert space.plugin_lifecycle_version == 2
+    assert space.checksum == "248c8ab8ace50fa0e6094c91f8eab2f5fa69d70364738e4d6cd24dca99a4fcc5"
+    assert space.search_space_id == (
+        "07e985247fba2d42cddb235cf0a840bda83d4148686fe5d95498bb1aec4a9728"
+    )
+    assert [item.combination_id for item in combinations] == [
+        "589a7148f3160b02a40f73a17f5747cc39e916b59c90a8405ebd852308a6383c",
+        "43aebac5e66a73ae5aff7daaaf1b02c9f58d1a260ec504f2bd035b4d8975f4e1",
     ]
 
 

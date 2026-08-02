@@ -404,6 +404,7 @@ def _decode_run_spec(
         snapshot_id=temporal_plan.snapshot.snapshot_id,
         strategy=StrategyDescriptor(plugin.name, plugin.version, combination.parameters),
         segment=segment,
+        strategy_lifecycle_version=plugin.lifecycle_version,
     )
     try:
         purpose = ExperimentRunPurpose(_text(payload["purpose"], "run purpose"))

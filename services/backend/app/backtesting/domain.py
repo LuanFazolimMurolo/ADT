@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from copy import copy
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -17,6 +18,7 @@ _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SAFE_TAG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 SUPPORTED_BACKTEST_SCHEMA_VERSIONS = frozenset({1, 2})
+SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS = frozenset({1, 2})
 
 StrategyParameterValue: TypeAlias = None | bool | int | str | Decimal
 StrategyParameters: TypeAlias = tuple[tuple[str, StrategyParameterValue], ...]
@@ -466,19 +468,93 @@ class BacktestConfig:
     schema_version: int
 
     def __post_init__(self) -> None:
-        if _SAFE_TOKEN.fullmatch(self.snapshot_id) is None:
+        if not isinstance(self.data_range, DataRange):
+            raise ValueError("data_range must be a data range")
+        _revalidate_data_range(self.data_range, "data_range")
+        _revalidate_strategy_descriptor(self.strategy)
+        _revalidate_execution_assumptions(self.execution)
+        _revalidate_instrument_constraints(self.constraints)
+        _revalidate_risk_limits(self.risk_limits)
+        if not isinstance(self.snapshot_id, str) or _SAFE_TOKEN.fullmatch(self.snapshot_id) is None:
             raise ValueError("snapshot_id must be a safe identifier")
         _require_positive(self.initial_capital, "initial_capital")
-        if min(self.history_window, self.max_candles, self.max_orders, self.max_events) < 1:
+        limits = (self.history_window, self.max_candles, self.max_orders, self.max_events)
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in limits):
+            raise ValueError("backtest limits must be integers")
+        if min(limits) < 1:
             raise ValueError("backtest limits must be positive")
         if self.history_window > self.max_candles:
             raise ValueError("history_window must not exceed max_candles")
+        if not isinstance(self.engine_version, str):
+            raise ValueError("engine_version must be a safe identifier")
         engine_version = self.engine_version.strip()
         if _SAFE_TOKEN.fullmatch(engine_version) is None:
             raise ValueError("engine_version must be a safe identifier")
-        if self.schema_version not in SUPPORTED_BACKTEST_SCHEMA_VERSIONS:
+        if (
+            isinstance(self.schema_version, bool)
+            or not isinstance(self.schema_version, int)
+            or self.schema_version not in SUPPORTED_BACKTEST_SCHEMA_VERSIONS
+        ):
             raise ValueError("schema_version is not supported")
         object.__setattr__(self, "engine_version", engine_version)
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationBacktestConfig(BacktestConfig):
+    """Backtest config with an explicit scored range inside its read context."""
+
+    evaluation_range: DataRange
+    strategy_lifecycle_version: int
+
+    def __post_init__(self) -> None:
+        BacktestConfig.__post_init__(self)
+        if not isinstance(self.evaluation_range, DataRange):
+            raise ValueError("evaluation_range must be a data range")
+        if (
+            self.evaluation_range.start < self.data_range.start
+            or self.evaluation_range.end != self.data_range.end
+        ):
+            raise ValueError("evaluation_range must end with and remain inside context")
+        lifecycle_version = _validate_strategy_lifecycle_version(self.strategy_lifecycle_version)
+        if lifecycle_version == 1 and self.evaluation_range != self.data_range:
+            raise ValueError("strategy lifecycle version 1 does not support warmup")
+
+
+def validate_backtest_config(config: BacktestConfig) -> None:
+    """Revalidate one immutable config without repairing hostile mutations."""
+
+    if not isinstance(config, BacktestConfig):
+        raise ValueError("backtest config is invalid")
+    candidate = copy(config)
+    try:
+        if isinstance(candidate, EvaluationBacktestConfig):
+            EvaluationBacktestConfig.__post_init__(candidate)
+        else:
+            BacktestConfig.__post_init__(candidate)
+    except ValueError as error:
+        raise ValueError(str(error)) from None
+    except Exception:
+        raise ValueError("backtest config is invalid") from None
+    if candidate != config:
+        raise ValueError("backtest config is not canonical")
+
+
+def evaluation_range_for(config: BacktestConfig) -> DataRange:
+    """Return the scored range while preserving legacy Phase 3A configs."""
+
+    validate_backtest_config(config)
+    if isinstance(config, EvaluationBacktestConfig):
+        return config.evaluation_range
+    return config.data_range
+
+
+def strategy_lifecycle_version_for(config: BacktestConfig) -> int:
+    """Return the explicit Phase 4 lifecycle without changing legacy config identity."""
+
+    validate_backtest_config(config)
+    if isinstance(config, EvaluationBacktestConfig):
+        return config.strategy_lifecycle_version
+    return 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -690,8 +766,27 @@ class BacktestManifest:
     logical_result_checksum: str
     created_at: datetime
     completed_at: datetime
+    context_range: DataRange | None = None
+    evaluation_range: DataRange | None = None
+    strategy_lifecycle_version: int | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.snapshot_data_range, DataRange):
+            raise ValueError("manifest snapshot_data_range must be a data range")
+        if not isinstance(self.data_range, DataRange):
+            raise ValueError("manifest data_range must be a data range")
+        if self.context_range is not None and not isinstance(self.context_range, DataRange):
+            raise ValueError("manifest context_range must be a data range")
+        if self.evaluation_range is not None and not isinstance(self.evaluation_range, DataRange):
+            raise ValueError("manifest evaluation_range must be a data range")
+        has_explicit_ranges = self.context_range is not None or self.evaluation_range is not None
+        if has_explicit_ranges and self.strategy_lifecycle_version is None:
+            raise ValueError("manifest with explicit ranges must declare strategy lifecycle")
+        lifecycle_version = (
+            1
+            if self.strategy_lifecycle_version is None
+            else _validate_strategy_lifecycle_version(self.strategy_lifecycle_version)
+        )
         if self.status is not BacktestStatus.COMPLETE:
             raise ValueError("published backtest manifest must be COMPLETE")
         if (
@@ -719,6 +814,19 @@ class BacktestManifest:
         )
         if self.completed_at < self.created_at:
             raise ValueError("completed_at must not precede created_at")
+        context_range = self.context_range or self.data_range
+        evaluation_range = self.evaluation_range or self.data_range
+        if (
+            self.data_range != evaluation_range
+            or evaluation_range.start < context_range.start
+            or evaluation_range.end != context_range.end
+        ):
+            raise ValueError("manifest context and evaluation ranges are inconsistent")
+        if lifecycle_version == 1 and context_range != evaluation_range:
+            raise ValueError("strategy lifecycle version 1 does not support warmup")
+        object.__setattr__(self, "context_range", context_range)
+        object.__setattr__(self, "evaluation_range", evaluation_range)
+        object.__setattr__(self, "strategy_lifecycle_version", lifecycle_version)
         paths = [item.relative_path for item in self.artifacts]
         if len(paths) != len(set(paths)):
             raise ValueError("manifest artifact paths must be unique")
@@ -740,6 +848,101 @@ class BacktestResult:
 def _require_finite(value: Decimal, field_name: str) -> None:
     if not isinstance(value, Decimal) or not value.is_finite():
         raise ValueError(f"{field_name} must be one finite Decimal")
+
+
+def _revalidate_data_range(value: object, field_name: str) -> None:
+    if not isinstance(value, DataRange):
+        raise ValueError(f"{field_name} must be a data range")
+    candidate = copy(value)
+    try:
+        DataRange.__post_init__(candidate)
+    except Exception:
+        raise ValueError(f"{field_name} must be a valid data range") from None
+    if candidate != value:
+        raise ValueError(f"{field_name} must be canonical")
+
+
+def _revalidate_strategy_descriptor(value: object) -> None:
+    if not isinstance(value, StrategyDescriptor):
+        raise ValueError("strategy must be a strategy descriptor")
+    candidate = copy(value)
+    try:
+        StrategyDescriptor.__post_init__(candidate)
+    except Exception:
+        raise ValueError("strategy descriptor is invalid") from None
+    if candidate != value:
+        raise ValueError("strategy descriptor is not canonical")
+
+
+def _revalidate_execution_assumptions(value: object) -> None:
+    if not isinstance(value, ExecutionAssumptions):
+        raise ValueError("execution must contain execution assumptions")
+    if not isinstance(value.fees, FeeModel):
+        raise ValueError("execution fee model is invalid")
+    fees = copy(value.fees)
+    try:
+        FeeModel.__post_init__(fees)
+    except Exception:
+        raise ValueError("execution fee model is invalid") from None
+    if fees != value.fees:
+        raise ValueError("execution fee model is not canonical")
+    if not isinstance(value.slippage, SlippageModel):
+        raise ValueError("execution slippage model is invalid")
+    slippage = copy(value.slippage)
+    try:
+        SlippageModel.__post_init__(slippage)
+    except Exception:
+        raise ValueError("execution slippage model is invalid") from None
+    if (
+        slippage != value.slippage
+        or value.slippage.kind is not SlippageKind.FIXED_BPS
+        or value.intrabar_policy is not IntrabarPolicy.CONSERVATIVE
+        or not isinstance(value.force_close_at_end, bool)
+    ):
+        raise ValueError("execution assumptions are invalid")
+
+
+def _revalidate_instrument_constraints(value: object) -> None:
+    if not isinstance(value, InstrumentConstraints):
+        raise ValueError("instrument constraints are invalid")
+    candidate = copy(value)
+    try:
+        InstrumentConstraints.__post_init__(candidate)
+    except Exception:
+        raise ValueError("instrument constraints are invalid") from None
+    if candidate != value:
+        raise ValueError("instrument constraints are not canonical")
+
+
+def _revalidate_risk_limits(value: object) -> None:
+    if not isinstance(value, RiskLimits):
+        raise ValueError("risk limits are invalid")
+    if (
+        isinstance(value.max_open_orders, bool)
+        or not isinstance(value.max_open_orders, int)
+        or isinstance(value.max_total_orders, bool)
+        or not isinstance(value.max_total_orders, int)
+        or not isinstance(value.stop_on_max_drawdown, bool)
+        or not isinstance(value.allow_all_in, bool)
+    ):
+        raise ValueError("risk limits are invalid")
+    candidate = copy(value)
+    try:
+        RiskLimits.__post_init__(candidate)
+    except Exception:
+        raise ValueError("risk limits are invalid") from None
+    if candidate != value:
+        raise ValueError("risk limits are not canonical")
+
+
+def _validate_strategy_lifecycle_version(value: object) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or value not in SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS
+    ):
+        raise ValueError("strategy_lifecycle_version is not supported")
+    return value
 
 
 def _require_positive(value: Decimal, field_name: str) -> None:

@@ -101,6 +101,8 @@ class BacktestRunReader:
         root = self._run_root(verification.run_id.value)
         manifest = self._envelope(root / "manifest.json", "manifest")
         result = self._envelope(root / "result.json", "result")
+        evaluation_range = manifest.get("evaluation_range", manifest.get("data_range"))
+        context_range = manifest.get("context_range", manifest.get("data_range"))
         return {
             "run_id": verification.run_id.value,
             "status": manifest.get("status"),
@@ -109,7 +111,9 @@ class BacktestRunReader:
             "snapshot_id": manifest.get("snapshot_id"),
             "dataset_key": manifest.get("dataset_key"),
             "dataset_version": manifest.get("dataset_version"),
-            "data_range": manifest.get("data_range"),
+            "data_range": evaluation_range,
+            "context_range": context_range,
+            "evaluation_range": evaluation_range,
             "strategy": manifest.get("strategy"),
             "initial_capital": manifest.get("initial_capital"),
             "execution": manifest.get("execution"),

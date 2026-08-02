@@ -32,6 +32,7 @@ from app.market_data.datasets import (
     AdvancedQualityIssue,
     DatasetIdentity,
     DatasetKind,
+    DatasetSnapshot,
     DatasetState,
     GapPolicy,
     QualityIssueCategory,
@@ -59,6 +60,32 @@ from tests.market_data_helpers import INSTRUMENT, PAIR, candle, utc
 
 class SimulatedCrash(BaseException):
     pass
+
+
+def test_snapshot_reader_rejects_hostile_range_before_bound_access(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot_range = DataRange(utc(2026, 1, 1), utc(2026, 1, 1) + timedelta(minutes=1))
+    snapshot = DatasetSnapshot(
+        snapshot_id="a" * 64,
+        dataset_key="derived:test",
+        dataset_version="b" * 64,
+        checksum="c" * 64,
+        data_range=snapshot_range,
+        partitions=(),
+        manifest_path="dataset-manifest.json",
+        created_at=utc(2026, 1, 1).isoformat(),
+    )
+    reader = MarketDatasetReader(tmp_path)
+    monkeypatch.setattr(
+        reader,
+        "_opened",
+        lambda: (snapshot, Path("snapshot.json"), "d" * 64, object()),
+    )
+
+    with pytest.raises(MarketDataInconsistencyError, match="intervalo solicitado"):
+        next(reader.iter_candles(object()))  # type: ignore[arg-type]
 
 
 def _settings(tmp_path: Path) -> Settings:

@@ -122,7 +122,7 @@ def build_backtest_visualization(
 
     sampled = _uniform_sample(equity_curve, max_points=max_points)
     try:
-        data_range = _mapping(summary.get("data_range"))
+        data_range = _mapping(summary.get("evaluation_range", summary.get("data_range")))
         strategy = _mapping(summary.get("strategy"))
         metrics = _mapping(summary.get("metrics"))
         return BacktestVisualization(

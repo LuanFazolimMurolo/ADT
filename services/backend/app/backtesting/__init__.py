@@ -15,6 +15,7 @@ from app.backtesting.comparison_batch import (
     load_comparison_batch_request,
 )
 from app.backtesting.domain import (
+    SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS,
     ArtifactChecksum,
     BacktestConfig,
     BacktestManifest,
@@ -24,6 +25,7 @@ from app.backtesting.domain import (
     BacktestStatus,
     ClosedTrade,
     EquityPoint,
+    EvaluationBacktestConfig,
     ExecutionAssumptions,
     FeeModel,
     Fill,
@@ -41,6 +43,8 @@ from app.backtesting.domain import (
     SlippageModel,
     StrategyDescriptor,
     TimeInForce,
+    strategy_lifecycle_version_for,
+    validate_backtest_config,
 )
 from app.backtesting.engine import (
     BacktestExecutionResult,
@@ -100,6 +104,7 @@ __all__ = [
     "BacktestComparisonEntry",
     "BacktestComparisonReport",
     "BacktestConfig",
+    "EvaluationBacktestConfig",
     "BacktestExecutionResult",
     "BacktestLedger",
     "BacktestManifest",
@@ -146,6 +151,7 @@ __all__ = [
     "RiskDecision",
     "RiskLimits",
     "RiskRejectionCode",
+    "SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS",
     "SimulatedOrder",
     "SlippageKind",
     "SlippageModel",
@@ -168,5 +174,7 @@ __all__ = [
     "derive_closed_trades",
     "initialize_portfolio",
     "mark_to_market",
+    "strategy_lifecycle_version_for",
+    "validate_backtest_config",
     "verify_ledger",
 ]

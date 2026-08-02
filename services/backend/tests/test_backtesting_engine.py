@@ -6,11 +6,13 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from decimal import Decimal
+from typing import cast
 
 import pytest
 
 from app.backtesting.domain import (
     BacktestConfig,
+    EvaluationBacktestConfig,
     ExecutionAssumptions,
     FeeModel,
     Fill,
@@ -23,18 +25,24 @@ from app.backtesting.domain import (
     SlippageModel,
     StrategyDescriptor,
     TimeInForce,
+    evaluation_range_for,
+    strategy_lifecycle_version_for,
 )
 from app.backtesting.engine import DeterministicBacktestEngine
 from app.backtesting.errors import (
     MaximumEventsExceededError,
     SnapshotChangedError,
     SnapshotInvalidError,
+    StrategyFailureError,
     UnsupportedBacktestMarketError,
 )
 from app.backtesting.strategy import BuyAndHoldExample, NoOpStrategy, StrategyContext
 from app.market_data.datasets import DatasetSnapshot
 from app.market_data.domain import Candle, DataRange, Exchange, MarketType, Timeframe
 from app.market_data.timeframes import get_timeframe
+from app.strategies.builtins import EmaCrossExampleStrategy
+from app.strategies.catalog import builtin_indicator_capabilities
+from app.strategies.registry import StrategyPluginRegistry
 from tests.market_data_helpers import candle, utc
 
 
@@ -52,8 +60,10 @@ class FakeSnapshotReader:
         assert snapshot_id == self.snapshot.snapshot_id
         return self.snapshot
 
-    def iter_candles(self) -> Iterator[Candle]:
+    def iter_candles(self, data_range: DataRange | None = None) -> Iterator[Candle]:
         for item in self.candles:
+            if data_range is not None and not (data_range.start <= item.open_time < data_range.end):
+                continue
             self.yielded += 1
             yield item
 
@@ -73,11 +83,22 @@ class RecordingStrategy:
         default_factory=lambda: StrategyDescriptor("recording-test", "1")
     )
     candle_contexts: list[StrategyContext] = field(default_factory=list)
+    warmup_contexts: list[StrategyContext] = field(default_factory=list)
     fill_contexts: list[StrategyContext] = field(default_factory=list)
+    start_contexts: list[StrategyContext] = field(default_factory=list)
 
     def on_start(self, context: StrategyContext) -> tuple[OrderIntent, ...]:
         assert context.current_candle is None
+        self.start_contexts.append(context)
         return self.start_intents
+
+    def on_warmup_candle(
+        self,
+        context: StrategyContext,
+        candle: Candle,
+    ) -> None:
+        assert context.current_candle == candle
+        self.warmup_contexts.append(context)
 
     def on_candle(
         self,
@@ -99,6 +120,30 @@ class RecordingStrategy:
 
     def on_end(self, context: StrategyContext) -> None:
         assert context.current_candle is not None
+
+
+@dataclass
+class LegacyLifecycleStrategy:
+    descriptor: StrategyDescriptor = field(
+        default_factory=lambda: StrategyDescriptor("legacy-test", "1")
+    )
+    start_calls: int = 0
+
+    def on_start(self, context: StrategyContext) -> tuple[OrderIntent, ...]:
+        del context
+        self.start_calls += 1
+        return ()
+
+    def on_candle(self, context: StrategyContext, current: Candle) -> tuple[OrderIntent, ...]:
+        del context, current
+        return ()
+
+    def on_fill(self, context: StrategyContext, fill: Fill) -> tuple[OrderIntent, ...]:
+        del context, fill
+        return ()
+
+    def on_end(self, context: StrategyContext) -> None:
+        del context
 
 
 def _snapshot(count: int) -> DatasetSnapshot:
@@ -167,6 +212,322 @@ def _config(
 
 def _market_buy(quantity: str = "1") -> OrderIntent:
     return OrderIntent(OrderSide.BUY, OrderType.MARKET, Decimal(quantity))
+
+
+def _evaluation_config(
+    snapshot: DatasetSnapshot,
+    descriptor: StrategyDescriptor,
+    *,
+    evaluation_start: int,
+    lifecycle_version: int = 2,
+) -> EvaluationBacktestConfig:
+    base = _config(snapshot, descriptor)
+    return EvaluationBacktestConfig(
+        snapshot_id=base.snapshot_id,
+        data_range=base.data_range,
+        strategy=base.strategy,
+        initial_capital=base.initial_capital,
+        execution=base.execution,
+        constraints=base.constraints,
+        risk_limits=base.risk_limits,
+        history_window=base.history_window,
+        max_candles=base.max_candles,
+        max_orders=base.max_orders,
+        max_events=base.max_events,
+        engine_version=base.engine_version,
+        schema_version=base.schema_version,
+        evaluation_range=DataRange(
+            snapshot.data_range.start + timedelta(hours=evaluation_start),
+            snapshot.data_range.end,
+        ),
+        strategy_lifecycle_version=lifecycle_version,
+    )
+
+
+def test_evaluation_warmup_only_observes_history_and_has_no_financial_events() -> None:
+    rows = _candles("100", "101", "102", "103")
+    snapshot = _snapshot(len(rows))
+    reader = FakeSnapshotReader(snapshot, rows)
+    strategy = RecordingStrategy()
+
+    result = DeterministicBacktestEngine(reader).run(
+        _evaluation_config(snapshot, strategy.descriptor, evaluation_start=2), strategy
+    )
+
+    assert result.candles_processed == 2
+    assert [context.current_candle for context in strategy.candle_contexts] == list(rows[2:])
+    assert strategy.start_contexts[0].history == ()
+    assert len(strategy.warmup_contexts) == 2
+    assert [context.current_candle for context in strategy.warmup_contexts] == list(rows[:2])
+    assert [context.history[-1] for context in strategy.warmup_contexts] == list(rows[:2])
+    assert strategy.candle_contexts[0].history == rows[:3]
+    assert result.orders == ()
+    assert result.fills == ()
+    assert result.ledger[0].event_time == rows[2].open_time
+    assert [point.candle_index for point in result.equity_curve] == [0, 1]
+
+
+def test_legacy_lifecycle_runs_unchanged_when_warmup_is_zero() -> None:
+    rows = _candles("100", "101")
+    snapshot = _snapshot(len(rows))
+    strategy = LegacyLifecycleStrategy()
+
+    result = DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+        _config(snapshot, strategy.descriptor), strategy
+    )
+
+    assert result.candles_processed == 2
+    assert strategy.start_calls == 1
+
+
+def test_legacy_lifecycle_is_rejected_before_callbacks_or_candle_iteration_for_warmup() -> None:
+    rows = _candles("100", "101")
+    snapshot = _snapshot(len(rows))
+    reader = FakeSnapshotReader(snapshot, rows)
+    strategy = LegacyLifecycleStrategy()
+
+    with pytest.raises(StrategyFailureError, match="lifecycle de warmup"):
+        DeterministicBacktestEngine(reader).run(
+            _evaluation_config(snapshot, strategy.descriptor, evaluation_start=1), strategy
+        )
+
+    assert strategy.start_calls == 0
+    assert reader.yielded == 0
+
+
+@pytest.mark.parametrize("name", ["no-op", "ema-cross-example"])
+def test_builtin_lifecycle_one_is_not_promoted_by_an_accidental_warmup_method(
+    name: str,
+) -> None:
+    rows = _candles("100", "101")
+    snapshot = _snapshot(len(rows))
+    reader = FakeSnapshotReader(snapshot, rows)
+    parameters = {} if name == "no-op" else {"quantity": Decimal("0.1")}
+    indicators = () if name == "no-op" else builtin_indicator_capabilities()
+    strategy = StrategyPluginRegistry.builtins().build(
+        name,
+        "1",
+        parameters,
+        available_indicators=indicators,
+    )
+    assert callable(getattr(strategy, "on_warmup_candle"))
+    config = _evaluation_config(
+        snapshot,
+        strategy.descriptor,
+        evaluation_start=1,
+        lifecycle_version=2,
+    )
+    object.__setattr__(config, "strategy_lifecycle_version", 1)
+
+    with pytest.raises(StrategyFailureError, match="configuração de lifecycle"):
+        DeterministicBacktestEngine(reader).run(config, strategy)
+
+    assert reader.open_calls == 0
+    assert reader.yielded == 0
+
+
+@pytest.mark.parametrize("value", [True, "2", 3])
+def test_evaluation_config_rejects_hostile_lifecycle_values(value: object) -> None:
+    snapshot = _snapshot(2)
+    strategy = RecordingStrategy()
+    config = _evaluation_config(snapshot, strategy.descriptor, evaluation_start=0)
+    object.__setattr__(config, "strategy_lifecycle_version", value)
+
+    with pytest.raises(ValueError, match="strategy_lifecycle_version"):
+        config.__post_init__()
+
+
+def test_evaluation_config_rejects_lifecycle_one_with_positive_warmup() -> None:
+    snapshot = _snapshot(2)
+    strategy = RecordingStrategy()
+
+    with pytest.raises(ValueError, match="lifecycle version 1"):
+        _evaluation_config(
+            snapshot,
+            strategy.descriptor,
+            evaluation_start=1,
+            lifecycle_version=1,
+        )
+
+
+def test_evaluation_config_accepts_lifecycle_one_with_zero_warmup() -> None:
+    snapshot = _snapshot(2)
+    strategy = RecordingStrategy()
+
+    config = _evaluation_config(
+        snapshot,
+        strategy.descriptor,
+        evaluation_start=0,
+        lifecycle_version=1,
+    )
+
+    assert config.evaluation_range == config.data_range
+
+
+def test_evaluation_config_accepts_lifecycle_two_with_positive_warmup() -> None:
+    snapshot = _snapshot(2)
+    strategy = RecordingStrategy()
+
+    config = _evaluation_config(
+        snapshot,
+        strategy.descriptor,
+        evaluation_start=1,
+        lifecycle_version=2,
+    )
+
+    assert config.evaluation_range.start > config.data_range.start
+
+
+def test_evaluation_range_helper_rejects_non_config_without_attribute_leak() -> None:
+    with pytest.raises(ValueError, match="backtest config"):
+        evaluation_range_for(object())  # type: ignore[arg-type]
+
+
+def test_both_config_helpers_reject_lifecycle_one_warmup_mutation() -> None:
+    snapshot = _snapshot(2)
+    strategy = RecordingStrategy()
+    config = _evaluation_config(
+        snapshot,
+        strategy.descriptor,
+        evaluation_start=1,
+        lifecycle_version=2,
+    )
+    object.__setattr__(config, "strategy_lifecycle_version", 1)
+
+    for helper in (evaluation_range_for, strategy_lifecycle_version_for):
+        with pytest.raises(ValueError, match="lifecycle version 1"):
+            helper(config)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("evaluation_range", object()),
+        ("data_range", object()),
+        ("strategy_lifecycle_version", True),
+    ],
+)
+def test_both_config_helpers_reject_hostile_config_fields(
+    field: str,
+    value: object,
+) -> None:
+    snapshot = _snapshot(2)
+    strategy = RecordingStrategy()
+    config = _evaluation_config(snapshot, strategy.descriptor, evaluation_start=1)
+    object.__setattr__(config, field, value)
+
+    for helper in (evaluation_range_for, strategy_lifecycle_version_for):
+        with pytest.raises(ValueError):
+            helper(config)
+
+
+@pytest.mark.parametrize("field", ["data_range", "evaluation_range"])
+def test_evaluation_config_rejects_hostile_range_types_before_bound_access(
+    field: str,
+) -> None:
+    snapshot = _snapshot(2)
+    strategy = RecordingStrategy()
+    config = _evaluation_config(snapshot, strategy.descriptor, evaluation_start=1)
+    object.__setattr__(config, field, object())
+
+    with pytest.raises(ValueError, match="range"):
+        config.__post_init__()
+
+
+def test_ema_state_is_warmed_before_cross_on_first_evaluation_candle() -> None:
+    rows = _candles("100", "90", "80", "120", "121")
+    snapshot = _snapshot(len(rows))
+    strategy = EmaCrossExampleStrategy(2, 3, Decimal("1"))
+
+    result = DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+        _evaluation_config(snapshot, strategy.descriptor, evaluation_start=3), strategy
+    )
+
+    assert len(result.orders) == 1
+    assert result.orders[0].created_candle_index == 0
+    assert result.orders[0].created_at == rows[3].close_time
+    assert len(result.fills) == 1
+    assert result.fills[0].candle_index == 1
+    assert result.fills[0].event_time == rows[4].open_time
+
+
+def test_warmup_callback_cannot_return_order_intents() -> None:
+    @dataclass
+    class InvalidWarmupStrategy(RecordingStrategy):
+        def on_warmup_candle(
+            self,
+            context: StrategyContext,
+            candle: Candle,
+        ) -> None:
+            super().on_warmup_candle(context, candle)
+            return cast(None, (_market_buy(),))
+
+    rows = _candles("100", "101", "102")
+    snapshot = _snapshot(len(rows))
+    strategy = InvalidWarmupStrategy()
+
+    with pytest.raises(StrategyFailureError, match="on_warmup_candle"):
+        DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+            _evaluation_config(snapshot, strategy.descriptor, evaluation_start=1),
+            strategy,
+        )
+
+
+def test_start_intent_can_fill_at_first_evaluation_candle() -> None:
+    rows = _candles("100", "101", "102", "103")
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy(start_intents=(_market_buy(),))
+
+    result = DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+        _evaluation_config(snapshot, strategy.descriptor, evaluation_start=2), strategy
+    )
+
+    assert len(result.orders) == len(result.fills) == 1
+    assert result.fills[0].candle_index == 0
+    assert result.fills[0].event_time == rows[2].open_time
+    assert all(point.event_time > rows[2].open_time for point in result.equity_curve)
+
+
+def test_evaluation_config_rejects_post_context_or_early_ranges() -> None:
+    snapshot = _snapshot(3)
+    strategy = RecordingStrategy()
+    valid = _evaluation_config(snapshot, strategy.descriptor, evaluation_start=1)
+
+    with pytest.raises(ValueError, match="evaluation_range"):
+        replace(
+            valid,
+            evaluation_range=DataRange(
+                snapshot.data_range.start - timedelta(hours=1), snapshot.data_range.end
+            ),
+        )
+    with pytest.raises(ValueError, match="evaluation_range"):
+        replace(
+            valid,
+            evaluation_range=DataRange(
+                snapshot.data_range.start,
+                snapshot.data_range.end - timedelta(hours=1),
+            ),
+        )
+
+
+def test_context_reader_does_not_expose_post_evaluation_candles() -> None:
+    rows = _candles("100", "101", "102", "103", "104", "105")
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy()
+    config = _evaluation_config(snapshot, strategy.descriptor, evaluation_start=2)
+    end = snapshot.data_range.start + timedelta(hours=4)
+    config = replace(
+        config,
+        data_range=DataRange(snapshot.data_range.start, end),
+        evaluation_range=DataRange(snapshot.data_range.start + timedelta(hours=2), end),
+    )
+    reader = FakeSnapshotReader(snapshot, rows)
+
+    result = DeterministicBacktestEngine(reader).run(config, strategy)
+
+    assert reader.yielded == 4
+    assert result.candles_processed == 2
+    assert strategy.candle_contexts[-1].current_candle == rows[3]
 
 
 def test_noop_marks_constant_equity_and_verifies_snapshot() -> None:

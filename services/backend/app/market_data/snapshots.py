@@ -267,14 +267,23 @@ class MarketDatasetReader:
         self._manifest = manifest
         return snapshot
 
-    def iter_candles(self) -> Iterator[Candle]:
+    def iter_candles(self, data_range: DataRange | None = None) -> Iterator[Candle]:
         snapshot, metadata, expected_metadata_hash, manifest = self._opened()
+        if data_range is not None and not isinstance(data_range, DataRange):
+            raise MarketDataInconsistencyError("O intervalo solicitado é inválido.")
+        selected_range = data_range or snapshot.data_range
+        if (
+            selected_range.start < snapshot.data_range.start
+            or selected_range.end > snapshot.data_range.end
+        ):
+            raise MarketDataInconsistencyError("O intervalo excede o snapshot aberto.")
         if self._manifest_path is None or self._manifest_checksum is None:
             raise MarketDataInconsistencyError("O manifest do snapshot não foi aberto.")
         pair = TradingPair.parse(manifest.identity.symbol)
         timeframe = get_timeframe(manifest.identity.timeframe)
         previous: Candle | None = None
         summaries = {(item.year, item.month): item for item in manifest.partitions}
+        finished = False
         for relative in snapshot.partitions:
             if _file_checksum(metadata) != expected_metadata_hash:
                 raise MarketDataInconsistencyError("O snapshot mudou durante a leitura.")
@@ -298,6 +307,11 @@ class MarketDatasetReader:
             for candle in rows:
                 if not snapshot.data_range.start <= candle.open_time < snapshot.data_range.end:
                     continue
+                if candle.open_time < selected_range.start:
+                    continue
+                if candle.open_time >= selected_range.end:
+                    finished = True
+                    break
                 if not candle.is_closed:
                     raise MarketDataInconsistencyError("Snapshot contém candle aberto.")
                 if previous is not None and candle.open_time <= previous.open_time:
@@ -306,6 +320,8 @@ class MarketDatasetReader:
                     )
                 previous = candle
                 yield candle
+            if finished:
+                break
         if _file_checksum(metadata) != expected_metadata_hash:
             raise MarketDataInconsistencyError("O snapshot mudou ao final da leitura.")
         if _file_checksum(self._manifest_path) != self._manifest_checksum:

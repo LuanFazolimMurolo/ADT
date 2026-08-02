@@ -2,8 +2,10 @@
 
 from app.strategies.builtins import (
     EmaCrossExamplePlugin,
+    EmaCrossExamplePluginV2,
     EmaCrossExampleStrategy,
     NoOpStrategyPlugin,
+    NoOpStrategyPluginV2,
 )
 from app.strategies.catalog import builtin_indicator_capabilities
 from app.strategies.definitions import (
@@ -55,11 +57,13 @@ __all__ = [
     "SUPPORTED_STRATEGY_PLUGIN_SCHEMA_VERSIONS",
     "DuplicateStrategyPluginError",
     "EmaCrossExamplePlugin",
+    "EmaCrossExamplePluginV2",
     "EmaCrossExampleStrategy",
     "IndicatorCapability",
     "InvalidStrategyDefinitionError",
     "InvalidStrategyPluginError",
     "NoOpStrategyPlugin",
+    "NoOpStrategyPluginV2",
     "RawStrategyParameters",
     "StrategyIndicatorCompatibilityError",
     "StrategyIndicatorRequirement",

@@ -17,6 +17,7 @@ from app.backtesting.artifacts import (
     build_run_id_from_values,
 )
 from app.backtesting.domain import (
+    SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS,
     BacktestRunId,
     ClosedTrade,
     EquityPoint,
@@ -75,6 +76,7 @@ class BacktestVerification:
     ledger_count: int
     trade_count: int
     candle_count: int
+    strategy_lifecycle_version: int = 1
 
 
 class BacktestResultVerifier:
@@ -149,7 +151,9 @@ class BacktestResultVerifier:
 
         config_raw = _read_envelope(root / "config.json", "config")
         result_raw = _read_envelope(root / "result.json", "result")
-        self._verify_manifest_config(manifest, config_raw)
+        period_start, evaluation_end, lifecycle_version = self._verify_manifest_config(
+            manifest, config_raw
+        )
         if result_raw.get("run_id") != run_id.value:
             raise BacktestResultCorruptError("O run_id do resultado diverge do diretório.")
         snapshot_value = {
@@ -168,6 +172,17 @@ class BacktestResultVerifier:
         ledger = tuple(_decode_ledger(item) for item in _read_jsonl(root / "ledger.jsonl"))
         trades = tuple(_decode_trade(item) for item in _read_jsonl(root / "trades.jsonl"))
         equity = read_equity_artifact(root / "equity.parquet")
+        candle_count = _int(result_raw.get("candles_processed"))
+        _verify_evaluation_boundaries(
+            orders=orders,
+            fills=fills,
+            ledger=ledger,
+            trades=trades,
+            equity=equity,
+            candle_count=candle_count,
+            evaluation_start=period_start,
+            evaluation_end=evaluation_end,
+        )
         _verify_sequences(orders, fills)
         ledger_verification = verify_ledger(ledger)
         if not equity:
@@ -205,7 +220,7 @@ class BacktestResultVerifier:
             raise BacktestResultCorruptError("Os trades divergem dos fills.")
         execution = BacktestExecutionResult(
             snapshot=verified_snapshot,
-            candles_processed=_int(result_raw.get("candles_processed")),
+            candles_processed=candle_count,
             orders=orders,
             fills=fills,
             ledger=ledger,
@@ -213,9 +228,7 @@ class BacktestResultVerifier:
             final_portfolio=final_portfolio,
             risk_halt=_bool(result_raw.get("risk_halt")),
         )
-        config_range = _dict(config_raw, "data_range")
         try:
-            period_start = datetime.fromisoformat(_str(config_range.get("start")))
             metrics = calculate_metrics(
                 execution,
                 initial_equity=initial_capital,
@@ -256,20 +269,20 @@ class BacktestResultVerifier:
             ledger_count=len(ledger),
             trade_count=len(trades),
             candle_count=execution.candles_processed,
+            strategy_lifecycle_version=lifecycle_version,
         )
 
     @staticmethod
     def _verify_manifest_config(
         manifest: dict[str, Any],
         config: dict[str, Any],
-    ) -> None:
+    ) -> tuple[datetime, datetime, int]:
         if manifest.get("status") != "COMPLETE":
             raise BacktestResultCorruptError("O manifest publicado não está COMPLETE.")
         for field in (
             "engine_version",
             "schema_version",
             "snapshot_id",
-            "data_range",
             "strategy",
             "initial_capital",
             "execution",
@@ -279,6 +292,60 @@ class BacktestResultVerifier:
                 raise BacktestResultCorruptError(
                     "O manifest diverge da configuração lógica do backtest."
                 )
+        is_evaluation_config = "evaluation_range" in config
+        config_declares_lifecycle = "strategy_lifecycle_version" in config
+        manifest_lifecycle_value = manifest.get("strategy_lifecycle_version")
+        if is_evaluation_config:
+            if not config_declares_lifecycle:
+                raise BacktestResultCorruptError(
+                    "O lifecycle da configuração de avaliação está ausente."
+                )
+            config_lifecycle = _strategy_lifecycle_version(config.get("strategy_lifecycle_version"))
+            manifest_lifecycle = _strategy_lifecycle_version(manifest_lifecycle_value)
+            if manifest_lifecycle != config_lifecycle:
+                raise BacktestResultCorruptError(
+                    "O lifecycle do manifest diverge da configuração lógica."
+                )
+            lifecycle_version = config_lifecycle
+        else:
+            if config_declares_lifecycle:
+                raise BacktestResultCorruptError(
+                    "A configuração legada contém lifecycle incompatível."
+                )
+            lifecycle_version = (
+                1
+                if manifest_lifecycle_value is None
+                else _strategy_lifecycle_version(manifest_lifecycle_value)
+            )
+            if lifecycle_version != 1:
+                raise BacktestResultCorruptError(
+                    "Um artifact legado não pode declarar lifecycle diferente de 1."
+                )
+        config_context = _dict(config, "data_range")
+        config_evaluation_value = config.get("evaluation_range", config_context)
+        if not isinstance(config_evaluation_value, dict):
+            raise BacktestResultCorruptError("O intervalo de avaliação é inválido.")
+        manifest_data = _dict(manifest, "data_range")
+        manifest_context_value = manifest.get("context_range", manifest_data)
+        manifest_evaluation_value = manifest.get("evaluation_range", manifest_data)
+        if (
+            not isinstance(manifest_context_value, dict)
+            or not isinstance(manifest_evaluation_value, dict)
+            or manifest_data != manifest_evaluation_value
+            or manifest_context_value != config_context
+            or manifest_evaluation_value != config_evaluation_value
+        ):
+            raise BacktestResultCorruptError(
+                "Os intervalos do manifest divergem da configuração lógica."
+            )
+        context_start, context_end = _decode_range(manifest_context_value)
+        evaluation_start, evaluation_end = _decode_range(manifest_evaluation_value)
+        if evaluation_start < context_start or evaluation_end != context_end:
+            raise BacktestResultCorruptError("Os intervalos do manifest são inconsistentes.")
+        if lifecycle_version == 1 and (
+            evaluation_start != context_start or evaluation_end != context_end
+        ):
+            raise BacktestResultCorruptError("Lifecycle 1 não admite intervalo de warmup.")
         strategy = _dict(config, "strategy")
         parameters = strategy.get("parameters")
         if canonical_checksum(parameters) != manifest.get("strategy_parameters_checksum"):
@@ -300,6 +367,7 @@ class BacktestResultVerifier:
             or completed_at < created_at
         ):
             raise BacktestResultCorruptError("Os timestamps do manifest são inválidos.")
+        return evaluation_start, evaluation_end, lifecycle_version
 
     def _verify_snapshot(self, manifest: dict[str, Any]) -> DatasetSnapshot:
         reader = self._snapshot_factory(self._data_dir)
@@ -476,6 +544,96 @@ def _decode_portfolio(raw: dict[str, Any]) -> PortfolioSnapshot:
     )
 
 
+def _decode_range(value: dict[str, Any]) -> tuple[datetime, datetime]:
+    try:
+        start = datetime.fromisoformat(_str(value.get("start")))
+        end = datetime.fromisoformat(_str(value.get("end")))
+    except ValueError:
+        raise BacktestResultCorruptError("Um intervalo temporal é inválido.") from None
+    for timestamp in (start, end):
+        offset = timestamp.utcoffset()
+        if timestamp.tzinfo is None or offset is None or offset.total_seconds() != 0:
+            raise BacktestResultCorruptError("Um intervalo temporal não está em UTC.")
+    if start >= end:
+        raise BacktestResultCorruptError("Um intervalo temporal está vazio ou invertido.")
+    return start, end
+
+
+def _verify_evaluation_boundaries(
+    *,
+    orders: tuple[SimulatedOrder, ...],
+    fills: tuple[Fill, ...],
+    ledger: tuple[LedgerEntry, ...],
+    trades: tuple[ClosedTrade, ...],
+    equity: tuple[EquityPoint, ...],
+    candle_count: int,
+    evaluation_start: datetime,
+    evaluation_end: datetime,
+) -> None:
+    if candle_count < 1 or len(equity) != candle_count:
+        raise BacktestResultCorruptError("A série avaliada possui contagem temporal inválida.")
+    for order in orders:
+        timestamps = tuple(
+            value
+            for value in (order.created_at, order.opened_at, order.terminal_at)
+            if value is not None
+        )
+        if any(value < evaluation_start or value > evaluation_end for value in timestamps):
+            raise BacktestResultCorruptError("Uma ordem está fora do intervalo de avaliação.")
+        if order.created_candle_index < -1 or order.created_candle_index >= candle_count:
+            raise BacktestResultCorruptError("Uma ordem referencia candle fora da avaliação.")
+        if order.eligible_candle_index < 0 or order.eligible_candle_index > candle_count:
+            raise BacktestResultCorruptError("Uma ordem é elegível fora da avaliação.")
+        if order.created_candle_index == -1 and order.created_at != evaluation_start:
+            raise BacktestResultCorruptError("Uma ordem inicial possui timestamp inválido.")
+        if order.opened_at is not None and order.opened_at < order.created_at:
+            raise BacktestResultCorruptError("O ciclo de vida de uma ordem está invertido.")
+        if order.terminal_at is not None and order.terminal_at < (
+            order.opened_at or order.created_at
+        ):
+            raise BacktestResultCorruptError("O ciclo de vida de uma ordem está invertido.")
+    if any(
+        fill.event_time < evaluation_start
+        or fill.event_time > evaluation_end
+        or fill.candle_index < 0
+        or fill.candle_index >= candle_count
+        for fill in fills
+    ):
+        raise BacktestResultCorruptError("Um fill está fora do intervalo de avaliação.")
+    if not ledger:
+        raise BacktestResultCorruptError("O ledger está vazio.")
+    initial = ledger[0]
+    if (
+        initial.entry_type is not LedgerEntryType.INITIAL_CAPITAL
+        or initial.event_time != evaluation_start
+        or initial.candle_index != -1
+    ):
+        raise BacktestResultCorruptError("O capital inicial não coincide com a avaliação.")
+    for entry in ledger[1:]:
+        if (
+            entry.event_time < evaluation_start
+            or entry.event_time > evaluation_end
+            or entry.candle_index < 0
+            or entry.candle_index >= candle_count
+        ):
+            raise BacktestResultCorruptError("Um evento do ledger está fora da avaliação.")
+    if [point.candle_index for point in equity] != list(range(candle_count)):
+        raise BacktestResultCorruptError("Os índices da curva de patrimônio são inválidos.")
+    if any(
+        point.event_time <= evaluation_start or point.event_time > evaluation_end
+        for point in equity
+    ):
+        raise BacktestResultCorruptError("A curva de patrimônio excede a avaliação.")
+    if any(
+        trade.entry_time < evaluation_start
+        or trade.entry_time > evaluation_end
+        or trade.exit_time < evaluation_start
+        or trade.exit_time > evaluation_end
+        for trade in trades
+    ):
+        raise BacktestResultCorruptError("Um trade está fora do intervalo de avaliação.")
+
+
 def _verify_sequences(orders: tuple[SimulatedOrder, ...], fills: tuple[Fill, ...]) -> None:
     if [order.created_sequence for order in orders] != list(range(1, len(orders) + 1)):
         raise BacktestResultCorruptError("A sequência das ordens é inválida.")
@@ -535,6 +693,16 @@ def _int(value: object) -> int:
     if not isinstance(value, int) or isinstance(value, bool):
         raise BacktestResultCorruptError()
     return value
+
+
+def _strategy_lifecycle_version(value: object) -> int:
+    try:
+        lifecycle_version = _int(value)
+    except BacktestResultCorruptError:
+        raise BacktestResultCorruptError("O lifecycle do artifact é inválido.") from None
+    if lifecycle_version not in SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS:
+        raise BacktestResultCorruptError("O lifecycle do artifact é inválido.")
+    return lifecycle_version
 
 
 def _bool(value: object) -> bool:

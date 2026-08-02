@@ -104,6 +104,7 @@ class ExperimentPlanningService:
 
         self._validate_snapshot_and_temporal(snapshot, manifest, temporal_plan)
         descriptor = self._compatible_plugin(search_space, plugin_name, plugin_version)
+        self._validate_warmup_lifecycle(descriptor, temporal_plan)
         validate_run_spec_limit(max_run_specs)
         try:
             cardinality = calculate_run_spec_cardinality(search_space.cardinality, max_run_specs)
@@ -206,6 +207,7 @@ class ExperimentPlanningService:
         descriptor = self._compatible_plugin(
             plan.search_space, plan.plugin.name, plan.plugin.version
         )
+        self._validate_warmup_lifecycle(descriptor, plan.temporal_plan)
         if _plugin_reference(descriptor) != plan.plugin:
             raise IncompatibleExperimentPluginError("registered plugin versions changed")
         validate_run_spec_limit(plan.max_run_specs)
@@ -299,6 +301,17 @@ class ExperimentPlanningService:
             )
         return descriptor
 
+    @staticmethod
+    def _validate_warmup_lifecycle(
+        descriptor: StrategyPluginDescriptor,
+        temporal_plan: TemporalSegmentationPlan,
+    ) -> None:
+        if any(segment.warmup_candles > 0 for segment in temporal_plan.segments):
+            if descriptor.lifecycle_version != 2:
+                raise IncompatibleExperimentPluginError(
+                    "positive warmup requires strategy lifecycle version 2"
+                )
+
     def _expand(self, search_space: ParameterSearchSpace) -> ParameterSearchExpansion:
         try:
             return self._parameter_search.expand(search_space)
@@ -331,6 +344,7 @@ class ExperimentPlanningService:
                     snapshot_id=snapshot.snapshot_id,
                     strategy=strategy,
                     segment=segment,
+                    strategy_lifecycle_version=plugin.lifecycle_version,
                 )
                 payload = planned_run_spec_values_payload(
                     global_index=global_index,

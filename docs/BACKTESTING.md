@@ -338,8 +338,8 @@ snapshot, temporal plan, plugin and common configuration once. A documented
 spec contains compact canonical references to its combination and segment plus
 its index, purpose, checksum and ID. The public object reconstructs and exposes
 the retrospective context range, scored evaluation range, warmup and existing
-`BacktestConfig`. The config reads the context range; a future Phase 4-04
-executor must exclude warmup observations from evaluation and metrics.
+`BacktestConfig`. The config reads the context range; the Phase 4-04 executor
+excludes warmup observations from evaluation and metrics.
 
 Plugin name/version and `engine_version` must already be safe tokens without
 surrounding whitespace. The backtest schema must be a non-boolean integer in
@@ -361,6 +361,91 @@ changed ordering/cardinality and altered hashes.
 Planning is candle-free and side-effect-free: it does not call the engine,
 publish artifacts, write `ADT_DATA_DIR`, connect to a database or network, or
 start subprocesses/workers. Those responsibilities remain deferred to 4-04.
+
+## Phase 4-04 context-aware experiment execution
+
+The local executor revalidates the complete plan, snapshot, manifest, plugin
+versions and limits before any strategy or engine is created. It then executes
+exactly one planned spec at a time in canonical order. The default local limit
+is 3,000 specs and the hard ceiling is 30,000; execution never materializes all
+results in memory.
+
+For planned runs, `BacktestConfig.data_range` is the read context and
+`evaluation_range` is the only scored interval. Under
+`WARMUP_OBSERVATION_ONLY`, candles before evaluation populate the bounded
+strategy history but cannot submit orders, fill, charge fees, mark a portfolio
+or create ledger/equity events. Lifecycle 1 is unchanged and contains
+`on_start`, `on_candle`, `on_fill` and `on_end`. Lifecycle 2 adds one
+`on_warmup_candle` callback per retrospective candle. Both versions are
+officially supported, but positive warmup requires lifecycle 2 and its factory
+must produce a callable callback before any strategy event or candle iteration;
+zero warmup can execute a lifecycle 1 strategy with no such attribute. An
+additional method never promotes lifecycle 1, and positive warmup is rejected
+before `on_start` or candle reads even if the object exposes that method. Warmup
+callbacks update strategy state with history ending at the current candle but
+return no intents; `on_start` intents are held until the first evaluation open.
+Candle indexes, orders, fills, trades and metrics are
+evaluation-local. No candle at or after the evaluation end is exposed by the
+bounded reader.
+
+The built-in identities are versioned rather than reinterpreted in place:
+`no-op@1` and `ema-cross-example@1` retain lifecycle 1 and remain compatible
+with their existing search-space and plan documents when warmup is zero;
+`no-op@2` and `ema-cross-example@2` declare lifecycle 2 and support positive
+warmup. The registered descriptor is the lifecycle authority even when a
+concrete Python object happens to expose an additional method. Textual plugin
+version and lifecycle are separate protections. Planning copies the registered
+lifecycle into each immutable `EvaluationBacktestConfig` and validates it
+against the planned plugin reference; the existing `build_run_id()` then hashes
+both the strategy descriptor and the explicit lifecycle. Consequently, even
+custom plugins with the same name and textual version cannot reuse artifacts
+across lifecycles.
+
+Every new run uses the normal deterministic engine, artifact schema and atomic
+Phase 3A store. The expected `run_id` includes the evaluation range. Existing
+artifacts are reused only after `BacktestResultVerifier` authenticates their
+config, snapshot, checksums, ledger, equity, trades and metrics. Corrupt or
+incompatible artifacts are reported as a bounded failed record and are not
+silently replaced.
+
+New result manifests declare both `context_range` and `evaluation_range`, plus
+the lifecycle actually executed; config and manifest must agree before an
+artifact verifies. A legacy `BacktestConfig` retains its canonical bytes and
+run IDs, and only its legacy manifest may omit lifecycle and infer version 1.
+`data_range` denotes the evaluated interval. Readers accept legacy Phase 3A/3B
+manifests by treating their former `data_range` as both ranges. Verification
+rejects order lifecycle timestamps, fills, ledger entries, equity observations,
+trades or metric periods outside evaluation, even when file and envelope
+checksums have been recomputed.
+
+Execution manifests use schema version 1 and explicit terminal records. Their
+aggregate status is `COMPLETED`, `PARTIALLY_FAILED` or `FAILED`; the fixed
+failure policy is `CONTINUE_AFTER_FAILURE`. Canonical IDs omit timestamps, and
+atomic publication stores only the manifest plus its `COMMITTED` publication
+record below the configured market root. Ranking, winner selection,
+walk-forward, reports, concurrency, workers and distributed execution remain
+deferred.
+
+Before loading snapshot contracts or creating any engine/strategy, execution
+computes a conservative canonical worst-case manifest size, including maximum
+500-character errors and the final envelope, and rejects anything above 16 MiB.
+Every terminal record is reconciled against its exact planned run, including
+the direct `global_index = combination_index * 3 + segment_index` formula and
+fixed TRAINING/MODEL_SELECTION/FINAL_HOLDOUT three-record group. Successful
+records are bound to the legitimate snapshot: their expected run ID is
+recalculated from the planned config, and their safe artifact path ends exactly
+in that run ID. Publication validates the complete in-memory manifest before
+path creation or I/O, verifies bounded PREPARED and COMMITTED staging contents,
+then verifies the renamed target under the same lock. Reads reject a manifest
+over 16 MiB or an oversized publication record before allocating their content.
+The public verification frontier revalidates plan and snapshot and independently
+verifies every COMPLETE/REUSED artifact and logical checksum; FAILED records
+remain valid without artifact references.
+Public execution-record and execution-manifest factories, together with their
+payload helpers, validate enum, identifier, index, flag, optional-field,
+collection and terminal-state types before accessing enum values or hashing.
+Malformed in-memory inputs therefore fail with the execution-contract error
+hierarchy before serialization, directory creation, staging or artifact I/O.
 
 ## Deliberate limitations
 

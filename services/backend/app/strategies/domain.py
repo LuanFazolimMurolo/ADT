@@ -9,7 +9,14 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import TypeAlias
 
-from app.backtesting.domain import StrategyDescriptor, StrategyParameters, StrategyParameterValue
+from app.backtesting.domain import (
+    SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS as _SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS,
+)
+from app.backtesting.domain import (
+    StrategyDescriptor,
+    StrategyParameters,
+    StrategyParameterValue,
+)
 from app.indicators.domain import IndicatorDescriptor
 from app.strategies.errors import (
     InvalidStrategyPluginError,
@@ -21,7 +28,7 @@ from app.strategies.errors import (
 
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 SUPPORTED_STRATEGY_PLUGIN_SCHEMA_VERSIONS = frozenset({1})
-SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS = frozenset({1})
+SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS = _SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS
 
 RawStrategyParameters: TypeAlias = Mapping[str, object]
 

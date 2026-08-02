@@ -262,3 +262,60 @@ class PlannedRunSpecChecksumError(IncompatibleExperimentDocumentError):
 class PlannedRunSpecIdentifierError(IncompatibleExperimentDocumentError):
     code = "planned_run_spec_identifier_mismatch"
     default_message = "O identificador da especificação planejada não confere."
+
+
+class ExperimentExecutionError(InvalidDomainInputError):
+    """Base failure for deterministic local experiment execution."""
+
+    code = "experiment_execution_error"
+    default_message = "A execução do experimento é inválida."
+
+
+class InvalidExperimentExecutionPlanError(ExperimentExecutionError):
+    code = "invalid_experiment_execution_plan"
+    default_message = "O plano não pode ser executado com os contratos atuais."
+
+
+class ExperimentExecutionLimitExceededError(ExperimentExecutionError):
+    code = "experiment_execution_limit_exceeded"
+    default_message = "A execução excede o limite local de especificações."
+
+
+class ExperimentExecutionManifestLimitExceededError(ExperimentExecutionError):
+    code = "experiment_execution_manifest_limit_exceeded"
+    default_message = "O manifesto de execução excederia o limite local de bytes."
+
+
+class InvalidExperimentExecutionTransitionError(ExperimentExecutionError):
+    code = "invalid_experiment_execution_transition"
+    default_message = "A transição de estado da execução é inválida."
+
+
+class IncompatibleExperimentExecutionDocumentError(ExperimentExecutionError):
+    code = "incompatible_experiment_execution_document"
+    default_message = "O manifesto de execução é incompatível."
+
+
+class UnsupportedExperimentExecutionSchemaError(IncompatibleExperimentExecutionDocumentError):
+    code = "unsupported_experiment_execution_schema"
+    default_message = "A versão do manifesto de execução não é suportada."
+
+
+class ExperimentExecutionChecksumError(IncompatibleExperimentExecutionDocumentError):
+    code = "experiment_execution_checksum_mismatch"
+    default_message = "O checksum do manifesto de execução não confere."
+
+
+class ExperimentExecutionIdentifierError(IncompatibleExperimentExecutionDocumentError):
+    code = "experiment_execution_identifier_mismatch"
+    default_message = "O identificador do manifesto de execução não confere."
+
+
+class ExperimentExecutionPublicationError(ExperimentExecutionError):
+    code = "experiment_execution_publication_error"
+    default_message = "Não foi possível publicar o manifesto de execução."
+
+
+class ExperimentExecutionArtifactVerificationError(ExperimentExecutionError):
+    code = "experiment_execution_artifact_verification_error"
+    default_message = "Um artefato referenciado pela execução não pôde ser verificado."

@@ -6,7 +6,12 @@ from collections.abc import Iterable
 
 from app.backtesting.domain import StrategyDescriptor
 from app.backtesting.strategy import BacktestStrategy
-from app.strategies.builtins import EmaCrossExamplePlugin, NoOpStrategyPlugin
+from app.strategies.builtins import (
+    EmaCrossExamplePlugin,
+    EmaCrossExamplePluginV2,
+    NoOpStrategyPlugin,
+    NoOpStrategyPluginV2,
+)
 from app.strategies.domain import IndicatorCapability, RawStrategyParameters
 from app.strategies.errors import (
     DuplicateStrategyPluginError,
@@ -34,7 +39,14 @@ class StrategyPluginRegistry:
     def builtins(cls) -> StrategyPluginRegistry:
         """Create the fixed registry shipped by this code version."""
 
-        return cls((NoOpStrategyPlugin(), EmaCrossExamplePlugin()))
+        return cls(
+            (
+                NoOpStrategyPlugin(),
+                NoOpStrategyPluginV2(),
+                EmaCrossExamplePlugin(),
+                EmaCrossExamplePluginV2(),
+            )
+        )
 
     @property
     def identities(self) -> tuple[tuple[str, str], ...]:
@@ -73,4 +85,15 @@ class StrategyPluginRegistry:
             raise InvalidStrategyPluginError(
                 "strategy factory returned a descriptor divergent from its plugin schema"
             )
+        if plugin.descriptor.lifecycle_version == 2:
+            try:
+                warmup_callback = getattr(strategy, "on_warmup_candle")
+            except (AttributeError, TypeError) as exc:
+                raise InvalidStrategyPluginError(
+                    "strategy lifecycle 2 factory must return a warmup-aware strategy"
+                ) from exc
+            if not callable(warmup_callback):
+                raise InvalidStrategyPluginError(
+                    "strategy lifecycle 2 factory must return a callable warmup callback"
+                )
         return strategy

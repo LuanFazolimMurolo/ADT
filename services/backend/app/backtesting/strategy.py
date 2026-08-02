@@ -54,7 +54,7 @@ class StrategyContext:
 
 
 class BacktestStrategy(Protocol):
-    """Minimal plugin boundary; strategies return intents and mutate no engine state."""
+    """Lifecycle 1 plugin boundary; strategies return intents and mutate no engine state."""
 
     descriptor: StrategyDescriptor
 
@@ -75,6 +75,16 @@ class BacktestStrategy(Protocol):
     def on_end(self, context: StrategyContext) -> None: ...
 
 
+class WarmupAwareBacktestStrategy(BacktestStrategy, Protocol):
+    """Lifecycle 2 boundary, extending lifecycle 1 with deterministic warmup."""
+
+    def on_warmup_candle(
+        self,
+        context: StrategyContext,
+        candle: Candle,
+    ) -> None: ...
+
+
 @dataclass(slots=True)
 class NoOpStrategy:
     """Technical strategy that intentionally never submits an order."""
@@ -84,6 +94,13 @@ class NoOpStrategy:
     def on_start(self, context: StrategyContext) -> tuple[OrderIntent, ...]:
         del context
         return ()
+
+    def on_warmup_candle(
+        self,
+        context: StrategyContext,
+        candle: Candle,
+    ) -> None:
+        del context, candle
 
     def on_candle(
         self,
@@ -130,6 +147,13 @@ class BuyAndHoldExample:
         del context
         self._submitted = False
         return ()
+
+    def on_warmup_candle(
+        self,
+        context: StrategyContext,
+        candle: Candle,
+    ) -> None:
+        del context, candle
 
     def on_candle(
         self,
@@ -187,6 +211,13 @@ class ScriptedStrategy:
     def on_start(self, context: StrategyContext) -> tuple[OrderIntent, ...]:
         del context
         return ()
+
+    def on_warmup_candle(
+        self,
+        context: StrategyContext,
+        candle: Candle,
+    ) -> None:
+        del context, candle
 
     def on_candle(
         self,

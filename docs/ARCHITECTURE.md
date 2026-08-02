@@ -646,8 +646,8 @@ The experiment-wide backtest projection contains only common deterministic
 fields. Every planned spec contains an actual existing `BacktestConfig` bound
 to the immutable snapshot, normalized strategy descriptor and segment context
 range. The separate evaluation range remains explicit: retrospective warmup is
-read context, never scored membership. Phase 4-04 must preserve that distinction
-when it adds execution.
+read context, never scored membership. Phase 4-04 preserves that distinction
+through execution, publication and verified reads.
 
 `engine_version` is rejected unless it is already an exact safe token without
 leading or trailing whitespace. The backtest schema is an integer (never a
@@ -677,3 +677,87 @@ This boundary reads no candles, calls no backtest engine, creates no result
 artifact or Phase 3A run ID, performs no filesystem/database/network write and
 starts no worker, thread or subprocess. Bounded execution and atomic result
 publication belong exclusively to Phase 4-04.
+
+## Phase 4-04 local experiment-execution boundary
+
+`ExperimentExecutionService` consumes only a fully revalidated Phase 4-03
+plan. It authenticates the referenced Phase 2C snapshot and manifest before
+creating an engine, then processes run specs one at a time in their stored
+combination-major, segment-minor order. Each spec gets a fresh registered
+strategy instance and a fresh `DeterministicBacktestEngine`; no indicator,
+portfolio, risk, ledger, order or fill state crosses spec boundaries.
+
+Phase 4 plans use `EvaluationBacktestConfig`, an additive subtype of the
+official Phase 3A configuration. Its `data_range` remains the retrospective
+context and its separately hashed `evaluation_range` is the scored interval.
+The engine supplies context candles only through bounded history. It submits no
+intent, changes no portfolio balance and emits no ledger/equity/result event
+until evaluation begins. The snapshot reader receives the bounded context
+range, so post-evaluation candles are not exposed to the engine. Legacy Phase
+3A configurations retain their previous canonical shape and run identity.
+Strategy lifecycle versions are explicit and hashed. Plugin version and
+lifecycle are distinct identity dimensions: neither substitutes for the other.
+Lifecycle 1 remains the legacy `on_start → on_candle* → on_fill* → on_end`
+contract. Lifecycle 2
+adds `on_warmup_candle*`; the official supported set is `{1, 2}` and lifecycle
+2 factories must return a callable warmup callback. A plan with positive
+warmup requires lifecycle 2, while zero-warmup plans and ordinary Phase 3A
+backtests remain compatible with lifecycle 1. The engine uses the lifecycle
+recorded in `EvaluationBacktestConfig`; discovering an extra Python method
+never promotes lifecycle 1. Warmup callbacks are observation-only; any returned
+intent is rejected. Start intents remain pending until the first evaluation
+open.
+
+The shipped registry resolves four concrete identities. `no-op@1` and
+`ema-cross-example@1` preserve lifecycle 1 and their previous canonical
+documents and golden IDs; `no-op@2` and `ema-cross-example@2` declare lifecycle
+2. Positive warmup consequently selects a version-2 identity, while zero
+warmup accepts either version. The registry descriptor, not method discovery,
+is the lifecycle source of truth. Planning copies that lifecycle into every
+immutable `EvaluationBacktestConfig`, checks it against the plugin reference,
+and the normal `build_run_id()` hashes it with the remaining execution config.
+Thus custom plugins with equal name and textual version but different
+lifecycles cannot collide or reuse each other's artifact. Legacy
+`BacktestConfig` keeps its previous canonical form and Phase 3A run IDs.
+
+The executor computes the expected Phase 3A `run_id` before execution. An
+existing directory is reusable only after independent full verification; a
+corrupt or incompatible directory becomes a stable failed spec and is never
+overwritten. New results use the existing atomic artifact store and are
+verified after publication. Per-spec terminal states are `COMPLETED`, `REUSED`
+or `FAILED`; explicit in-process transitions are `PENDING → RUNNING →
+terminal`, under `CONTINUE_AFTER_FAILURE`.
+
+New backtest manifests bind `context_range` to the configured read interval and
+`evaluation_range`/`data_range` to the scored interval, and explicitly record
+the lifecycle executed. The independent
+verifier enforces that every order, fill, ledger event, equity point, trade and
+metric period stays within evaluation; the initial-capital event is exactly at
+its start. Legacy configurations retain their previous canonical shape and run
+identity; their manifests may omit lifecycle and are interpreted as lifecycle
+1 only when the decoded configuration is the legacy `BacktestConfig`.
+
+The canonical execution manifest records the source experiment/checksum,
+policies, exact order, aggregate status/counts and bounded per-spec result or
+error references. Checksums and domain-separated IDs contain no wall-clock
+value. Publication below
+`$ADT_DATA_DIR/market/optimization/experiments/<experiment_id>/<execution_id>`
+uses a locked, fsynced `PREPARED`/`COMMITTED` staging protocol and verifies the
+bounded manifest bytes and decoded content before changing state, before rename
+and again after rename. A failed post-rename verification removes only the new
+target while the same execution lock is held. Reads stat the 16 MiB manifest
+and small publication record before bounded reads. Only references and the manifest are stored there; Phase 3A
+artifacts are not duplicated. This delivery intentionally adds no CLI: plan
+persistence/selection and a safe user-facing workflow remain outside 4-04.
+Before contract loading, factory calls or publication, a conservative
+worst-case envelope calculation enforces the 16 MiB manifest cap. Publication
+also receives a manifest reconciled record-by-record against the immutable plan.
+Reconciliation authenticates the exact snapshot reference, recalculates every
+successful Phase 3A run ID and binds each artifact basename to that run ID. A
+separate published-execution verification frontier checks every COMPLETE or
+REUSED artifact against the configured store and independent result verifier;
+FAILED records deliberately carry no artifact and are skipped.
+Record, manifest and payload factories validate their complete typed inputs
+before enum-value access, canonical hashing or path derivation. Hostile
+in-memory contracts fail through the execution error hierarchy before any
+publication directory, staging tree or result artifact is created.

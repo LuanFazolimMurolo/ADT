@@ -1,0 +1,331 @@
+{
+  "checksum": "b01b4e58eea347c00ed30caf8d8d2a077341ff95369c466959212fa14fea0de0",
+  "experiment_id": "fa377c11fc3edcec7cb1084703da4d5a50051abb3e494ff129cc0accf08590b4",
+  "experiment_plan": {
+    "backtest_configuration": {
+      "backtest_schema_version": 2,
+      "constraints": {
+        "maximum_notional": null,
+        "minimum_notional": "1",
+        "minimum_quantity": "0.001",
+        "price_tick": "0.01",
+        "quantity_step": "0.001"
+      },
+      "engine_version": "3b-1",
+      "execution": {
+        "fees": {
+          "maker_fee_bps": "1",
+          "taker_fee_bps": "2"
+        },
+        "force_close_at_end": false,
+        "intrabar_policy": "CONSERVATIVE",
+        "slippage": {
+          "fixed_bps": "1",
+          "kind": "FIXED_BPS"
+        }
+      },
+      "initial_capital": "10000",
+      "limits": {
+        "history_window": 10,
+        "max_candles": 100,
+        "max_events": 1000,
+        "max_orders": 100
+      },
+      "risk_limits": {
+        "allow_all_in": false,
+        "max_drawdown_pct": null,
+        "max_open_orders": 10,
+        "max_order_notional": null,
+        "max_position_notional": null,
+        "max_total_orders": 100,
+        "minimum_quote_reserve": "0",
+        "stop_on_max_drawdown": true
+      }
+    },
+    "cardinality": 3,
+    "combinations": [
+      {
+        "combination_id": "226897f85cd78bbd334f5b7660c50663b7b677716215f6606d82a470f47773a7",
+        "index": 0,
+        "parameter_document": [
+          {
+            "kind": "integer",
+            "name": "fast_period",
+            "value": 2
+          },
+          {
+            "kind": "decimal",
+            "name": "quantity",
+            "value": "0.1"
+          },
+          {
+            "kind": "integer",
+            "name": "slow_period",
+            "value": 5
+          }
+        ],
+        "parameters": [
+          {
+            "kind": "integer",
+            "name": "fast_period",
+            "value": 2
+          },
+          {
+            "kind": "decimal",
+            "name": "quantity",
+            "value": "0.1"
+          },
+          {
+            "kind": "integer",
+            "name": "slow_period",
+            "value": 5
+          }
+        ],
+        "parameters_checksum": "d902ae2aa719b26277c06f2e30ff87223160966709e274a7702e0432e76fbd59"
+      }
+    ],
+    "holdout_policy": "TEST_IS_FINAL_HOLDOUT",
+    "max_run_specs": 3000,
+    "ordering_policy": "COMBINATION_THEN_SEGMENT",
+    "parameter_search_space": {
+      "checksum": "269da216506f268c8c661419fa477c0ab8a215f72857f9a8d2189a44470b7c53",
+      "search_space": {
+        "cardinality": 1,
+        "combination_policy": "REJECT_SPACE",
+        "fixed_parameters": [
+          {
+            "kind": "decimal",
+            "name": "quantity",
+            "value": "0.1"
+          },
+          {
+            "kind": "integer",
+            "name": "slow_period",
+            "value": 5
+          }
+        ],
+        "max_combinations": 1000,
+        "plugin": {
+          "lifecycle_version": 1,
+          "name": "ema-cross-example",
+          "schema_version": 1,
+          "version": "1"
+        },
+        "schema_version": 1,
+        "search_parameters": [
+          {
+            "kind": "integer",
+            "name": "fast_period",
+            "values": [
+              2
+            ]
+          }
+        ]
+      },
+      "search_space_id": "707170a691a27c5d5dc3f6f73a6ad97d921c0bb0dea0c259c1e20e515685ea3d"
+    },
+    "plugin": {
+      "lifecycle_version": 1,
+      "name": "ema-cross-example",
+      "schema_version": 1,
+      "version": "1"
+    },
+    "run_specs": [
+      {
+        "checksum": "acc4d0c50c379aa512041e513e6f3a7a54a3d54a20ce9c948914c61d657b070d",
+        "run_spec": {
+          "combination_reference": {
+            "combination_id": "226897f85cd78bbd334f5b7660c50663b7b677716215f6606d82a470f47773a7",
+            "index": 0,
+            "parameters_checksum": "d902ae2aa719b26277c06f2e30ff87223160966709e274a7702e0432e76fbd59"
+          },
+          "eligible_for_model_selection": false,
+          "global_index": 0,
+          "purpose": "TRAINING",
+          "schema_version": 1,
+          "segment_reference": {
+            "checksum": "344c3e5c4fb9c03000bda11aef53fba403832d8449e47465ed0447da76c204f0",
+            "index": 0,
+            "segment_id": "7801a24533d252d52f64c452f8e46334d59dd78405855981e246d2f8adb74206"
+          }
+        },
+        "run_spec_id": "66ac4d27bc08743d962f79adfc3c39daaad0e66f9dcf3b80dd57e1222f8fba74"
+      },
+      {
+        "checksum": "2a9ef03a9cf1fc2f9b07f2b0e513c47fc92afea333ab97c1b291f6fccdc02fc9",
+        "run_spec": {
+          "combination_reference": {
+            "combination_id": "226897f85cd78bbd334f5b7660c50663b7b677716215f6606d82a470f47773a7",
+            "index": 0,
+            "parameters_checksum": "d902ae2aa719b26277c06f2e30ff87223160966709e274a7702e0432e76fbd59"
+          },
+          "eligible_for_model_selection": true,
+          "global_index": 1,
+          "purpose": "MODEL_SELECTION",
+          "schema_version": 1,
+          "segment_reference": {
+            "checksum": "8e6e020dad542bf6186dd449ee50cadb62b1d2b1988ba1a681c9d4e9a1c54298",
+            "index": 1,
+            "segment_id": "d42c873749d6be2d5a221f3b502ec0d124a500f168b9a96e4f0742ad0ce40524"
+          }
+        },
+        "run_spec_id": "06764158de8a61da1c1cf3c78b82e73f4f9ff23c6a9b511fd296e8bcc83e0406"
+      },
+      {
+        "checksum": "14f89f54025ce5dfb2b16b803707e2e0764dfb147ed7afc602132fb48f3fa27e",
+        "run_spec": {
+          "combination_reference": {
+            "combination_id": "226897f85cd78bbd334f5b7660c50663b7b677716215f6606d82a470f47773a7",
+            "index": 0,
+            "parameters_checksum": "d902ae2aa719b26277c06f2e30ff87223160966709e274a7702e0432e76fbd59"
+          },
+          "eligible_for_model_selection": false,
+          "global_index": 2,
+          "purpose": "FINAL_HOLDOUT",
+          "schema_version": 1,
+          "segment_reference": {
+            "checksum": "e05c1dbc7978a2aef70632b92fb178c5ecb863bc8184162301948e59e5177caa",
+            "index": 2,
+            "segment_id": "390ffd41ada07ba145284935ae142d451843f7b9cd4b3d1cd1ba18cd9ef8fd4e"
+          }
+        },
+        "run_spec_id": "d8f44b9df04bbaed23838852fc82284c90fa665f07cee293a34dfa12d1337b5c"
+      }
+    ],
+    "schema_version": 1,
+    "snapshot": {
+      "available_coverage": {
+        "candle_count": 12,
+        "duration_milliseconds": 43200000,
+        "end": "2026-01-01T12:00:00+00:00",
+        "start": "2026-01-01T00:00:00+00:00",
+        "timeframe": "1h"
+      },
+      "dataset_key": "derived:binance:spot:BTC/USDT:1h:binance-public:canonical_ohlcv:1:STRICT:crypto_24_7:v1",
+      "dataset_version": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "gap_policy": "STRICT",
+      "identity": {
+        "construction_policy": "canonical_ohlcv:1:STRICT:crypto_24_7",
+        "exchange": "binance",
+        "kind": "DERIVED",
+        "market_type": "spot",
+        "schema_version": 1,
+        "source": "binance-public",
+        "symbol": "BTC/USDT",
+        "timeframe": "1h"
+      },
+      "snapshot_checksum": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "snapshot_id": "0e0dd077-66d0-c358-dc18-d489b0fcb159"
+    },
+    "temporal_plan": {
+      "checksum": "6863580e8d1147747016a48834c0c80571d101ed84800632c8020d5b8426e1e6",
+      "plan_id": "8a7a92c091875ea73dd750edbc92d618e7b36b47929db220568b0844f690c64e",
+      "temporal_segmentation": {
+        "candle_counts": {
+          "test": 2,
+          "train": 5,
+          "validation": 2
+        },
+        "policy": "CONTIGUOUS_THREE_WAY",
+        "schema_version": 1,
+        "segments": [
+          {
+            "checksum": "344c3e5c4fb9c03000bda11aef53fba403832d8449e47465ed0447da76c204f0",
+            "segment": {
+              "context": {
+                "end": "2026-01-01T06:00:00+00:00",
+                "start": "2026-01-01T01:00:00+00:00",
+                "warmup_candles": 0
+              },
+              "evaluation": {
+                "candle_count": 5,
+                "duration_milliseconds": 18000000,
+                "end": "2026-01-01T06:00:00+00:00",
+                "start": "2026-01-01T01:00:00+00:00",
+                "timeframe": "1h"
+              },
+              "index": 0,
+              "role": "TRAIN",
+              "schema_version": 1
+            },
+            "segment_id": "7801a24533d252d52f64c452f8e46334d59dd78405855981e246d2f8adb74206"
+          },
+          {
+            "checksum": "8e6e020dad542bf6186dd449ee50cadb62b1d2b1988ba1a681c9d4e9a1c54298",
+            "segment": {
+              "context": {
+                "end": "2026-01-01T08:00:00+00:00",
+                "start": "2026-01-01T06:00:00+00:00",
+                "warmup_candles": 0
+              },
+              "evaluation": {
+                "candle_count": 2,
+                "duration_milliseconds": 7200000,
+                "end": "2026-01-01T08:00:00+00:00",
+                "start": "2026-01-01T06:00:00+00:00",
+                "timeframe": "1h"
+              },
+              "index": 1,
+              "role": "VALIDATION",
+              "schema_version": 1
+            },
+            "segment_id": "d42c873749d6be2d5a221f3b502ec0d124a500f168b9a96e4f0742ad0ce40524"
+          },
+          {
+            "checksum": "e05c1dbc7978a2aef70632b92fb178c5ecb863bc8184162301948e59e5177caa",
+            "segment": {
+              "context": {
+                "end": "2026-01-01T10:00:00+00:00",
+                "start": "2026-01-01T08:00:00+00:00",
+                "warmup_candles": 0
+              },
+              "evaluation": {
+                "candle_count": 2,
+                "duration_milliseconds": 7200000,
+                "end": "2026-01-01T10:00:00+00:00",
+                "start": "2026-01-01T08:00:00+00:00",
+                "timeframe": "1h"
+              },
+              "index": 2,
+              "role": "TEST",
+              "schema_version": 1
+            },
+            "segment_id": "390ffd41ada07ba145284935ae142d451843f7b9cd4b3d1cd1ba18cd9ef8fd4e"
+          }
+        ],
+        "selected_coverage": {
+          "candle_count": 9,
+          "duration_milliseconds": 32400000,
+          "end": "2026-01-01T10:00:00+00:00",
+          "start": "2026-01-01T01:00:00+00:00",
+          "timeframe": "1h"
+        },
+        "snapshot": {
+          "available_coverage": {
+            "candle_count": 12,
+            "duration_milliseconds": 43200000,
+            "end": "2026-01-01T12:00:00+00:00",
+            "start": "2026-01-01T00:00:00+00:00",
+            "timeframe": "1h"
+          },
+          "dataset_key": "derived:binance:spot:BTC/USDT:1h:binance-public:canonical_ohlcv:1:STRICT:crypto_24_7:v1",
+          "dataset_version": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "gap_policy": "STRICT",
+          "identity": {
+            "construction_policy": "canonical_ohlcv:1:STRICT:crypto_24_7",
+            "exchange": "binance",
+            "kind": "DERIVED",
+            "market_type": "spot",
+            "schema_version": 1,
+            "source": "binance-public",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h"
+          },
+          "snapshot_checksum": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "snapshot_id": "0e0dd077-66d0-c358-dc18-d489b0fcb159"
+        },
+        "warmup_candles": 0
+      }
+    }
+  }
+}

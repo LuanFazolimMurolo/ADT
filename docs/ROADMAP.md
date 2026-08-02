@@ -419,7 +419,23 @@ real-time paper trading, market-regime selection and machine learning.
   3,000 runs, has a conservative absolute ceiling of 30,000, validates all
   structure/configuration before factories and documents runs through compact
   canonical combination/segment references.
-- [ ] **4-04 — Experiment executor**: bounded execution of multiple backtests.
+- [x] **4-04 — Experiment executor**: bounded local sequential execution in
+  canonical plan order; stateful observation-only retrospective warmup; explicit
+  context/evaluation result ranges; evaluation-bounded semantic verification;
+  preflight manifest sizing; fresh plugin and engine state per spec; verified
+  Phase 3A artifact publication/reuse; plan-reconciled
+  `CONTINUE_AFTER_FAILURE` records; and atomic versioned execution manifests.
+  Lifecycle 1 remains the four-callback legacy contract, lifecycle 2 adds the
+  warmup callback, and positive warmup requires version 2. The built-ins retain
+  `no-op@1`/`ema-cross-example@1` for lifecycle-1 document compatibility and
+  expose separate `@2` lifecycle-2 identities. Plugin version and lifecycle are
+  distinct identity dimensions; the resolved lifecycle is carried by the
+  evaluation config, run ID and artifact manifest, preventing cross-lifecycle
+  reuse even for equal custom plugin name/version while preserving legacy
+  Phase 3A config bytes and run IDs. Publication performs
+  bounded PREPARED/COMMITTED verification; manifest reconciliation recalculates
+  run IDs from the exact snapshot; published COMPLETE/REUSED artifacts have an
+  explicit independent verification frontier.
 - [ ] **4-05 — Walk-forward**: deterministic rolling evaluation.
 - [ ] **4-06 — Overfitting, stability and reports**: out-of-sample comparison and
   explicit stability controls.
@@ -430,8 +446,8 @@ strict `REJECT_SPACE` policy rejects the complete space at the first combination
 that the registered strategy factory rejects; invalid combinations are never
 silently omitted.
 
-**Explicitly deferred after 4-03**: experiment execution, result publication,
-selection/ranking, walk-forward, rolling windows, purge/embargo windows,
+**Explicitly deferred after 4-04**: selection/ranking, walk-forward, rolling
+windows, purge/embargo windows,
 optimization reports, real-time paper trading, multi-asset portfolios,
 distributed workers, machine learning and any unbounded or random search.
 

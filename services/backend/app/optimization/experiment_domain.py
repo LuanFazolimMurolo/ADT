@@ -10,6 +10,7 @@ from enum import StrEnum
 from app.backtesting.domain import (
     SUPPORTED_BACKTEST_SCHEMA_VERSIONS,
     BacktestConfig,
+    EvaluationBacktestConfig,
     ExecutionAssumptions,
     FeeModel,
     InstrumentConstraints,
@@ -18,6 +19,7 @@ from app.backtesting.domain import (
     SlippageKind,
     SlippageModel,
     StrategyDescriptor,
+    strategy_lifecycle_version_for,
 )
 from app.market_data.domain import DataRange
 from app.optimization.canonical import decimal_text, deterministic_id, document_checksum
@@ -69,6 +71,7 @@ from app.optimization.temporal_domain import (
     validate_temporal_snapshot_reference,
 )
 from app.strategies.definitions import StrategyParameterDocument
+from app.strategies.domain import SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS
 
 EXPERIMENT_SCHEMA_VERSION = 1
 SUPPORTED_EXPERIMENT_SCHEMA_VERSIONS = frozenset({EXPERIMENT_SCHEMA_VERSION})
@@ -143,11 +146,24 @@ class ExperimentBacktestConfiguration:
         snapshot_id: str,
         strategy: StrategyDescriptor,
         segment: TemporalSegment,
-    ) -> BacktestConfig:
+        strategy_lifecycle_version: int,
+    ) -> EvaluationBacktestConfig:
         """Create the existing Phase 3A config for a future context-aware run."""
 
         validate_experiment_backtest_configuration(self)
         validate_temporal_segment(segment)
+        if (
+            isinstance(strategy_lifecycle_version, bool)
+            or not isinstance(strategy_lifecycle_version, int)
+            or strategy_lifecycle_version not in SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS
+        ):
+            raise InvalidExperimentBacktestConfigurationError(
+                "strategy lifecycle version is unsupported"
+            )
+        if segment.warmup_candles > 0 and strategy_lifecycle_version != 2:
+            raise InvalidExperimentBacktestConfigurationError(
+                "positive warmup requires strategy lifecycle version 2"
+            )
         context_candles = segment.candle_count + segment.warmup_candles
         if context_candles > self.max_candles:
             raise InvalidExperimentBacktestConfigurationError(
@@ -158,7 +174,7 @@ class ExperimentBacktestConfiguration:
                 "history window is smaller than the required temporal warmup"
             )
         try:
-            return BacktestConfig(
+            return EvaluationBacktestConfig(
                 snapshot_id=snapshot_id,
                 data_range=segment.context_range,
                 strategy=strategy,
@@ -172,6 +188,8 @@ class ExperimentBacktestConfiguration:
                 max_events=self.max_events,
                 engine_version=self.engine_version,
                 schema_version=self.schema_version,
+                evaluation_range=segment.evaluation.data_range,
+                strategy_lifecycle_version=strategy_lifecycle_version,
             )
         except (TypeError, ValueError) as error:
             raise InvalidExperimentBacktestConfigurationError(str(error)) from error
@@ -255,6 +273,8 @@ def validate_experiment_plugin_reference(reference: ExperimentPluginReference) -
     ):
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise IncompatibleExperimentPluginError(f"{label} must be a positive integer")
+    if reference.lifecycle_version not in SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS:
+        raise IncompatibleExperimentPluginError("plugin lifecycle version is unsupported")
 
 
 def validate_experiment_backtest_configuration(
@@ -461,6 +481,26 @@ def validate_planned_run_spec(spec: PlannedRunSpec) -> None:
         raise InvalidExperimentBacktestConfigurationError(
             "backtest config range must equal the segment context range"
         )
+    if (
+        not isinstance(spec.backtest_config, EvaluationBacktestConfig)
+        or spec.backtest_config.evaluation_range != spec.segment.evaluation.data_range
+    ):
+        raise InvalidExperimentBacktestConfigurationError(
+            "planned backtest evaluation range must equal the segment evaluation"
+        )
+    try:
+        config_lifecycle_version = strategy_lifecycle_version_for(spec.backtest_config)
+    except ValueError as error:
+        raise InvalidExperimentBacktestConfigurationError(str(error)) from error
+    if spec.segment.warmup_candles > 0:
+        if spec.plugin.lifecycle_version != 2 or config_lifecycle_version != 2:
+            raise IncompatibleExperimentPluginError(
+                "positive warmup requires strategy lifecycle version 2"
+            )
+    if config_lifecycle_version != spec.plugin.lifecycle_version:
+        raise IncompatibleExperimentPluginError(
+            "backtest lifecycle diverges from the planned plugin"
+        )
     expected_checksum = document_checksum(planned_run_spec_payload(spec))
     if spec.checksum != expected_checksum:
         raise PlannedRunSpecChecksumError()
@@ -501,6 +541,11 @@ def validate_experiment_plan(plan: ExperimentPlan) -> None:
     if plan.snapshot != plan.temporal_plan.snapshot:
         raise IncompatibleExperimentSnapshotError("experiment snapshot diverges from temporal plan")
     validate_experiment_plugin_reference(plan.plugin)
+    if any(segment.warmup_candles > 0 for segment in plan.temporal_plan.segments):
+        if plan.plugin.lifecycle_version != 2:
+            raise IncompatibleExperimentPluginError(
+                "positive warmup requires strategy lifecycle version 2"
+            )
     if (
         plan.plugin.name != plan.search_space.plugin_name
         or plan.plugin.version != plan.search_space.plugin_version
@@ -562,6 +607,7 @@ def validate_experiment_plan(plan: ExperimentPlan) -> None:
                 spec.combination.parameters,
             ),
             segment=spec.segment,
+            strategy_lifecycle_version=plan.plugin.lifecycle_version,
         )
         if spec.backtest_config != expected_config:
             raise InvalidExperimentBacktestConfigurationError(

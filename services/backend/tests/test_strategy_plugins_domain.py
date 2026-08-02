@@ -73,9 +73,16 @@ def test_descriptor_rejects_future_schema_and_lifecycle_versions() -> None:
     with pytest.raises(UnsupportedStrategyPluginSchemaError):
         StrategyPluginDescriptor("example", "1", "Example.", schema_version=2)
     with pytest.raises(UnsupportedStrategyLifecycleError):
-        StrategyPluginDescriptor("example", "1", "Example.", lifecycle_version=2)
+        StrategyPluginDescriptor("example", "1", "Example.", lifecycle_version=3)
     with pytest.raises(UnsupportedStrategyPluginSchemaError):
         StrategyPluginDescriptor("example", "1", "Example.", schema_version=True)
+
+
+def test_lifecycle_versions_one_and_two_are_explicitly_supported() -> None:
+    assert StrategyPluginDescriptor("legacy", "1", "Legacy.").lifecycle_version == 1
+    assert StrategyPluginDescriptor(
+        "warmup", "1", "Warmup.", lifecycle_version=2
+    ).canonical_key == (1, 2, "warmup", "1")
 
 
 def test_descriptor_rejects_duplicate_parameter_names_and_indicator_aliases() -> None:

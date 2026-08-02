@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import time
+from copy import copy
 from dataclasses import FrozenInstanceError, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -13,15 +15,18 @@ from pathlib import Path
 import pytest
 
 from app.backtesting.domain import (
+    EvaluationBacktestConfig,
     ExecutionAssumptions,
     FeeModel,
+    Fill,
     InstrumentConstraints,
+    OrderIntent,
     RiskLimits,
     SlippageModel,
     StrategyDescriptor,
     StrategyParameters,
 )
-from app.backtesting.strategy import NoOpStrategy
+from app.backtesting.strategy import BacktestStrategy, NoOpStrategy, StrategyContext
 from app.market_data.datasets import (
     DatasetIdentity,
     DatasetKind,
@@ -32,7 +37,7 @@ from app.market_data.datasets import (
     GapPolicy,
     PartitionSummary,
 )
-from app.market_data.domain import DataRange, Exchange, MarketType
+from app.market_data.domain import Candle, DataRange, Exchange, MarketType
 from app.market_data.snapshots import build_snapshot_id, expected_snapshot_partitions
 from app.optimization import (
     ABSOLUTE_MAX_RUN_SPECS,
@@ -62,6 +67,7 @@ from app.optimization import (
     InvalidSearchCombinationError,
     ParameterSearchService,
     ParameterSearchSpace,
+    PlannedRunSpec,
     PlannedRunSpecIdentifierError,
     RunSpecLimitExceededError,
     TemporalSegmentationPlan,
@@ -70,8 +76,12 @@ from app.optimization import (
     UnsupportedExperimentSchemaError,
     calculate_run_spec_cardinality,
     canonical_experiment_document_bytes,
+    decode_experiment_document,
+    validate_experiment_plan,
+    validate_planned_run_spec,
 )
 from app.optimization.canonical import document_checksum
+from app.optimization.experiment_domain import planned_run_spec_id, planned_run_spec_payload
 from app.strategies.domain import (
     StrategyParameterKind,
     StrategyParameterSpec,
@@ -182,10 +192,15 @@ def _temporal(
     )
 
 
-def _space(*, values: tuple[int, ...] = (2, 3), quantity: str = "0.1") -> ParameterSearchSpace:
+def _space(
+    *,
+    values: tuple[int, ...] = (2, 3),
+    quantity: str = "0.1",
+    plugin_version: str = "2",
+) -> ParameterSearchSpace:
     return ParameterSearchService().create(
         "ema-cross-example",
-        "1",
+        plugin_version,
         {"fast_period": list(values)},
         fixed_parameters={"slow_period": 5, "quantity": Decimal(quantity)},
     )
@@ -227,17 +242,18 @@ def _plan(
     warmup: int = 1,
     configuration: ExperimentBacktestConfiguration | None = None,
     max_run_specs: int = DEFAULT_MAX_RUN_SPECS,
+    plugin_version: str = "2",
 ) -> tuple[ExperimentPlan, DatasetSnapshot, DatasetManifest]:
     snapshot, manifest = _contracts(checksum=checksum)
     temporal = _temporal(snapshot, manifest, warmup=warmup)
-    space = _space(values=values)
+    space = _space(values=values, plugin_version=plugin_version)
     plan = ExperimentPlanningService().create(
         snapshot,
         manifest,
         temporal,
         space,
         plugin_name="ema-cross-example",
-        plugin_version="1",
+        plugin_version=plugin_version,
         backtest_configuration=configuration or _configuration(),
         max_run_specs=max_run_specs,
     )
@@ -341,7 +357,7 @@ def test_snapshot_identity_divergence_is_rejected(
             _temporal(snapshot, manifest),
             _space(),
             plugin_name="ema-cross-example",
-            plugin_version="1",
+            plugin_version="2",
             backtest_configuration=_configuration(),
         )
 
@@ -371,7 +387,7 @@ def test_snapshot_manifest_semantic_divergence_is_rejected(kind: str) -> None:
             _temporal(snapshot, manifest),
             _space(),
             plugin_name="ema-cross-example",
-            plugin_version="1",
+            plugin_version="2",
             backtest_configuration=_configuration(),
         )
 
@@ -388,7 +404,7 @@ def test_temporal_plan_low_level_tampering_is_rejected() -> None:
             temporal,
             _space(),
             plugin_name="ema-cross-example",
-            plugin_version="1",
+            plugin_version="2",
             backtest_configuration=_configuration(),
         )
 
@@ -405,14 +421,14 @@ def test_search_space_low_level_tampering_is_rejected_before_factory() -> None:
             _temporal(snapshot, manifest),
             space,
             plugin_name="ema-cross-example",
-            plugin_version="1",
+            plugin_version="2",
             backtest_configuration=_configuration(),
         )
 
 
 @pytest.mark.parametrize(
     "name,version",
-    [("no-op", "1"), ("ema-cross-example", "2")],
+    [("no-op", "1"), ("ema-cross-example", "1")],
 )
 def test_selected_plugin_identity_must_equal_search_space(name: str, version: str) -> None:
     snapshot, manifest = _contracts()
@@ -428,11 +444,14 @@ def test_selected_plugin_identity_must_equal_search_space(name: str, version: st
         )
 
 
-@pytest.mark.parametrize("attribute", ["plugin_schema_version", "plugin_lifecycle_version"])
-def test_registered_plugin_versions_must_equal_space(attribute: str) -> None:
+@pytest.mark.parametrize(
+    ("attribute", "value"),
+    [("plugin_schema_version", 2), ("plugin_lifecycle_version", 1)],
+)
+def test_registered_plugin_versions_must_equal_space(attribute: str, value: int) -> None:
     snapshot, manifest = _contracts()
     space = _space()
-    object.__setattr__(space, attribute, 2)
+    object.__setattr__(space, attribute, value)
     with pytest.raises(IncompatibleExperimentPluginError):
         ExperimentPlanningService().create(
             snapshot,
@@ -440,7 +459,7 @@ def test_registered_plugin_versions_must_equal_space(attribute: str) -> None:
             _temporal(snapshot, manifest),
             space,
             plugin_name="ema-cross-example",
-            plugin_version="1",
+            plugin_version="2",
             backtest_configuration=_configuration(),
         )
 
@@ -454,6 +473,7 @@ class _ChangingPlugin:
         version="1",
         description="Test-only changing factory.",
         parameters=(StrategyParameterSpec("period", StrategyParameterKind.INTEGER),),
+        lifecycle_version=2,
     )
 
     def build(self, parameters: StrategyParameters) -> NoOpStrategy:
@@ -461,6 +481,253 @@ class _ChangingPlugin:
         if self.reject:
             raise StrategyParameterValidationError("factory changed")
         return NoOpStrategy(StrategyDescriptor("changing", "1", parameters))
+
+
+@dataclass(slots=True)
+class _LegacyPlanningStrategy:
+    descriptor: StrategyDescriptor
+
+    def on_start(self, context: StrategyContext) -> tuple[OrderIntent, ...]:
+        del context
+        return ()
+
+    def on_candle(self, context: StrategyContext, candle: Candle) -> tuple[OrderIntent, ...]:
+        del context, candle
+        return ()
+
+    def on_fill(self, context: StrategyContext, fill: Fill) -> tuple[OrderIntent, ...]:
+        del context, fill
+        return ()
+
+    def on_end(self, context: StrategyContext) -> None:
+        del context
+
+
+@dataclass(frozen=True, slots=True)
+class _LifecyclePlanningPlugin:
+    lifecycle_version: int
+
+    @property
+    def descriptor(self) -> StrategyPluginDescriptor:
+        return StrategyPluginDescriptor(
+            name="lifecycle-planning",
+            version="1",
+            description="Lifecycle planning fixture.",
+            parameters=(StrategyParameterSpec("period", StrategyParameterKind.INTEGER),),
+            lifecycle_version=self.lifecycle_version,
+        )
+
+    def build(self, parameters: StrategyParameters) -> BacktestStrategy:
+        descriptor = StrategyDescriptor("lifecycle-planning", "1", parameters)
+        if self.lifecycle_version == 2:
+            return NoOpStrategy(descriptor)
+        return _LegacyPlanningStrategy(descriptor)
+
+
+def _lifecycle_planning_contracts(
+    lifecycle_version: int,
+) -> tuple[StrategyPluginRegistry, ParameterSearchSpace]:
+    registry = StrategyPluginRegistry((_LifecyclePlanningPlugin(lifecycle_version),))
+    space = ParameterSearchService(registry, available_indicators=()).create(
+        "lifecycle-planning", "1", {"period": [1]}
+    )
+    return registry, space
+
+
+def test_positive_warmup_rejects_lifecycle_one_before_plan_creation() -> None:
+    snapshot, manifest = _contracts()
+    registry, space = _lifecycle_planning_contracts(1)
+
+    with pytest.raises(IncompatibleExperimentPluginError, match="lifecycle version 2"):
+        ExperimentPlanningService(registry, available_indicators=()).create(
+            snapshot,
+            manifest,
+            _temporal(snapshot, manifest, warmup=1),
+            space,
+            plugin_name="lifecycle-planning",
+            plugin_version="1",
+            backtest_configuration=_configuration(),
+        )
+
+
+def test_zero_warmup_preserves_lifecycle_one_plan_compatibility() -> None:
+    snapshot, manifest = _contracts()
+    registry, space = _lifecycle_planning_contracts(1)
+
+    plan = ExperimentPlanningService(registry, available_indicators=()).create(
+        snapshot,
+        manifest,
+        _temporal(snapshot, manifest, warmup=0),
+        space,
+        plugin_name="lifecycle-planning",
+        plugin_version="1",
+        backtest_configuration=_configuration(),
+    )
+
+    assert plan.plugin.lifecycle_version == 1
+    assert all(spec.plugin.lifecycle_version == 1 for spec in plan.run_specs)
+
+
+def test_builtin_version_one_zero_warmup_plan_document_remains_compatible() -> None:
+    plan, snapshot, manifest = _plan(
+        values=(2,),
+        warmup=0,
+        plugin_version="1",
+    )
+    service = ExperimentPlanningService()
+
+    reconstructed = service.from_document(
+        service.to_document(plan, snapshot, manifest),
+        snapshot=snapshot,
+        manifest=manifest,
+    )
+
+    assert reconstructed == plan
+    assert reconstructed.plugin == ExperimentPluginReference(
+        "ema-cross-example",
+        "1",
+        1,
+        1,
+    )
+    assert all(spec.plugin == reconstructed.plugin for spec in reconstructed.run_specs)
+    for spec in reconstructed.run_specs:
+        assert isinstance(spec.backtest_config, EvaluationBacktestConfig)
+        assert spec.backtest_config.strategy_lifecycle_version == 1
+
+
+def test_lifecycle_version_changes_search_and_plan_identity_inputs() -> None:
+    registry_one, space_one = _lifecycle_planning_contracts(1)
+    registry_two, space_two = _lifecycle_planning_contracts(2)
+    snapshot, manifest = _contracts()
+
+    plan_one = ExperimentPlanningService(registry_one, available_indicators=()).create(
+        snapshot,
+        manifest,
+        _temporal(snapshot, manifest, warmup=0),
+        space_one,
+        plugin_name="lifecycle-planning",
+        plugin_version="1",
+        backtest_configuration=_configuration(),
+    )
+    plan_two = ExperimentPlanningService(registry_two, available_indicators=()).create(
+        snapshot,
+        manifest,
+        _temporal(snapshot, manifest, warmup=0),
+        space_two,
+        plugin_name="lifecycle-planning",
+        plugin_version="1",
+        backtest_configuration=_configuration(),
+    )
+
+    assert space_one.search_space_id != space_two.search_space_id
+    assert plan_one.experiment_id != plan_two.experiment_id
+    assert plan_two.plugin.lifecycle_version == 2
+    for spec in plan_one.run_specs:
+        assert isinstance(spec.backtest_config, EvaluationBacktestConfig)
+        assert spec.backtest_config.strategy_lifecycle_version == 1
+    for spec in plan_two.run_specs:
+        assert isinstance(spec.backtest_config, EvaluationBacktestConfig)
+        assert spec.backtest_config.strategy_lifecycle_version == 2
+
+
+@pytest.mark.parametrize("value", [True, "2", 3])
+def test_planned_run_rejects_hostile_config_lifecycle_values(value: object) -> None:
+    plan, _snapshot, _manifest = _plan(values=(2,), warmup=0)
+    config = plan.run_specs[0].backtest_config
+    object.__setattr__(config, "strategy_lifecycle_version", value)
+
+    with pytest.raises(InvalidExperimentBacktestConfigurationError):
+        validate_planned_run_spec(plan.run_specs[0])
+    with pytest.raises(InvalidExperimentBacktestConfigurationError):
+        validate_experiment_plan(plan)
+
+
+def test_planned_run_rejects_plugin_lifecycle_mutation() -> None:
+    plan, _snapshot, _manifest = _plan(values=(2,), warmup=0)
+    object.__setattr__(plan.run_specs[0].plugin, "lifecycle_version", 1)
+
+    with pytest.raises(IncompatibleExperimentPluginError):
+        validate_planned_run_spec(plan.run_specs[0])
+    with pytest.raises(IncompatibleExperimentPluginError):
+        validate_experiment_plan(plan)
+
+
+def test_planned_run_rejects_config_lifecycle_divergent_from_plugin() -> None:
+    plan, _snapshot, _manifest = _plan(
+        values=(2,),
+        warmup=0,
+        plugin_version="1",
+    )
+    object.__setattr__(plan.run_specs[0].backtest_config, "strategy_lifecycle_version", 2)
+
+    with pytest.raises(IncompatibleExperimentPluginError):
+        validate_planned_run_spec(plan.run_specs[0])
+    with pytest.raises(IncompatibleExperimentPluginError):
+        validate_experiment_plan(plan)
+
+
+def test_for_segment_rejects_lifecycle_one_with_positive_warmup() -> None:
+    snapshot, manifest = _contracts()
+    segment = _temporal(snapshot, manifest, warmup=1).segments[0]
+
+    with pytest.raises(
+        InvalidExperimentBacktestConfigurationError,
+        match="positive warmup",
+    ):
+        _configuration().for_segment(
+            snapshot_id=snapshot.snapshot_id,
+            strategy=StrategyDescriptor("lifecycle-planning", "1"),
+            segment=segment,
+            strategy_lifecycle_version=1,
+        )
+
+
+def test_direct_planned_run_rejects_lifecycle_one_with_positive_warmup() -> None:
+    plan, _snapshot, _manifest = _plan(values=(2,), warmup=1)
+    source = plan.run_specs[0]
+    invalid_config = copy(source.backtest_config)
+    object.__setattr__(invalid_config, "strategy_lifecycle_version", 1)
+    invalid_plugin = replace(source.plugin, lifecycle_version=1)
+
+    with pytest.raises(InvalidExperimentBacktestConfigurationError, match="lifecycle version 1"):
+        PlannedRunSpec(
+            experiment_id=source.experiment_id,
+            global_index=source.global_index,
+            combination=source.combination,
+            segment=source.segment,
+            snapshot=source.snapshot,
+            plugin=invalid_plugin,
+            backtest_config=invalid_config,
+            purpose=source.purpose,
+            eligible_for_model_selection=source.eligible_for_model_selection,
+            checksum=source.checksum,
+            run_spec_id=source.run_spec_id,
+            schema_version=source.schema_version,
+        )
+
+
+def test_rehashed_reassigned_lifecycle_one_warmup_spec_remains_invalid() -> None:
+    plan, _snapshot, _manifest = _plan(values=(2,), warmup=1)
+    source = plan.run_specs[0]
+    tampered = copy(source)
+    invalid_config = copy(source.backtest_config)
+    object.__setattr__(invalid_config, "strategy_lifecycle_version", 1)
+    object.__setattr__(tampered, "plugin", replace(source.plugin, lifecycle_version=1))
+    object.__setattr__(tampered, "backtest_config", invalid_config)
+    checksum = document_checksum(planned_run_spec_payload(tampered))
+    object.__setattr__(tampered, "checksum", checksum)
+    object.__setattr__(
+        tampered,
+        "run_spec_id",
+        planned_run_spec_id(tampered.experiment_id, checksum, tampered),
+    )
+
+    with pytest.raises(InvalidExperimentBacktestConfigurationError, match="lifecycle version 1"):
+        validate_planned_run_spec(tampered)
+
+    object.__setattr__(plan, "run_specs", (tampered,) + plan.run_specs[1:])
+    with pytest.raises(InvalidExperimentBacktestConfigurationError, match="lifecycle version 1"):
+        validate_experiment_plan(plan)
 
 
 def test_real_factory_remains_final_parameter_boundary() -> None:
@@ -553,7 +820,7 @@ def test_mutated_fee_and_slippage_models_are_rejected(model: str) -> None:
             _temporal(snapshot, manifest),
             _space(),
             plugin_name="ema-cross-example",
-            plugin_version="1",
+            plugin_version="2",
             backtest_configuration=configuration,
         )
 
@@ -574,7 +841,7 @@ def test_invalid_requested_run_spec_limits_are_rejected(limit: int) -> None:
             _temporal(snapshot, manifest),
             _space(values=(2,)),
             plugin_name="ema-cross-example",
-            plugin_version="1",
+            plugin_version="2",
             backtest_configuration=_configuration(),
             max_run_specs=limit,
         )
@@ -720,6 +987,43 @@ def test_document_is_canonical_json_and_round_trips() -> None:
         reconstructed
     )
     assert b" " not in canonical_experiment_document_bytes(plan)
+
+
+def test_frozen_ema_v1_lifecycle1_warmup0_document_remains_compatible() -> None:
+    fixture_path = (
+        Path(__file__).parent
+        / "fixtures"
+        / "phase4_03_ema_cross_example_v1_lifecycle1_warmup0.json"
+    )
+    document = json.loads(fixture_path.read_text(encoding="utf-8"))
+    snapshot, manifest = _contracts()
+
+    decoded = decode_experiment_document(document)
+    validated = ExperimentPlanningService().from_document(
+        document,
+        snapshot=snapshot,
+        manifest=manifest,
+    )
+
+    assert decoded == validated
+    assert decoded.plugin.name == "ema-cross-example"
+    assert decoded.plugin.version == "1"
+    assert decoded.plugin.lifecycle_version == 1
+    assert {spec.backtest_config.strategy_lifecycle_version for spec in decoded.run_specs} == {1}
+    assert {spec.segment.warmup_candles for spec in decoded.run_specs} == {0}
+    assert document["checksum"] == (
+        "b01b4e58eea347c00ed30caf8d8d2a077341ff95369c466959212fa14fea0de0"
+    )
+    assert document["experiment_id"] == (
+        "fa377c11fc3edcec7cb1084703da4d5a50051abb3e494ff129cc0accf08590b4"
+    )
+    search_space = document["experiment_plan"]["parameter_search_space"]
+    assert search_space["checksum"] == (
+        "269da216506f268c8c661419fa477c0ab8a215f72857f9a8d2189a44470b7c53"
+    )
+    assert search_space["search_space_id"] == (
+        "707170a691a27c5d5dc3f6f73a6ad97d921c0bb0dea0c259c1e20e515685ea3d"
+    )
 
 
 def test_document_uses_compact_reconstructable_run_references() -> None:
@@ -932,7 +1236,7 @@ def test_planning_performs_no_writes_execution_or_publication(
         _temporal(snapshot, manifest),
         _space(values=(2,)),
         plugin_name="ema-cross-example",
-        plugin_version="1",
+        plugin_version="2",
         backtest_configuration=_configuration(),
     )
 
@@ -953,13 +1257,13 @@ def test_mapping_input_order_does_not_change_experiment() -> None:
     temporal = _temporal(snapshot, manifest)
     first_space = ParameterSearchService().create(
         "ema-cross-example",
-        "1",
+        "2",
         {"quantity": [Decimal("0.2"), Decimal("0.1")], "fast_period": [3, 2]},
         fixed_parameters={"slow_period": 5},
     )
     second_space = ParameterSearchService().create(
         "ema-cross-example",
-        "1",
+        "2",
         {"fast_period": [2, 3], "quantity": [Decimal("0.1"), Decimal("0.2")]},
         fixed_parameters={"slow_period": 5},
     )
@@ -970,7 +1274,7 @@ def test_mapping_input_order_does_not_change_experiment() -> None:
         temporal,
         first_space,
         plugin_name="ema-cross-example",
-        plugin_version="1",
+        plugin_version="2",
         backtest_configuration=_configuration(),
     )
     second = service.create(
@@ -979,7 +1283,7 @@ def test_mapping_input_order_does_not_change_experiment() -> None:
         temporal,
         second_space,
         plugin_name="ema-cross-example",
-        plugin_version="1",
+        plugin_version="2",
         backtest_configuration=_configuration(),
     )
 

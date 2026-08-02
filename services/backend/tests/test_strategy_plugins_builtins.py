@@ -37,8 +37,12 @@ class FakeSnapshotReader:
         assert snapshot_id == self.snapshot.snapshot_id
         return self.snapshot
 
-    def iter_candles(self) -> Iterator[Candle]:
-        yield from self.candles
+    def iter_candles(self, data_range: DataRange | None = None) -> Iterator[Candle]:
+        yield from (
+            candle
+            for candle in self.candles
+            if data_range is None or data_range.start <= candle.open_time < data_range.end
+        )
 
     def verify_unchanged(self) -> DatasetSnapshot:
         return self.snapshot
