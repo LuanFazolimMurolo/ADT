@@ -761,3 +761,74 @@ Record, manifest and payload factories validate their complete typed inputs
 before enum-value access, canonical hashing or path derivation. Hostile
 in-memory contracts fail through the execution error hierarchy before any
 publication directory, staging tree or result artifact is created.
+
+## Phase 4-05 deterministic walk-forward boundary
+
+Phase 4-05 composes the previous four optimization deliveries without
+reimplementing any of them:
+
+```text
+immutable STRICT snapshot
+    → rolling fixed windows
+    → one validated 4-02 temporal plan per fold
+    → one complete 4-03 experiment plan per fold
+    → one verified 4-04 execution manifest per fold
+    → TRAIN/VALIDATION-only selection
+    → frozen winner
+    → selected TEST holdout reference
+```
+
+Schema version 1 supports only `ROLLING_FIXED_NON_OVERLAPPING_TEST`. Each fold
+contains contiguous TRAIN, VALIDATION and TEST ranges, advances exactly one
+`test_candles` width and therefore produces chronological, adjacent,
+non-overlapping TEST intervals. Retrospective warmup is outside the selected
+evaluation coverage. Incomplete trailing candles are counted but never used,
+and at least two complete folds are required.
+Validation reconstructs this complete geometry from the snapshot's official
+timeframe and requires every nested temporal count to equal the window policy,
+including warmup. Fold IDs and a re-signed outer envelope cannot legitimize a
+different first boundary, step, fold count, trailing count or consumed end.
+
+Every fold owns a complete temporal plan and experiment plan. Global
+cardinality is preflighted as `folds × combinations × 3` before any strategy
+factory, engine, candle reader, lock or publication is reached. The initial
+limits are 50 folds and 30,000 total specs by default, with absolute ceilings
+of 1,000 folds and 300,000 specs. The final document and publication are capped
+at 16 MiB.
+
+Selection policy `SINGLE_VALIDATION_METRIC` requires an explicit metric from
+the existing comparison metric set and an explicit `MAXIMIZE` or `MINIMIZE`
+direction. A candidate is eligible only when its TRAIN and VALIDATION records
+are successful, verified and identity-compatible. The score comes only from
+VALIDATION. Ties use combination index and then combination ID. The ranking
+projection contains no TEST field. `FoldSelectionEvidence` canonically includes
+the full eligible/rejected candidate set, verified TRAIN/VALIDATION references,
+scores and stable rejection reasons under its own checksum and ID. The decision
+binds that evidence identity, and a pure validator recomputes direction, score,
+tie-break, winner, counts, reasons and selection identity.
+
+The complete 4-04 plan may already have executed TEST for every combination;
+4-05 never consults those TESTs while producing or ranking selection evidence.
+After the immutable decision exists, the service resolves exactly the winner's
+`FINAL_HOLDOUT`, reconciles its spec/run/path/checksum and explicitly invokes
+the official artifact verifier before reading metrics. A failed winner TEST
+produces `FAILED_HOLDOUT`; the decision remains recorded and no runner-up is
+promoted. Folds continue under `CONTINUE_AFTER_FOLD_FAILURE`. Aggregate state is
+`COMPLETED`, `PARTIALLY_FAILED` or `FAILED`, and failed folds are never omitted.
+
+The compact final manifest is published below
+`$ADT_DATA_DIR/market/optimization/walk-forward/<plan_id>/<execution_id>` with
+the same locked, fsynced PREPARED/COMMITTED verification pattern used by 4-04.
+It stores references and selected out-of-sample metrics, not candles, equity
+curves or all candidate results. Deterministic plan, fold, selection and
+execution identities use separate SHA-256 domains. Repeated execution verifies
+and reuses Phase 4-04 artifacts and converges to an identical final manifest.
+Plan/execution reconciliation runs before serialization and publication, on
+reuse and through a public published-verification frontier. Preflight uses the
+canonical search-space size and bounded worst-case envelopes rather than
+observed average bytes. Under the plan lock, corrupt final targets are removed
+and replaced after directory fsync; valid divergent targets are never removed.
+
+Phase 4-05 deliberately computes no global score, stability statistic,
+overfitting measure or production recommendation. Those analyses remain
+exclusive to Phase 4-06.

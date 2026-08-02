@@ -5,10 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import PurePosixPath
 
 from app.backtesting.artifacts import build_run_id
 from app.market_data.datasets import DatasetSnapshot
+from app.optimization.artifact_paths import is_canonical_artifact_path
 from app.optimization.canonical import canonical_json_bytes, deterministic_id, document_checksum
 from app.optimization.errors import (
     ExperimentPlanningError,
@@ -1037,13 +1037,4 @@ def validate_execution_manifest_against_plan(
 
 
 def _valid_artifact_path(value: str, run_id: str) -> bool:
-    if not value or "\\" in value:
-        return False
-    path = PurePosixPath(value)
-    return (
-        not path.is_absolute()
-        and value == path.as_posix()
-        and bool(path.parts)
-        and ".." not in path.parts
-        and path.name == run_id
-    )
+    return is_canonical_artifact_path(value, run_id)

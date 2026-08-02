@@ -15,8 +15,8 @@ Cada plugin declara `StrategyPluginDescriptor` com:
 - schema canônico de parâmetros;
 - capacidades de indicadores exigidas.
 
-As versões suportadas inicialmente são schema `1` e ciclo de vida `1`. Versões futuras
-são rejeitadas de forma explícita.
+O schema suportado é `1`. Os ciclos de vida suportados são `1` e `2`;
+versões desconhecidas são rejeitadas de forma explícita.
 
 ## Parâmetros
 
@@ -41,6 +41,10 @@ instância implementa o ciclo de vida já usado pelo motor:
 3. `on_fill` após fills;
 4. `on_end`.
 
+O lifecycle 2 acrescenta `on_warmup_candle` para observação retrospectiva sem
+ordens, portfolio, ledger ou métricas. Warmup positivo exige lifecycle 2;
+lifecycle 1 não admite warmup.
+
 O motor continua sendo o único componente que altera ordens, portfolio, risco e ledger.
 
 ## Exemplos incluídos
@@ -48,6 +52,13 @@ O motor continua sendo o único componente que altera ordens, portfolio, risco e
 - `no-op@1`: estratégia técnica sem ordens;
 - `ema-cross-example@1`: exemplo não financeiro que observa duas EMAs e somente emite
   intenções depois de uma mudança de relação já confirmada por candles fechados.
+- `no-op@2` e `ema-cross-example@2`: identidades separadas que implementam o
+  callback observation-only do lifecycle 2.
+
+Na Fase 4-05, o plugin e o lifecycle permanecem idênticos em todos os folds.
+Cada spec recebe uma instância nova. TRAIN participa apenas da elegibilidade;
+a combinação é selecionada pela métrica VALIDATION explícita e congelada
+antes da leitura do TEST.
 
 Esses exemplos existem para validar os contratos e não representam recomendação financeira.
 

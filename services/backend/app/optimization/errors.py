@@ -319,3 +319,105 @@ class ExperimentExecutionPublicationError(ExperimentExecutionError):
 class ExperimentExecutionArtifactVerificationError(ExperimentExecutionError):
     code = "experiment_execution_artifact_verification_error"
     default_message = "Um artefato referenciado pela execução não pôde ser verificado."
+
+
+class WalkForwardError(InvalidDomainInputError):
+    """Base error for deterministic walk-forward contracts."""
+
+    code = "walk_forward_error"
+    default_message = "O contrato de walk-forward é inváido."
+
+
+class InvalidWalkForwardWindowPolicyError(WalkForwardError):
+    code = "invalid_walk_forward_window_policy"
+    default_message = "A política temporal de walk-forward é inváida."
+
+
+class InsufficientWalkForwardFoldsError(WalkForwardError):
+    code = "insufficient_walk_forward_folds"
+    default_message = "O snapshot não comporta ao menos dois folds completos."
+
+
+class WalkForwardLimitExceededError(WalkForwardError):
+    code = "walk_forward_limit_exceeded"
+    default_message = "Um limite operacional de walk-forward foi excedido."
+
+
+class IncompatibleWalkForwardFoldError(WalkForwardError):
+    code = "incompatible_walk_forward_fold"
+    default_message = "O fold de walk-forward é incompatível."
+
+
+class IncompatibleWalkForwardPlanError(WalkForwardError):
+    code = "incompatible_walk_forward_plan"
+    default_message = "O plano de walk-forward é incompatível."
+
+
+class InvalidWalkForwardSelectionPolicyError(WalkForwardError):
+    code = "invalid_walk_forward_selection_policy"
+    default_message = "A política de seleção de walk-forward é inváida."
+
+
+class UnknownWalkForwardMetricError(WalkForwardError):
+    code = "unknown_walk_forward_metric"
+    default_message = "A métrica de seleção não é suportada."
+
+
+class MissingWalkForwardMetricError(WalkForwardError):
+    code = "missing_walk_forward_metric"
+    default_message = "A métrica de seleção está ausente."
+
+
+class InvalidWalkForwardMetricError(WalkForwardError):
+    code = "invalid_walk_forward_metric"
+    default_message = "A métrica de seleção é inváida."
+
+
+class InvalidWalkForwardCandidateError(WalkForwardError):
+    code = "invalid_walk_forward_candidate"
+    default_message = "A evidência do candidato de walk-forward é inváida."
+
+
+class NoEligibleWalkForwardCandidateError(WalkForwardError):
+    code = "no_eligible_walk_forward_candidate"
+    default_message = "Nenhum candidato elegível foi encontrado no fold."
+
+
+class WalkForwardSelectionLeakageError(WalkForwardError):
+    code = "walk_forward_selection_leakage"
+    default_message = "A seleção de walk-forward contém evidência de TEST."
+
+
+class IncompatibleWalkForwardSelectionError(WalkForwardError):
+    code = "incompatible_walk_forward_selection"
+    default_message = "A decisão de seleção de walk-forward é incompatível."
+
+
+class InvalidWalkForwardHoldoutError(WalkForwardError):
+    code = "invalid_walk_forward_holdout"
+    default_message = "O holdout TEST selecionado é inváido."
+
+
+class IncompatibleWalkForwardExecutionError(WalkForwardError):
+    code = "incompatible_walk_forward_execution"
+    default_message = "A execução walk-forward é incompatível."
+
+
+class IncompatibleWalkForwardDocumentError(WalkForwardError):
+    code = "incompatible_walk_forward_document"
+    default_message = "O documento walk-forward é incompatível."
+
+
+class WalkForwardChecksumError(IncompatibleWalkForwardDocumentError):
+    code = "walk_forward_checksum_error"
+    default_message = "O checksum walk-forward é inváido."
+
+
+class WalkForwardIdentifierError(IncompatibleWalkForwardDocumentError):
+    code = "walk_forward_identifier_error"
+    default_message = "A identidade walk-forward é inváida."
+
+
+class WalkForwardPublicationError(WalkForwardError):
+    code = "walk_forward_publication_error"
+    default_message = "A publicação walk-forward falhou."

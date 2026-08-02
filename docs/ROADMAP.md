@@ -436,7 +436,14 @@ real-time paper trading, market-regime selection and machine learning.
   bounded PREPARED/COMMITTED verification; manifest reconciliation recalculates
   run IDs from the exact snapshot; published COMPLETE/REUSED artifacts have an
   explicit independent verification frontier.
-- [ ] **4-05 — Walk-forward**: deterministic rolling evaluation.
+- [x] **4-05 — Walk-forward**: deterministic rolling fixed windows over one
+  immutable snapshot; complete 4-02/4-03 plans and verified 4-04 execution per
+  fold; explicit TRAIN eligibility and VALIDATION-only metric selection;
+  complete TEST-free candidate evidence with deterministic tie-break; winner
+  frozen before the selected holdout is explicitly verified; no fallback after
+  failed holdout; plan-bound validation and recoverable canonical
+  PREPARED/COMMITTED publication. No global score or overfitting analysis is
+  produced.
 - [ ] **4-06 — Overfitting, stability and reports**: out-of-sample comparison and
   explicit stability controls.
 
@@ -446,10 +453,10 @@ strict `REJECT_SPACE` policy rejects the complete space at the first combination
 that the registered strategy factory rejects; invalid combinations are never
 silently omitted.
 
-**Explicitly deferred after 4-04**: selection/ranking, walk-forward, rolling
-windows, purge/embargo windows,
-optimization reports, real-time paper trading, multi-asset portfolios,
-distributed workers, machine learning and any unbounded or random search.
+**Explicitly deferred after 4-05**: overfitting and stability analysis, global
+out-of-sample comparison/ranking, purge/embargo windows, optimization reports,
+real-time paper trading, multi-asset portfolios, distributed workers, machine
+learning and any unbounded or random search.
 
 **Dependencies**: Phases 3B and 3C complete
 **Blockers**: None

@@ -447,6 +447,60 @@ collection and terminal-state types before accessing enum values or hashing.
 Malformed in-memory inputs therefore fail with the execution-contract error
 hierarchy before serialization, directory creation, staging or artifact I/O.
 
+## Phase 4-05 rolling walk-forward
+
+Walk-forward planning uses one immutable STRICT snapshot and the explicit
+`ROLLING_FIXED_NON_OVERLAPPING_TEST` policy. The first complete fold begins
+after any retrospective warmup, and every following fold advances exactly by
+the TEST candle count. This makes consecutive TEST ranges adjacent and
+non-overlapping while allowing data from an earlier TEST to become historical
+TRAIN or VALIDATION data in a later fold. Incomplete trailing candles are
+reported and ignored.
+Plan validation independently recomputes snapshot candle count, first selected
+boundary, exact fold count, every fold boundary, final consumed coverage and
+trailing count from the official timeframe. Each embedded temporal plan must
+carry the same TRAIN, VALIDATION, TEST and warmup counts as the window policy;
+re-signing a contradictory plan does not make it valid.
+
+Every fold is independently materialized through the existing temporal and
+experiment planners and executed through `ExperimentExecutionService`. No
+portfolio, strategy, indicator, order, ledger, reader or mutable cache is
+carried between folds. Positive warmup continues to require lifecycle 2;
+lifecycle 1 remains valid only when warmup is zero.
+
+The initial selection policy requires an explicit existing comparison metric
+and direction. Successful verified TRAIN is an eligibility requirement, while
+only the corresponding VALIDATION metric supplies the score. Deterministic
+ties use combination index and combination ID. The selection projection and
+its hash contain no TEST reference, metric, status, checksum or path. A
+separate immutable `FoldSelectionEvidence` projection records every eligible
+or rejected candidate in canonical order, authenticates the full set with its
+own checksum/ID, and is the only input accepted by ranking. The decision is
+independently recomputed against that evidence.
+
+The 4-04 executor may already have physically executed TEST for every planned
+combination. The 4-05 selection boundary does not consult those TEST records or
+artifacts. After the winning decision is frozen, only that combination's
+`FINAL_HOLDOUT` record is reconciled with its planned spec, run ID, canonical
+path and logical checksum and explicitly verified before metrics are loaded.
+If it fails, the fold remains `FAILED_HOLDOUT` with the original decision; no
+runner-up is selected and no other TEST result is consulted for fallback.
+
+Compact canonical manifests are published atomically below
+`market/optimization/walk-forward`. They contain ordered fold states,
+experiment execution references, decisions and selected TEST metrics. They do
+not aggregate fold performance. There is no 4-05 CLI; a safe consolidated
+operator workflow remains deferred. Stability, overfitting and global
+comparison reports belong to Phase 4-06.
+Before serialization, publication, reuse or independent published verification,
+the final manifest is reconciled fold-by-fold with the original plan and each
+referenced 4-04 execution. Conservative byte calculators charge the complete
+canonical search space against every possible run/candidate plus bounded
+envelopes for folds, rejection evidence and holdout metrics before expansion.
+A corrupt final target is removed under the plan lock and safely republished;
+a valid identical target is reused and valid divergent content remains a
+conflict.
+
 ## Deliberate limitations
 
 Phase 4-01 adds only deterministic, finite parameter-search input contracts. It

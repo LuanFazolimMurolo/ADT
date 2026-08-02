@@ -138,6 +138,18 @@ class ExperimentExecutionService:
         self._contract_loader = contract_loader or self._load_contracts
         self._market = market_root(data_dir)
 
+    @property
+    def artifact_store(self) -> BacktestArtifactStore:
+        """Expose the configured official store to composing optimization services."""
+
+        return self._store
+
+    @property
+    def result_verifier(self) -> BacktestResultVerifier:
+        """Expose the configured official verifier to composing optimization services."""
+
+        return self._verifier
+
     def execute(self, plan: ExperimentPlan) -> ExperimentExecutionPublication:
         """Validate once, then execute specs in their canonical stored order."""
 
