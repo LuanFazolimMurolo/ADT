@@ -498,3 +498,25 @@ future audited operation.
 
 The complete rationale and accepted limitations are recorded in
 [`docs/adr/0001-phase-2d-operational-market-data-control-plane.md`](./adr/0001-phase-2d-operational-market-data-control-plane.md).
+
+
+## Phase 5-01 live asset API
+
+The backend reuses `BinanceSpotAdapter` for a read-only live catalog. The
+application lifespan owns one bounded `PublicMarketHttpClient`, one adapter and
+one `AssetMarketService`. `exchangeInfo` snapshots are sorted, deduplicated and
+retained only until `ADT_MARKET_ASSET_CATALOG_TTL_SECONDS`; concurrent misses
+share one refresh. The defensive source-size bound is
+`ADT_MARKET_ASSET_CATALOG_MAX_INSTRUMENTS`.
+
+Public routes:
+
+- `GET /api/v1/market/assets` — deterministic filters and pagination;
+- `GET /api/v1/market/assets/{base}/{quote}` — normalized metadata;
+- `GET /api/v1/market/assets/{base}/{quote}/price` — one uncached public price.
+
+Prices remain `Decimal` internally and JSON decimal strings externally. The
+price route rejects inactive instruments and verifies that the returned
+observation belongs to the requested instrument. This phase does not use API
+keys, account data, signed endpoints, WebSockets, trading or persistent catalog
+storage.

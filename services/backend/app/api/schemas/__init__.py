@@ -1,5 +1,6 @@
 """Explicit request and response contracts for the ADT HTTP API."""
 
+from app.api.schemas.assets import AssetListResponse, AssetPriceResponse, AssetResponse
 from app.api.schemas.auth import AdminMeResponse
 from app.api.schemas.common import (
     ApiSchema,
@@ -47,6 +48,9 @@ from app.api.schemas.system import SystemStatus
 
 __all__ = [
     "AdminMeResponse",
+    "AssetListResponse",
+    "AssetPriceResponse",
+    "AssetResponse",
     "ApiSchema",
     "CapitalMovementResponse",
     "CapitalMovementType",

@@ -53,6 +53,8 @@ _FIELD_ENVIRONMENT_NAMES = {
     "market_http_max_retry_after": "ADT_MARKET_HTTP_MAX_RETRY_AFTER",
     "market_user_agent": "ADT_MARKET_USER_AGENT",
     "market_allow_open_candles": "ADT_MARKET_ALLOW_OPEN_CANDLES",
+    "market_asset_catalog_ttl_seconds": "ADT_MARKET_ASSET_CATALOG_TTL_SECONDS",
+    "market_asset_catalog_max_instruments": "ADT_MARKET_ASSET_CATALOG_MAX_INSTRUMENTS",
     "market_max_fetch_candles": "ADT_MARKET_MAX_FETCH_CANDLES",
     "market_backfill_chunk_candles": "ADT_MARKET_BACKFILL_CHUNK_CANDLES",
     "market_backfill_max_total_candles": "ADT_MARKET_BACKFILL_MAX_TOTAL_CANDLES",
@@ -103,6 +105,8 @@ class MarketDataSettings(BaseSettings):
     market_http_max_retry_after: float = Field(default=30.0, ge=0.0, le=3_600.0)
     market_user_agent: str = Field(default="ADT-MarketData/0.1", min_length=8, max_length=128)
     market_allow_open_candles: bool = False
+    market_asset_catalog_ttl_seconds: float = Field(default=300.0, ge=1.0, le=86_400.0)
+    market_asset_catalog_max_instruments: int = Field(default=10_000, ge=1, le=100_000)
     market_max_fetch_candles: int = Field(default=10_000, ge=1, le=100_000)
     market_backfill_chunk_candles: int = Field(default=1_000, ge=1, le=10_000)
     market_backfill_max_total_candles: int = Field(

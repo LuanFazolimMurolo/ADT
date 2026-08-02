@@ -881,3 +881,14 @@ identical valid reports and recovers only corrupt targets under the execution
 lock. The report stores compact metrics and source identities, never candles,
 orders, equity curves or duplicated backtest artifacts. No CLI is added in
 4-06.
+
+
+## Phase 5-01 live market boundary
+
+`AssetMarketService` is the first Phase 5 runtime boundary. It composes the
+existing exchange-independent instrument domain with the Binance Spot public
+adapter. The service owns only an immutable, bounded, expiring metadata
+snapshot; it does not own candles, positions, strategy state or portfolio state.
+FastAPI receives the service through application lifespan state and dependency
+injection, so tests replace it without network access. Current prices bypass the
+metadata cache and are normalized as positive finite `Decimal` observations.

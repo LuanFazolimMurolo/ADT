@@ -469,9 +469,31 @@ any unbounded or random search. Real-time paper trading begins only in Phase 5.
 
 ---
 
-## Phase 5: Risk Management & Paper Trading
+## Phase 5: Risk Management & Paper Trading 🚧
 
 **Goal**: Simulate live trading with realistic constraints.
+
+### Phase 5-01: live asset catalog and public market API ✅
+
+**Scope**: Reuse the Phase 2 Binance Spot adapter behind a bounded runtime
+catalog and explicit read-only HTTP contracts. The application exposes active
+and inactive normalized instruments, supported ADT timeframes, source freshness
+and an uncached current public price. Catalog metadata is cached for a configured
+TTL with one-flight refresh; price observations are never reused as catalog data.
+No API key, account endpoint, order endpoint, trading permission, database
+migration or permanent worker is introduced.
+
+**Delivered**:
+- [x] Bounded immutable in-memory asset catalog with deterministic filtering and pagination
+- [x] Single-flight TTL refresh from Binance Spot `exchangeInfo`
+- [x] Current public price normalization through the Spot ticker-price endpoint
+- [x] Public `GET /api/v1/market/assets` catalog endpoint
+- [x] Public asset-detail and current-price endpoints
+- [x] Decimal-string API serialization, stable errors and no-network tests
+
+**Explicitly deferred**: streaming/WebSocket ingestion, continuous candle loop,
+strategy scheduling, simulated orders, positions, portfolio accounting, risk
+vetoes, database persistence and live trading.
 
 **Deliverables**:
 - [ ] Position sizing engine

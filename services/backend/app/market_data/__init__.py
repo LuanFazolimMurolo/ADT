@@ -8,9 +8,11 @@ from app.market_data.domain import (
     Exchange,
     IngestionResult,
     Instrument,
+    MarketPrice,
     MarketType,
     Timeframe,
     TradingPair,
+    validate_instrument,
 )
 
 __all__ = [
@@ -21,7 +23,9 @@ __all__ = [
     "Exchange",
     "IngestionResult",
     "Instrument",
+    "MarketPrice",
     "MarketType",
     "Timeframe",
     "TradingPair",
+    "validate_instrument",
 ]

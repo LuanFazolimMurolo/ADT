@@ -157,6 +157,71 @@ class Instrument:
         return self.pair.symbol
 
 
+def validate_instrument(instrument: object) -> Instrument:
+    """Revalidate one instrument without trusting frozen-object integrity."""
+    if not isinstance(instrument, Instrument):
+        raise MarketDataInconsistencyError("O instrumento é inválido.")
+    if not isinstance(instrument.exchange, Exchange) or not isinstance(
+        instrument.market_type, MarketType
+    ):
+        raise MarketDataInconsistencyError("A identidade do instrumento é inválida.")
+    if not isinstance(instrument.pair, TradingPair):
+        raise MarketDataInconsistencyError("O par do instrumento é inválido.")
+    if not isinstance(instrument.pair.base, str) or not isinstance(
+        instrument.pair.quote, str
+    ):
+        raise MarketDataInconsistencyError("O par do instrumento é inválido.")
+    canonical_pair = TradingPair(instrument.pair.base, instrument.pair.quote)
+    if canonical_pair != instrument.pair:
+        raise MarketDataInconsistencyError("O par do instrumento não é canônico.")
+    if (
+        not isinstance(instrument.native_symbol, str)
+        or instrument.native_symbol != instrument.native_symbol.strip()
+        or not instrument.native_symbol
+        or len(instrument.native_symbol) > 64
+    ):
+        raise MarketDataInconsistencyError("O símbolo nativo é inválido.")
+    if type(instrument.active) is not bool:
+        raise MarketDataInconsistencyError("O estado do instrumento é inválido.")
+    for precision in (instrument.price_precision, instrument.quantity_precision):
+        if precision is not None and (
+            type(precision) is not int or not 0 <= precision <= 30
+        ):
+            raise MarketDataInconsistencyError("A precisão do instrumento é inválida.")
+    return instrument
+
+
+@dataclass(frozen=True, slots=True)
+class MarketPrice:
+    """One current public-market price observation."""
+
+    instrument: Instrument
+    price: Decimal
+    observed_at: datetime
+    source: str
+
+    def __post_init__(self) -> None:
+        validate_instrument(self.instrument)
+        if (
+            not isinstance(self.price, Decimal)
+            or not self.price.is_finite()
+            or self.price <= 0
+        ):
+            raise MarketDataInconsistencyError(
+                "O preço atual deve ser Decimal finito e positivo."
+            )
+        if not isinstance(self.observed_at, datetime):
+            raise MarketDataInconsistencyError("O instante da cotação é inválido.")
+        observed_at = require_utc(self.observed_at, field_name="observed_at")
+        if not isinstance(self.source, str):
+            raise MarketDataInconsistencyError("A fonte da cotação é inválida.")
+        source = self.source.strip()
+        if not source or source != self.source or len(source) > 128:
+            raise MarketDataInconsistencyError("A fonte da cotação é inválida.")
+        object.__setattr__(self, "observed_at", observed_at)
+        object.__setattr__(self, "source", source)
+
+
 @dataclass(frozen=True, slots=True)
 class DataRange:
     """Half-open UTC interval ``[start, end)``."""

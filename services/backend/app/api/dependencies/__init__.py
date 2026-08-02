@@ -3,6 +3,7 @@
 from app.api.dependencies.auth import get_authenticated_user, require_administrator
 from app.api.dependencies.resources import (
     get_admin_service,
+    get_asset_market_service,
     get_capital_movement_service,
     get_database,
     get_jwt_verifier,
@@ -14,6 +15,7 @@ from app.api.dependencies.resources import (
 
 __all__ = [
     "get_admin_service",
+    "get_asset_market_service",
     "get_authenticated_user",
     "get_capital_movement_service",
     "get_database",

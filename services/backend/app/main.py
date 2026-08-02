@@ -17,6 +17,7 @@ from app.api.routes import (
     admin_settings,
     admin_simulations,
     admin_strategies,
+    assets,
     health,
     public,
     system,
@@ -25,6 +26,9 @@ from app.auth import SupabaseJWTVerifier
 from app.core.config import Settings, get_settings
 from app.core.logging import setup_logging
 from app.database import Database
+from app.market_data.asset_catalog import AssetMarketService
+from app.market_data.binance import BINANCE_MARKET_DATA_BASE_URL, BinanceSpotAdapter
+from app.market_data.http import PublicMarketHttpClient
 from app.middleware import RequestContextMiddleware
 
 logger = logging.getLogger(__name__)
@@ -84,12 +88,30 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         database = Database(app_settings.supabase_database_url.get_secret_value())
-        async with httpx.AsyncClient(follow_redirects=False) as http_client:
+        async with (
+            httpx.AsyncClient(follow_redirects=False) as http_client,
+            PublicMarketHttpClient(
+                base_url=BINANCE_MARKET_DATA_BASE_URL,
+                user_agent=app_settings.market_user_agent,
+                timeout_seconds=app_settings.market_http_timeout,
+                max_connections=app_settings.market_http_max_connections,
+                retries=app_settings.market_http_retries,
+                max_retry_after_seconds=app_settings.market_http_max_retry_after,
+            ) as market_http_client,
+        ):
             application.state.settings = app_settings
             application.state.database = database
             application.state.jwt_verifier = SupabaseJWTVerifier(
                 issuer=app_settings.supabase_issuer,
                 http_client=http_client,
+            )
+            application.state.asset_market_service = AssetMarketService(
+                BinanceSpotAdapter(
+                    market_http_client,
+                    allow_open_candles=app_settings.market_allow_open_candles,
+                ),
+                catalog_ttl_seconds=app_settings.market_asset_catalog_ttl_seconds,
+                max_instruments=app_settings.market_asset_catalog_max_instruments,
             )
 
             try:
@@ -132,6 +154,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
 
     setup_exception_handlers(application)
     application.include_router(health.router)
+    application.include_router(assets.router)
     application.include_router(system.router)
     application.include_router(public.router)
     application.include_router(admin.router)

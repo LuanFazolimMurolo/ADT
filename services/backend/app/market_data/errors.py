@@ -24,6 +24,21 @@ class UnknownInstrumentError(MarketDataError):
     status_code = 404
 
 
+class InactiveInstrumentError(DomainConflictError):
+    """The requested instrument is known but not currently tradable."""
+
+    code = "inactive_instrument"
+    default_message = "O instrumento está temporariamente inativo para negociação."
+
+
+class AssetCatalogLimitError(MarketDataError):
+    """The source catalog exceeds a configured defensive bound."""
+
+    code = "asset_catalog_limit"
+    default_message = "O catálogo de ativos excede o limite configurado."
+    status_code = 503
+
+
 class UnsupportedTimeframeError(InvalidDomainInputError):
     """The source does not support the requested timeframe."""
 

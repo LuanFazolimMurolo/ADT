@@ -42,3 +42,17 @@ PUBLIC_ERROR_RESPONSES: Final[dict[int | str, dict[str, Any]]] = {
         "The database is temporarily unavailable."
     ),
 }
+
+
+MARKET_ERROR_RESPONSES: Final[dict[int | str, dict[str, Any]]] = {
+    status.HTTP_400_BAD_REQUEST: _error_response("The market request is invalid."),
+    status.HTTP_404_NOT_FOUND: _error_response("The requested market instrument does not exist."),
+    status.HTTP_409_CONFLICT: _error_response("The market instrument is not currently tradable."),
+    status.HTTP_429_TOO_MANY_REQUESTS: _error_response(
+        "The upstream market source requested backoff."
+    ),
+    status.HTTP_502_BAD_GATEWAY: _error_response("The upstream market response is invalid."),
+    status.HTTP_503_SERVICE_UNAVAILABLE: _error_response(
+        "The public market source is temporarily unavailable."
+    ),
+}

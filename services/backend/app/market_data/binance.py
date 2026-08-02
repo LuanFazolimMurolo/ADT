@@ -14,10 +14,12 @@ from app.market_data.domain import (
     DataRange,
     Exchange,
     Instrument,
+    MarketPrice,
     MarketType,
     Timeframe,
     TradingPair,
     datetime_to_epoch_milliseconds,
+    validate_instrument,
 )
 from app.market_data.errors import (
     InvalidMarketResponseError,
@@ -28,6 +30,7 @@ from app.market_data.http import JsonHttpResult, PublicMarketHttpClient
 
 BINANCE_MARKET_DATA_BASE_URL = "https://data-api.binance.vision"
 _SOURCE = "binance_spot_rest"
+_PRICE_SOURCE = "binance_spot_ticker_price_rest"
 
 
 class BinanceSpotAdapter:
@@ -88,6 +91,42 @@ class BinanceSpotAdapter:
         instrument = instruments[0]
         self._instruments_by_native[native] = instrument
         return instrument
+
+    async def fetch_price(self, instrument: Instrument) -> MarketPrice:
+        """Fetch one current public Spot price without account credentials."""
+        if not isinstance(instrument, Instrument):
+            raise UnknownInstrumentError()
+        validate_instrument(instrument)
+        if (
+            instrument.exchange is not Exchange.BINANCE
+            or instrument.market_type is not MarketType.SPOT
+        ):
+            raise UnknownInstrumentError()
+        result = await self._http.get_json(
+            "/api/v3/ticker/price",
+            params={"symbol": instrument.native_symbol},
+            operation="binance_ticker_price",
+        )
+        self._raise_api_error(result)
+        payload = result.data
+        if not isinstance(payload, dict):
+            raise InvalidMarketResponseError()
+        native_symbol = payload.get("symbol")
+        raw_price = payload.get("price")
+        if native_symbol != instrument.native_symbol or not isinstance(raw_price, str):
+            raise InvalidMarketResponseError()
+        try:
+            price = Decimal(raw_price)
+        except InvalidOperation:
+            raise InvalidMarketResponseError() from None
+        if not price.is_finite() or price <= 0:
+            raise InvalidMarketResponseError()
+        return MarketPrice(
+            instrument=instrument,
+            price=price,
+            observed_at=self._now(),
+            source=_PRICE_SOURCE,
+        )
 
     async def fetch_candles(
         self,

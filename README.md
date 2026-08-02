@@ -142,3 +142,10 @@ services/backend/  FastAPI, PostgreSQL services and modular market data
 supabase/          ordered, versioned database migrations
 docs/              specification, architecture and operational guides
 ```
+
+
+### Public market assets (Phase 5-01)
+
+With the backend running, the read-only Binance Spot catalog is available at
+`GET /api/v1/market/assets`. Asset metadata and current public prices require no
+Binance API key; no account or order endpoint is used.

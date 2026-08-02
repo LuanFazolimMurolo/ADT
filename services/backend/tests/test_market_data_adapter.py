@@ -66,6 +66,49 @@ async def test_exchange_info_normalizes_native_and_canonical_symbols() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ticker_price_is_normalized_as_positive_decimal() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v3/ticker/price"
+        assert request.url.params["symbol"] == "BTCUSDT"
+        return httpx.Response(
+            200,
+            json={"symbol": "BTCUSDT", "price": "67234.12000000"},
+            request=request,
+        )
+
+    async with _client(handler) as client:
+        observation = await BinanceSpotAdapter(
+            client,
+            now=lambda: utc(2026, 8, 2),
+        ).fetch_price(INSTRUMENT)
+
+    assert observation.instrument == INSTRUMENT
+    assert str(observation.price) == "67234.12000000"
+    assert observation.observed_at == utc(2026, 8, 2)
+    assert observation.source == "binance_spot_ticker_price_rest"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"symbol": "ETHUSDT", "price": "1"},
+        {"symbol": "BTCUSDT", "price": 1},
+        {"symbol": "BTCUSDT", "price": "0"},
+        {"symbol": "BTCUSDT", "price": "NaN"},
+        {"symbol": "BTCUSDT"},
+        [],
+    ],
+)
+async def test_ticker_price_rejects_invalid_payload(payload: object) -> None:
+    async with _client(
+        lambda request: httpx.Response(200, json=payload, request=request)
+    ) as client:
+        with pytest.raises(InvalidMarketResponseError):
+            await BinanceSpotAdapter(client).fetch_price(INSTRUMENT)
+
+
+@pytest.mark.asyncio
 async def test_kline_response_is_decimal_utc_and_paginated_without_repetition() -> None:
     start = utc(2026, 1, 1)
     requested_starts: list[int] = []

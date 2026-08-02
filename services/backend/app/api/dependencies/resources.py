@@ -6,6 +6,7 @@ from fastapi import Depends, Request
 
 from app.auth import SupabaseJWTVerifier
 from app.database import Database
+from app.market_data.asset_catalog import AssetMarketService
 from app.repositories import (
     AdminRepository,
     CapitalMovementRepository,
@@ -27,6 +28,11 @@ from app.strategies import StrategyDefinitionService, builtin_indicator_capabili
 def get_database(request: Request) -> Database:
     """Return the application-owned PostgreSQL pool wrapper."""
     return cast(Database, request.app.state.database)
+
+
+def get_asset_market_service(request: Request) -> AssetMarketService:
+    """Return the application-owned public asset market service."""
+    return cast(AssetMarketService, request.app.state.asset_market_service)
 
 
 def get_jwt_verifier(request: Request) -> SupabaseJWTVerifier:
