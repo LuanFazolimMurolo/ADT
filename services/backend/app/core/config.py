@@ -55,6 +55,9 @@ _FIELD_ENVIRONMENT_NAMES = {
     "market_allow_open_candles": "ADT_MARKET_ALLOW_OPEN_CANDLES",
     "market_asset_catalog_ttl_seconds": "ADT_MARKET_ASSET_CATALOG_TTL_SECONDS",
     "market_asset_catalog_max_instruments": "ADT_MARKET_ASSET_CATALOG_MAX_INSTRUMENTS",
+    "market_continuous_interval_seconds": "ADT_MARKET_CONTINUOUS_INTERVAL_SECONDS",
+    "market_continuous_bootstrap_candles": "ADT_MARKET_CONTINUOUS_BOOTSTRAP_CANDLES",
+    "market_continuous_max_targets": "ADT_MARKET_CONTINUOUS_MAX_TARGETS",
     "market_max_fetch_candles": "ADT_MARKET_MAX_FETCH_CANDLES",
     "market_backfill_chunk_candles": "ADT_MARKET_BACKFILL_CHUNK_CANDLES",
     "market_backfill_max_total_candles": "ADT_MARKET_BACKFILL_MAX_TOTAL_CANDLES",
@@ -107,6 +110,9 @@ class MarketDataSettings(BaseSettings):
     market_allow_open_candles: bool = False
     market_asset_catalog_ttl_seconds: float = Field(default=300.0, ge=1.0, le=86_400.0)
     market_asset_catalog_max_instruments: int = Field(default=10_000, ge=1, le=100_000)
+    market_continuous_interval_seconds: int = Field(default=30, ge=1, le=3_600)
+    market_continuous_bootstrap_candles: int = Field(default=1_440, ge=1, le=1_000_000)
+    market_continuous_max_targets: int = Field(default=20, ge=1, le=1_000)
     market_max_fetch_candles: int = Field(default=10_000, ge=1, le=100_000)
     market_backfill_chunk_candles: int = Field(default=1_000, ge=1, le=10_000)
     market_backfill_max_total_candles: int = Field(
@@ -195,12 +201,17 @@ class MarketDataSettings(BaseSettings):
         return normalized
 
     @model_validator(mode="after")
-    def validate_backtest_limits(self) -> MarketDataSettings:
-        """Reject contradictory configured backtest bounds."""
+    def validate_cross_setting_limits(self) -> MarketDataSettings:
+        """Reject contradictory limits that span related subsystems."""
         if self.backtest_max_open_orders > self.backtest_max_orders:
             raise ValueError("backtest_max_open_orders must not exceed backtest_max_orders")
         if self.backtest_history_window > self.backtest_max_candles:
             raise ValueError("backtest_history_window must not exceed backtest_max_candles")
+        if self.market_continuous_bootstrap_candles > self.market_backfill_max_total_candles:
+            raise ValueError(
+                "market_continuous_bootstrap_candles must not exceed "
+                "market_backfill_max_total_candles"
+            )
         return self
 
 

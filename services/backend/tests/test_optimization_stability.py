@@ -351,8 +351,6 @@ def test_source_validator_is_mandatory_and_must_return_same_manifest() -> None:
         )
 
 
-
-
 def test_source_validator_cannot_mutate_and_resign_the_input_manifest() -> None:
     plan, execution = _execution()
     validator_reached_valid_manifest = False

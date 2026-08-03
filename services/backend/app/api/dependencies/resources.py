@@ -7,6 +7,7 @@ from fastapi import Depends, Request
 from app.auth import SupabaseJWTVerifier
 from app.database import Database
 from app.market_data.asset_catalog import AssetMarketService
+from app.market_data.continuous import ContinuousCollectionStateStore
 from app.repositories import (
     AdminRepository,
     CapitalMovementRepository,
@@ -33,6 +34,16 @@ def get_database(request: Request) -> Database:
 def get_asset_market_service(request: Request) -> AssetMarketService:
     """Return the application-owned public asset market service."""
     return cast(AssetMarketService, request.app.state.asset_market_service)
+
+
+def get_continuous_collection_state_store(
+    request: Request,
+) -> ContinuousCollectionStateStore:
+    """Return the application-owned continuous collection state store."""
+    return cast(
+        ContinuousCollectionStateStore,
+        request.app.state.continuous_collection_state_store,
+    )
 
 
 def get_jwt_verifier(request: Request) -> SupabaseJWTVerifier:

@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 from pathlib import Path
 
@@ -395,3 +396,135 @@ def test_cli_initialization_recovers_abandoned_running_job(tmp_path: Path) -> No
     )
     assert resumed_code == EXIT_OK
     assert json.loads(resumed_output.getvalue())["status"] == "COMPLETED"
+
+
+def test_cli_continuous_collection_requires_explicit_confirmation_without_http(
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(500, request=request)
+
+    errors = StringIO()
+    code = main(
+        [
+            "market-data",
+            "collect",
+            "run-once",
+            "--target",
+            "BTC/USDT:1h",
+            "--bootstrap-candles",
+            "1",
+        ],
+        app_settings=_settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+        stdout=StringIO(),
+        stderr=errors,
+    )
+
+    assert code == EXIT_DOMAIN_FAILURE
+    assert calls == 0
+    assert "--yes" in errors.getvalue()
+    assert not (tmp_path / "market").exists()
+
+
+def test_cli_continuous_rejects_duplicate_targets_before_local_or_remote_io(
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(500, request=request)
+
+    errors = StringIO()
+    code = main(
+        [
+            "market-data",
+            "collect",
+            "run-once",
+            "--target",
+            "BTC/USDT:1h",
+            "--target",
+            "BTC/USDT:1h",
+            "--yes",
+        ],
+        app_settings=_settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+        stdout=StringIO(),
+        stderr=errors,
+    )
+
+    assert code == EXIT_DOMAIN_FAILURE
+    assert calls == 0
+    assert not (tmp_path / "market").exists()
+
+
+def test_cli_continuous_status_is_local_and_read_only(tmp_path: Path) -> None:
+    def no_network(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"unexpected HTTP request: {request.method}")
+
+    output = StringIO()
+    code = main(
+        ["market-data", "collect", "status"],
+        app_settings=_settings(tmp_path),
+        transport=httpx.MockTransport(no_network),
+        stdout=output,
+    )
+
+    assert code == EXIT_OK
+    assert json.loads(output.getvalue()) == {"state": None}
+    assert not (tmp_path / "market").exists()
+
+
+def test_cli_continuous_run_once_persists_candle_and_atomic_state(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("exchangeInfo"):
+            return httpx.Response(200, json=exchange_info_payload(), request=request)
+        start_ms = int(request.url.params["startTime"])
+        open_time = datetime(1970, 1, 1, tzinfo=UTC) + timedelta(milliseconds=start_ms)
+        return httpx.Response(200, json=[binance_kline(open_time)], request=request)
+
+    output = StringIO()
+    code = main(
+        [
+            "market-data",
+            "collect",
+            "run-once",
+            "--target",
+            "BTC/USDT:1h",
+            "--bootstrap-candles",
+            "1",
+            "--yes",
+        ],
+        app_settings=_settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+        stdout=output,
+    )
+    payload = json.loads(output.getvalue())
+
+    assert code == EXIT_OK
+    assert payload["cycle_index"] == 1
+    assert payload["status"] == "COMPLETED"
+    assert payload["results"][0]["status"] == "UPDATED"
+    assert payload["results"][0]["stored"] == 1
+    assert (tmp_path / "market" / "continuous" / "state.json").is_file()
+
+    def no_network(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"unexpected HTTP request: {request.method}")
+
+    status_output = StringIO()
+    status_code = main(
+        ["market-data", "collect", "status"],
+        app_settings=_settings(tmp_path),
+        transport=httpx.MockTransport(no_network),
+        stdout=status_output,
+    )
+    status_payload = json.loads(status_output.getvalue())
+    assert status_code == EXIT_OK
+    assert status_payload["cycle_id"] == payload["cycle_id"]
+    assert status_payload["checksum"] == payload["checksum"]

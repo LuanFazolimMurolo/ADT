@@ -11,12 +11,52 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from app.api.dependencies.resources import get_asset_market_service
+from app.api.dependencies.resources import (
+    get_asset_market_service,
+    get_continuous_collection_state_store,
+)
 from app.main import app
 from app.market_data.asset_catalog import AssetCatalogPage, AssetCatalogQuery
+from app.market_data.continuous import (
+    ContinuousCollectionPolicy,
+    ContinuousCollectionState,
+    ContinuousCollectionTarget,
+    ContinuousCycleStatus,
+    ContinuousTargetResult,
+    ContinuousTargetStatus,
+)
 from app.market_data.domain import Instrument, MarketPrice, TradingPair
 from app.market_data.errors import UnknownInstrumentError
+from app.market_data.timeframes import get_timeframe
 from tests.market_data_helpers import INSTRUMENT, utc
+
+
+class FakeContinuousCollectionStateStore:
+    def __init__(self, state: ContinuousCollectionState | None) -> None:
+        self.state = state
+
+    def read(self) -> ContinuousCollectionState | None:
+        return self.state
+
+
+def _collection_state() -> ContinuousCollectionState:
+    target = ContinuousCollectionTarget(TradingPair("BTC", "USDT"), get_timeframe("1h"), 24)
+    result = ContinuousTargetResult(
+        target=target,
+        status=ContinuousTargetStatus.NOOP,
+        started_at=utc(2026, 8, 2),
+        finished_at=utc(2026, 8, 2),
+        latest_closed_end=utc(2026, 8, 2),
+    )
+    return ContinuousCollectionState(
+        cycle_index=7,
+        status=ContinuousCycleStatus.COMPLETED,
+        policy=ContinuousCollectionPolicy(30, 2, 10),
+        started_at=utc(2026, 8, 2),
+        finished_at=utc(2026, 8, 2),
+        next_cycle_at=utc(2026, 8, 2) + timedelta(seconds=30),
+        results=(result,),
+    )
 
 
 class FakeAssetMarketService:
@@ -50,6 +90,9 @@ class FakeAssetMarketService:
 @pytest_asyncio.fixture
 async def asset_client() -> AsyncIterator[httpx.AsyncClient]:
     app.dependency_overrides[get_asset_market_service] = lambda: FakeAssetMarketService()
+    app.dependency_overrides[get_continuous_collection_state_store] = (
+        lambda: FakeContinuousCollectionStateStore(_collection_state())
+    )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
@@ -123,3 +166,36 @@ async def test_invalid_asset_path_is_rejected_without_source_access(
 ) -> None:
     response = await asset_client.get(path)
     assert response.status_code in {409, 422}
+
+
+@pytest.mark.asyncio
+async def test_collection_status_exposes_latest_atomic_cycle(
+    asset_client: httpx.AsyncClient,
+) -> None:
+    response = await asset_client.get("/api/v1/market/collection/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["cycle_index"] == 7
+    assert payload["status"] == "COMPLETED"
+    assert payload["interval_seconds"] == 30
+    assert payload["overlap_candles"] == 2
+    assert payload["results"][0]["target"] == "BTC/USDT:1h"
+    assert payload["results"][0]["status"] == "NOOP"
+    assert payload["results"][0]["started_at"] == "2026-08-02T00:00:00Z"
+    assert payload["results"][0]["finished_at"] == "2026-08-02T00:00:00Z"
+    assert len(payload["checksum"]) == len(payload["cycle_id"]) == 64
+
+
+@pytest.mark.asyncio
+async def test_collection_status_missing_uses_stable_404(
+    asset_client: httpx.AsyncClient,
+) -> None:
+    app.dependency_overrides[get_continuous_collection_state_store] = (
+        lambda: FakeContinuousCollectionStateStore(None)
+    )
+
+    response = await asset_client.get("/api/v1/market/collection/status")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "continuous_collection_state_not_found"

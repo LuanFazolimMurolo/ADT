@@ -42,6 +42,9 @@ def isolated_settings_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[N
         "ADT_MARKET_ALLOW_OPEN_CANDLES",
         "ADT_MARKET_ASSET_CATALOG_TTL_SECONDS",
         "ADT_MARKET_ASSET_CATALOG_MAX_INSTRUMENTS",
+        "ADT_MARKET_CONTINUOUS_INTERVAL_SECONDS",
+        "ADT_MARKET_CONTINUOUS_BOOTSTRAP_CANDLES",
+        "ADT_MARKET_CONTINUOUS_MAX_TARGETS",
         "ADT_MARKET_MAX_FETCH_CANDLES",
         "ADT_MARKET_BACKFILL_CHUNK_CANDLES",
         "ADT_MARKET_BACKFILL_MAX_TOTAL_CANDLES",
@@ -139,6 +142,9 @@ def test_settings_are_typed_and_normalized(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("ADT_MARKET_ALLOW_OPEN_CANDLES", "true")
     monkeypatch.setenv("ADT_MARKET_ASSET_CATALOG_TTL_SECONDS", "120")
     monkeypatch.setenv("ADT_MARKET_ASSET_CATALOG_MAX_INSTRUMENTS", "5000")
+    monkeypatch.setenv("ADT_MARKET_CONTINUOUS_INTERVAL_SECONDS", "15")
+    monkeypatch.setenv("ADT_MARKET_CONTINUOUS_BOOTSTRAP_CANDLES", "720")
+    monkeypatch.setenv("ADT_MARKET_CONTINUOUS_MAX_TARGETS", "12")
     monkeypatch.setenv("ADT_MARKET_MAX_FETCH_CANDLES", "2500")
     monkeypatch.setenv("ADT_MARKET_BACKFILL_CHUNK_CANDLES", "500")
     monkeypatch.setenv("ADT_MARKET_BACKFILL_MAX_TOTAL_CANDLES", "50000")
@@ -177,6 +183,9 @@ def test_settings_are_typed_and_normalized(monkeypatch: pytest.MonkeyPatch) -> N
     assert loaded_settings.market_allow_open_candles is True
     assert loaded_settings.market_asset_catalog_ttl_seconds == 120
     assert loaded_settings.market_asset_catalog_max_instruments == 5000
+    assert loaded_settings.market_continuous_interval_seconds == 15
+    assert loaded_settings.market_continuous_bootstrap_candles == 720
+    assert loaded_settings.market_continuous_max_targets == 12
     assert loaded_settings.market_max_fetch_candles == 2500
     assert loaded_settings.market_backfill_chunk_candles == 500
     assert loaded_settings.market_backfill_max_total_candles == 50000
@@ -273,6 +282,9 @@ def test_production_requires_database_tls() -> None:
         ("market_http_max_retry_after", 3_601),
         ("market_asset_catalog_ttl_seconds", 86_401),
         ("market_asset_catalog_max_instruments", 100_001),
+        ("market_continuous_interval_seconds", 0),
+        ("market_continuous_bootstrap_candles", 1_000_001),
+        ("market_continuous_max_targets", 1_001),
         ("market_max_fetch_candles", 100_001),
         ("market_user_agent", "bad\nagent"),
     ],
@@ -331,6 +343,10 @@ def test_backtest_settings_have_safe_limits(field_name: str, value: object) -> N
     [
         {"backtest_max_orders": 5, "backtest_max_open_orders": 6},
         {"backtest_max_candles": 5, "backtest_history_window": 6},
+        {
+            "market_backfill_max_total_candles": 100,
+            "market_continuous_bootstrap_candles": 101,
+        },
     ],
 )
 def test_backtest_settings_reject_contradictory_limits(overrides: dict[str, int]) -> None:

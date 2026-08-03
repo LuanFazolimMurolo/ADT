@@ -51,6 +51,9 @@ MARKET_ERROR_RESPONSES: Final[dict[int | str, dict[str, Any]]] = {
     status.HTTP_429_TOO_MANY_REQUESTS: _error_response(
         "The upstream market source requested backoff."
     ),
+    status.HTTP_500_INTERNAL_SERVER_ERROR: _error_response(
+        "An unexpected market-data failure was safely normalized."
+    ),
     status.HTTP_502_BAD_GATEWAY: _error_response("The upstream market response is invalid."),
     status.HTTP_503_SERVICE_UNAVAILABLE: _error_response(
         "The public market source is temporarily unavailable."

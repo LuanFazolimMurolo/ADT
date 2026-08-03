@@ -2,6 +2,10 @@
 
 from app.api.schemas.assets import AssetListResponse, AssetPriceResponse, AssetResponse
 from app.api.schemas.auth import AdminMeResponse
+from app.api.schemas.collection import (
+    ContinuousCollectionStatusResponse,
+    ContinuousTargetResultResponse,
+)
 from app.api.schemas.common import (
     ApiSchema,
     FinancialDecimal,
@@ -54,6 +58,8 @@ __all__ = [
     "ApiSchema",
     "CapitalMovementResponse",
     "CapitalMovementType",
+    "ContinuousTargetResultResponse",
+    "ContinuousCollectionStatusResponse",
     "ErrorDetail",
     "ErrorPayload",
     "ErrorResponse",

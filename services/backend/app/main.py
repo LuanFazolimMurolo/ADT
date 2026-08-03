@@ -28,6 +28,7 @@ from app.core.logging import setup_logging
 from app.database import Database
 from app.market_data.asset_catalog import AssetMarketService
 from app.market_data.binance import BINANCE_MARKET_DATA_BASE_URL, BinanceSpotAdapter
+from app.market_data.continuous import ContinuousCollectionStateStore
 from app.market_data.http import PublicMarketHttpClient
 from app.middleware import RequestContextMiddleware
 
@@ -112,6 +113,9 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
                 ),
                 catalog_ttl_seconds=app_settings.market_asset_catalog_ttl_seconds,
                 max_instruments=app_settings.market_asset_catalog_max_instruments,
+            )
+            application.state.continuous_collection_state_store = (
+                ContinuousCollectionStateStore(app_settings.data_dir)
             )
 
             try:

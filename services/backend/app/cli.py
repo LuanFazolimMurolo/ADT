@@ -21,7 +21,17 @@ from app.market_data.advanced_quality import (
     load_quality_baseline,
     save_quality_baseline,
 )
+from app.market_data.asset_catalog import AssetMarketService
 from app.market_data.binance import BINANCE_MARKET_DATA_BASE_URL, BinanceSpotAdapter
+from app.market_data.continuous import (
+    ContinuousCollectionPolicy,
+    ContinuousCollectionRunner,
+    ContinuousCollectionState,
+    ContinuousCollectionStateStore,
+    ContinuousCollectionService,
+    collection_target_from_text,
+    validate_continuous_collection_targets,
+)
 from app.market_data.datasets import (
     DatasetIdentity,
     DatasetKind,
@@ -116,6 +126,26 @@ def build_parser() -> argparse.ArgumentParser:
     repair.add_argument("--dry-run", action="store_true")
     repair.add_argument("--yes", action="store_true")
 
+    collect = commands.add_parser(
+        "collect",
+        help="Continuously maintain bounded RAW candle datasets.",
+    )
+    collect_commands = collect.add_subparsers(dest="collect_command", required=True)
+    for name in ("run-once", "loop"):
+        command = collect_commands.add_parser(name)
+        command.add_argument(
+            "--target",
+            action="append",
+            required=True,
+            help="Repeatable BASE/QUOTE:TIMEFRAME target.",
+        )
+        command.add_argument("--bootstrap-candles", type=int)
+        command.add_argument("--yes", action="store_true")
+        if name == "loop":
+            command.add_argument("--interval-seconds", type=int)
+            command.add_argument("--max-cycles", type=int)
+    collect_commands.add_parser("status")
+
     quality = commands.add_parser("quality", help="Audit persisted datasets.")
     quality_commands = quality.add_subparsers(dest="quality_command", required=True)
     for name in ("scan", "report"):
@@ -205,6 +235,53 @@ async def _run_market_command(
     stdout: TextIO,
 ) -> int:
     pair = TradingPair.parse(args.symbol) if hasattr(args, "symbol") else None
+    collection_targets: tuple[ContinuousCollectionTarget, ...] | None = None
+    collection_policy: ContinuousCollectionPolicy | None = None
+    collection_max_cycles: int | None = None
+    if args.command == "collect":
+        collection_state_store = ContinuousCollectionStateStore(app_settings.data_dir)
+        if args.collect_command == "status":
+            current_state = collection_state_store.read()
+            _print(
+                {"state": None}
+                if current_state is None
+                else _collection_state_payload(current_state),
+                stdout,
+            )
+            return EXIT_OK
+        if not args.yes:
+            raise MarketDataInconsistencyError(
+                "A coleta contínua exige confirmação explícita --yes."
+            )
+        bootstrap_candles = (
+            args.bootstrap_candles
+            if args.bootstrap_candles is not None
+            else app_settings.market_continuous_bootstrap_candles
+        )
+        raw_targets = tuple(
+            collection_target_from_text(
+                value,
+                bootstrap_candles=bootstrap_candles,
+            )
+            for value in args.target
+        )
+        collection_targets = validate_continuous_collection_targets(
+            tuple(sorted(raw_targets, key=lambda item: item.key)),
+            max_targets=app_settings.market_continuous_max_targets,
+        )
+        interval_seconds = (
+            args.interval_seconds
+            if args.collect_command == "loop" and args.interval_seconds is not None
+            else app_settings.market_continuous_interval_seconds
+        )
+        collection_policy = ContinuousCollectionPolicy(
+            interval_seconds=interval_seconds,
+            overlap_candles=app_settings.market_incremental_overlap_candles,
+            max_targets=app_settings.market_continuous_max_targets,
+        )
+        collection_max_cycles = (
+            1 if args.collect_command == "run-once" else args.max_cycles
+        )
 
     def clock() -> datetime:
         return datetime.now(UTC)
@@ -223,6 +300,12 @@ async def _run_market_command(
             client,
             allow_open_candles=app_settings.market_allow_open_candles,
             now=clock,
+        )
+        asset_market_service = AssetMarketService(
+            adapter,
+            catalog_ttl_seconds=app_settings.market_asset_catalog_ttl_seconds,
+            max_instruments=app_settings.market_asset_catalog_max_instruments,
+            clock=clock,
         )
         catalog_service, history_service = default_local_services(
             app_settings.data_dir,
@@ -255,6 +338,7 @@ async def _run_market_command(
             lock_timeout_seconds=app_settings.market_job_lock_timeout,
             lock_stale_after_seconds=app_settings.market_job_stale_after,
         )
+        collection_state_store = ContinuousCollectionStateStore(app_settings.data_dir)
         locks = DatasetLockManager(
             app_settings.data_dir,
             timeout_seconds=app_settings.market_job_lock_timeout,
@@ -338,6 +422,34 @@ async def _run_market_command(
             assert pair is not None
             resume_result = await executor.resume(args.job_id, pair)
             _print_job_result(resume_result, stdout)
+            return EXIT_OK
+
+        if args.command == "collect":
+            if collection_targets is None or collection_policy is None:
+                raise MarketDataInconsistencyError(
+                    "A configuração da coleta contínua é inválida."
+                )
+            collection_service = ContinuousCollectionService(
+                instruments=asset_market_service,
+                history=history_service,
+                planner=planner,
+                executor=executor,
+                store=store,
+                policy=collection_policy,
+                clock=clock,
+            )
+            runner = ContinuousCollectionRunner(
+                service=collection_service,
+                state_store=collection_state_store,
+                lock_manager=locks,
+                clock=clock,
+                startup_hook=jobs.recover_abandoned,
+            )
+            collection_state = await runner.run(
+                collection_targets,
+                max_cycles=collection_max_cycles,
+            )
+            _print(_collection_state_payload(collection_state), stdout)
             return EXIT_OK
 
         assert pair is not None
@@ -639,6 +751,40 @@ async def _run_market_command(
             return EXIT_OK
 
     raise ValueError("unknown command")
+
+
+def _collection_state_payload(state: ContinuousCollectionState) -> dict[str, object]:
+    return {
+        "schema_version": state.schema_version,
+        "cycle_index": state.cycle_index,
+        "cycle_id": state.cycle_id,
+        "status": state.status.value,
+        "policy": {
+            "interval_seconds": state.policy.interval_seconds,
+            "overlap_candles": state.policy.overlap_candles,
+            "max_targets": state.policy.max_targets,
+        },
+        "started_at": state.started_at.isoformat(),
+        "finished_at": state.finished_at.isoformat(),
+        "next_cycle_at": state.next_cycle_at.isoformat(),
+        "checksum": state.checksum,
+        "results": [
+            {
+                "target": result.target.key,
+                "status": result.status.value,
+                "started_at": result.started_at.isoformat(),
+                "finished_at": result.finished_at.isoformat(),
+                "latest_closed_end": result.latest_closed_end.isoformat(),
+                "job_id": result.job_id,
+                "fetched": result.fetched_count,
+                "stored": result.stored_count,
+                "duplicates": result.duplicate_count,
+                "requests": result.request_count,
+                "error_code": result.error_code,
+            }
+            for result in state.results
+        ],
+    }
 
 
 def _add_market_identity(

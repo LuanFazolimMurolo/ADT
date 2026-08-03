@@ -246,11 +246,18 @@ class BinanceSpotAdapter:
                 raise InvalidMarketResponseError()
             if quantity_precision is not None and not isinstance(quantity_precision, int):
                 raise InvalidMarketResponseError()
+            try:
+                pair = TradingPair(cast(str, base), cast(str, quote))
+            except MarketDataInconsistencyError:
+                # The public catalog may contain exchange-native assets that cannot be
+                # represented by ADT's traversal-safe canonical symbol contract. One
+                # unsupported instrument must not make the entire market catalog fail.
+                continue
             instruments.append(
                 Instrument(
                     exchange=Exchange.BINANCE,
                     market_type=MarketType.SPOT,
-                    pair=TradingPair(cast(str, base), cast(str, quote)),
+                    pair=pair,
                     native_symbol=cast(str, native),
                     active=status == "TRADING",
                     price_precision=price_precision,

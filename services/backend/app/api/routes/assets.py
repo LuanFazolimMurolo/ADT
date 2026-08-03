@@ -4,11 +4,17 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query
 
-from app.api.dependencies.resources import get_asset_market_service
+from app.api.dependencies.resources import (
+    get_asset_market_service,
+    get_continuous_collection_state_store,
+)
 from app.api.openapi import MARKET_ERROR_RESPONSES
 from app.api.schemas.assets import AssetListResponse, AssetPriceResponse, AssetResponse
+from app.api.schemas.collection import ContinuousCollectionStatusResponse
 from app.market_data.asset_catalog import AssetCatalogQuery, AssetMarketService
+from app.market_data.continuous import ContinuousCollectionStateStore
 from app.market_data.domain import TradingPair
+from app.market_data.errors import ContinuousCollectionStateNotFoundError
 
 router = APIRouter(
     prefix="/api/v1/market",
@@ -45,6 +51,23 @@ async def list_assets(
         )
     )
     return AssetListResponse.from_domain(result)
+
+
+@router.get(
+    "/collection/status",
+    response_model=ContinuousCollectionStatusResponse,
+)
+def get_continuous_collection_status(
+    state_store: Annotated[
+        ContinuousCollectionStateStore,
+        Depends(get_continuous_collection_state_store),
+    ],
+) -> ContinuousCollectionStatusResponse:
+    """Return the latest atomically published continuous collection cycle."""
+    state = state_store.read()
+    if state is None:
+        raise ContinuousCollectionStateNotFoundError()
+    return ContinuousCollectionStatusResponse.from_domain(state)
 
 
 @router.get("/assets/{base_asset}/{quote_asset}", response_model=AssetResponse)

@@ -491,9 +491,32 @@ migration or permanent worker is introduced.
 - [x] Public asset-detail and current-price endpoints
 - [x] Decimal-string API serialization, stable errors and no-network tests
 
-**Explicitly deferred**: streaming/WebSocket ingestion, continuous candle loop,
-strategy scheduling, simulated orders, positions, portfolio accounting, risk
-vetoes, database persistence and live trading.
+**Explicitly deferred by 5-01**: streaming/WebSocket ingestion, continuous candle
+collection, strategy scheduling, simulated orders, positions, portfolio
+accounting, risk vetoes, database persistence and live trading.
+
+### Phase 5-02: bounded continuous RAW candle collection ✅
+
+**Scope**: Maintain an explicit, bounded list of Binance Spot pair/timeframe
+targets by composing the existing Phase 2B incremental planner and executor.
+The collector runs outside FastAPI, serializes one cycle at a time under a
+volume-wide file lock, uses the existing per-dataset transaction/lock boundary
+and publishes only a small atomic latest-cycle state.
+
+**Delivered**:
+- [x] Separate `run-once` and permanent-loop collector commands
+- [x] Explicit repeatable `BASE/QUOTE:TIMEFRAME` targets and bounded bootstrap
+- [x] Incremental overlap only after a newly closed candle is available
+- [x] Network-free `NOOP` cycles when each target is already current
+- [x] Sequential failure isolation with canonical cycle and target states
+- [x] Atomic local state, deterministic checksum/ID and read-only status API
+- [x] One active collector per persistent `ADT_DATA_DIR` volume
+- [x] Deterministic no-network tests and typed configuration limits
+
+**Explicitly deferred after 5-02**: WebSocket streaming, dynamic target
+subscriptions, PostgreSQL collector state, distributed collectors, strategy
+scheduling, simulated orders, positions, portfolio accounting, risk vetoes and
+live trading.
 
 **Deliverables**:
 - [ ] Position sizing engine

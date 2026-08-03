@@ -66,6 +66,33 @@ async def test_exchange_info_normalizes_native_and_canonical_symbols() -> None:
 
 
 @pytest.mark.asyncio
+async def test_exchange_info_skips_unrepresentable_assets_without_losing_valid_pairs() -> None:
+    payload = exchange_info_payload()
+    symbols = payload["symbols"]
+    assert isinstance(symbols, list)
+    symbols.insert(
+        0,
+        {
+            "symbol": "币安人生USDT",
+            "status": "TRADING",
+            "baseAsset": "币安人生",
+            "baseAssetPrecision": 8,
+            "quoteAsset": "USDT",
+            "quoteAssetPrecision": 8,
+        },
+    )
+
+    async with _client(
+        lambda request: httpx.Response(200, json=payload, request=request)
+    ) as client:
+        adapter = BinanceSpotAdapter(client)
+        instruments = await adapter.list_instruments()
+
+    assert instruments == (INSTRUMENT,)
+    assert adapter.normalize_symbol("BTCUSDT") == PAIR
+
+
+@pytest.mark.asyncio
 async def test_ticker_price_is_normalized_as_positive_decimal() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/v3/ticker/price"

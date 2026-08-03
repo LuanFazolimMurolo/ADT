@@ -101,6 +101,14 @@ class MarketDataStorageError(MarketDataError):
     status_code = 500
 
 
+class ContinuousCollectionStateNotFoundError(MarketDataError):
+    """No continuous collection cycle has been published yet."""
+
+    code = "continuous_collection_state_not_found"
+    default_message = "Ainda não existe estado publicado da coleta contínua."
+    status_code = 404
+
+
 class MarketJobNotFoundError(MarketDataError):
     code = "market_job_not_found"
     default_message = "O job de dados de mercado não foi encontrado."

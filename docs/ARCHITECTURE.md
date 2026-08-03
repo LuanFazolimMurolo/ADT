@@ -892,3 +892,57 @@ snapshot; it does not own candles, positions, strategy state or portfolio state.
 FastAPI receives the service through application lifespan state and dependency
 injection, so tests replace it without network access. Current prices bypass the
 metadata cache and are normalized as positive finite `Decimal` observations.
+
+
+## Phase 5-02 bounded continuous RAW collection
+
+Phase 5-02 composes the existing Phase 2 market-data contracts instead of
+creating another ingestion path. FastAPI never performs a long collection
+request. A dedicated CLI process owns the continuous loop and both processes
+share the same persistent POSIX `ADT_DATA_DIR`:
+
+```text
+process supervisor
+    → `market-data collect loop`
+    → volume-wide collector flock
+    → explicit ordered targets
+    → Phase 2B incremental planner
+    → Phase 2B executor and per-dataset flock
+    → Phase 2A journaled RAW Parquet/catalog transaction
+    → atomic `market/continuous/state.json`
+
+FastAPI
+    → read-only `GET /api/v1/market/collection/status`
+    → the same atomic state file
+```
+
+Targets are explicit canonical `BASE/QUOTE:TIMEFRAME` values and include a
+bounded bootstrap candle count. The runtime does not automatically subscribe to
+every Binance instrument. One cycle visits targets in canonical order and
+continues after an individual failure. Per-target outcomes are `UPDATED`,
+`NOOP` or `FAILED`; aggregate outcomes are `COMPLETED`, `PARTIALLY_FAILED` or
+`FAILED`. Failures persist only stable domain codes and, when a plan already
+existed, its canonical job ID.
+
+Before planning an update, the collector reads local coverage while holding the
+existing dataset lease. If the last stored open time already reaches the latest
+closed candle boundary, the target becomes `NOOP` without invoking the planner,
+executor or candle endpoint. Therefore a 30-second loop over a 1-minute target
+does not repeatedly request the still-current candle. Once a new close exists,
+the official incremental planner applies its configured overlap and bounded
+bootstrap, and the official executor retains journal, receipt, recovery and
+transaction semantics. Open candles remain excluded.
+
+The runner holds a kernel-backed, volume-wide collector lock for its lifetime,
+so only one continuous loop can publish state for one `ADT_DATA_DIR`. Dataset
+locks remain the authority for each RAW dataset and still coordinate with
+manual or administrative jobs. State publication uses canonical JSON, exact
+UTC timestamps, bounded bytes, SHA-256 checksum and cycle identity, temporary
+exclusive creation, file `fsync`, atomic replace, directory `fsync` and
+post-write decode comparison. The API can report status but cannot start, stop
+or mutate collection.
+
+This delivery intentionally uses public Binance REST polling, not WebSockets.
+It needs no API key and accesses no account, balance, order or signed endpoint.
+It introduces no PostgreSQL table, migration, strategy schedule, simulated
+portfolio or trading action.

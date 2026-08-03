@@ -520,3 +520,62 @@ price route rejects inactive instruments and verifies that the returned
 observation belongs to the requested instrument. This phase does not use API
 keys, account data, signed endpoints, WebSockets, trading or persistent catalog
 storage.
+
+
+## Phase 5-02 continuous collection operations
+
+Continuous collection is an explicit operational process. It is not started by
+FastAPI and should be supervised separately while sharing the same
+`ADT_DATA_DIR` as the API and any Phase 2 operator commands. Only one collector
+may hold the volume-wide lease at a time. After acquiring that lease, the
+collector recovers abandoned Phase 2 jobs before beginning its first cycle.
+
+One cycle:
+
+```bash
+python -m app.cli market-data collect run-once \
+  --target BTC/USDT:1m \
+  --bootstrap-candles 1440 \
+  --yes
+```
+
+Continuous loop:
+
+```bash
+python -m app.cli market-data collect loop \
+  --target BTC/USDT:1m \
+  --target ETH/USDT:5m \
+  --interval-seconds 30 \
+  --yes
+```
+
+`--target` is repeatable and strict. `--bootstrap-candles` applies only when a
+target has no usable local coverage; the existing incremental planner enforces
+all total-candle, request and chunk ceilings. `--max-cycles` is available for
+controlled tests and supervised finite runs. Mutating modes require `--yes`.
+
+Read the latest completed cycle locally without contacting Binance:
+
+```bash
+python -m app.cli market-data collect status
+```
+
+The same document is exposed read-only at
+`GET /api/v1/market/collection/status`. It is stored at
+`$ADT_DATA_DIR/market/continuous/state.json` through atomic replacement and is
+not an authority for candle contents; Parquet, the local dataset catalog, job
+records, receipts and journals remain authoritative.
+
+Configuration:
+
+- `ADT_MARKET_CONTINUOUS_INTERVAL_SECONDS`: fixed loop cadence, default `30`;
+- `ADT_MARKET_CONTINUOUS_BOOTSTRAP_CANDLES`: default initial history, `1440`;
+- `ADT_MARKET_CONTINUOUS_MAX_TARGETS`: maximum explicit targets, default `20`;
+- existing `ADT_MARKET_INCREMENTAL_OVERLAP_CANDLES`: overlap used only when a
+  newly closed candle requires an update;
+- existing Phase 2 request, chunk, total-candle and lock limits remain active.
+
+A target already covering the latest closed boundary is `NOOP` before planner
+or candle-source access. Failures are isolated per target and the next target
+continues. The collector excludes open candles and never uses Binance account,
+order or signed endpoints.

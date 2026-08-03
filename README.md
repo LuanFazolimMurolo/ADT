@@ -4,14 +4,15 @@
 
 ## Status
 
-🟡 **Phase 2A market-data foundation implemented locally**
+🟡 **Phase 5 market-data runtime in progress — 5-01 and 5-02 implemented locally**
 
 ⏳ **Formal Phase 1 closure pending operational homologation**
 
-The backend now has an opt-in public Binance Spot adapter and local Parquet
-datasets. It does not trade, run strategies or contact an exchange unless an
-operator explicitly invokes a network command. No migration or administrator
-bootstrap has been run against a remote Supabase project as part of this work.
+The backend exposes a read-only Binance Spot asset catalog and can maintain an
+explicit bounded set of RAW Parquet candle datasets from a separate collector
+process. It still performs no strategy scheduling, simulated order execution or
+real-capital trading. No migration or administrator bootstrap has been run
+against a remote Supabase project as part of this work.
 
 ## What is ADT?
 
@@ -149,3 +150,38 @@ docs/              specification, architecture and operational guides
 With the backend running, the read-only Binance Spot catalog is available at
 `GET /api/v1/market/assets`. Asset metadata and current public prices require no
 Binance API key; no account or order endpoint is used.
+
+
+### Continuous RAW collection (Phase 5-02)
+
+The continuous collector is a process separate from FastAPI. Both processes
+must resolve the same persistent `ADT_DATA_DIR`. Targets are explicit and use
+`BASE/QUOTE:TIMEFRAME`; the collector never expands the whole exchange catalog
+automatically.
+
+Run one bounded cycle:
+
+```bash
+cd services/backend
+.venv/bin/python -m app.cli market-data collect run-once \
+  --target BTC/USDT:1m --bootstrap-candles 1440 --yes
+```
+
+Run continuously under a process supervisor:
+
+```bash
+.venv/bin/python -m app.cli market-data collect loop \
+  --target BTC/USDT:1m --target ETH/USDT:5m \
+  --interval-seconds 30 --yes
+```
+
+Inspect the latest atomic cycle state without network access:
+
+```bash
+.venv/bin/python -m app.cli market-data collect status
+```
+
+FastAPI exposes the same read-only state at
+`GET /api/v1/market/collection/status`. A cycle is `NOOP` for a target when the
+latest closed candle is already stored, so sub-timeframe polling does not
+re-fetch candles. No API key, account endpoint or trading permission is used.
