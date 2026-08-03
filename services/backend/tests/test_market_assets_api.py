@@ -90,8 +90,8 @@ class FakeAssetMarketService:
 @pytest_asyncio.fixture
 async def asset_client() -> AsyncIterator[httpx.AsyncClient]:
     app.dependency_overrides[get_asset_market_service] = lambda: FakeAssetMarketService()
-    app.dependency_overrides[get_continuous_collection_state_store] = (
-        lambda: FakeContinuousCollectionStateStore(_collection_state())
+    app.dependency_overrides[get_continuous_collection_state_store] = lambda: (
+        FakeContinuousCollectionStateStore(_collection_state())
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
@@ -191,8 +191,8 @@ async def test_collection_status_exposes_latest_atomic_cycle(
 async def test_collection_status_missing_uses_stable_404(
     asset_client: httpx.AsyncClient,
 ) -> None:
-    app.dependency_overrides[get_continuous_collection_state_store] = (
-        lambda: FakeContinuousCollectionStateStore(None)
+    app.dependency_overrides[get_continuous_collection_state_store] = lambda: (
+        FakeContinuousCollectionStateStore(None)
     )
 
     response = await asset_client.get("/api/v1/market/collection/status")

@@ -8,6 +8,8 @@ from app.auth import SupabaseJWTVerifier
 from app.database import Database
 from app.market_data.asset_catalog import AssetMarketService
 from app.market_data.continuous import ContinuousCollectionStateStore
+from app.paper_trading.continuous import PaperRunnerStateStore
+from app.paper_trading.query import PaperTradingReadService
 from app.repositories import (
     AdminRepository,
     CapitalMovementRepository,
@@ -44,6 +46,16 @@ def get_continuous_collection_state_store(
         ContinuousCollectionStateStore,
         request.app.state.continuous_collection_state_store,
     )
+
+
+def get_paper_trading_read_service(request: Request) -> PaperTradingReadService:
+    """Return the application-owned read-only paper-trading query service."""
+    return cast(PaperTradingReadService, request.app.state.paper_trading_read_service)
+
+
+def get_paper_runner_state_store(request: Request) -> PaperRunnerStateStore:
+    """Return the application-owned latest paper-runner state store."""
+    return cast(PaperRunnerStateStore, request.app.state.paper_runner_state_store)
 
 
 def get_jwt_verifier(request: Request) -> SupabaseJWTVerifier:

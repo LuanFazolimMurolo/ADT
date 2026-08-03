@@ -267,10 +267,8 @@ class ContinuousCollectionState:
         started_at = _validate_datetime(self.started_at, field_name="started_at")
         finished_at = _validate_datetime(self.finished_at, field_name="finished_at")
         next_cycle_at = _validate_datetime(self.next_cycle_at, field_name="next_cycle_at")
-        if (
-            finished_at < started_at
-            or next_cycle_at
-            != started_at + timedelta(seconds=self.policy.interval_seconds)
+        if finished_at < started_at or next_cycle_at != started_at + timedelta(
+            seconds=self.policy.interval_seconds
         ):
             raise MarketDataInconsistencyError("A temporalidade do ciclo é inválida.")
         if (
@@ -423,8 +421,7 @@ class ContinuousCollectionService:
                 )
                 if (
                     last_open_time is not None
-                    and target.timeframe.next_open_time(last_open_time)
-                    >= latest_closed_end
+                    and target.timeframe.next_open_time(last_open_time) >= latest_closed_end
                 ):
                     return ContinuousTargetResult(
                         target=target,
@@ -632,9 +629,7 @@ def collection_target_from_text(
 ) -> ContinuousCollectionTarget:
     """Parse strict ``BASE/QUOTE:TIMEFRAME`` CLI input."""
     if not isinstance(value, str) or value.count(":") != 1:
-        raise MarketDataInconsistencyError(
-            "Use o target no formato BASE/QUOTE:TIMEFRAME."
-        )
+        raise MarketDataInconsistencyError("Use o target no formato BASE/QUOTE:TIMEFRAME.")
     symbol, timeframe_code = value.rsplit(":", 1)
     try:
         pair = TradingPair.parse(symbol)
@@ -738,8 +733,7 @@ def _validate_incremental_plan(
             or chunk.expected_candles != count
             or count < 1
             or count > backfill.chunk_candles
-            or chunk.data_range.start + count * target.timeframe.duration
-            != chunk.data_range.end
+            or chunk.data_range.start + count * target.timeframe.duration != chunk.data_range.end
         ):
             raise MarketDataInconsistencyError("A cardinalidade do chunk é inválida.")
         total += count
@@ -814,8 +808,10 @@ def _validate_state(state: object) -> ContinuousCollectionState:
 
 
 def _validate_pair(pair: object) -> None:
-    if not isinstance(pair, TradingPair) or not isinstance(pair.base, str) or not isinstance(
-        pair.quote, str
+    if (
+        not isinstance(pair, TradingPair)
+        or not isinstance(pair.base, str)
+        or not isinstance(pair.quote, str)
     ):
         raise MarketDataInconsistencyError("O par do target é inválido.")
     if TradingPair(pair.base, pair.quote) != pair:

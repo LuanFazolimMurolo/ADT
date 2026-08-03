@@ -26,9 +26,10 @@ from app.market_data.binance import BINANCE_MARKET_DATA_BASE_URL, BinanceSpotAda
 from app.market_data.continuous import (
     ContinuousCollectionPolicy,
     ContinuousCollectionRunner,
+    ContinuousCollectionService,
     ContinuousCollectionState,
     ContinuousCollectionStateStore,
-    ContinuousCollectionService,
+    ContinuousCollectionTarget,
     collection_target_from_text,
     validate_continuous_collection_targets,
 )
@@ -72,9 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
     root = parser.add_subparsers(dest="group", required=True)
     backtest = root.add_parser("backtest", help="Run deterministic local snapshot backtests.")
     configure_backtest_parser(backtest)
-    paper = root.add_parser(
-        "paper-trading", help="Run deterministic local paper-trading sessions."
-    )
+    paper = root.add_parser("paper-trading", help="Run deterministic local paper-trading sessions.")
     configure_paper_trading_parser(paper)
 
     market = root.add_parser("market-data", help="Operate local historical market data.")
@@ -293,9 +292,7 @@ async def _run_market_command(
             overlap_candles=app_settings.market_incremental_overlap_candles,
             max_targets=app_settings.market_continuous_max_targets,
         )
-        collection_max_cycles = (
-            1 if args.collect_command == "run-once" else args.max_cycles
-        )
+        collection_max_cycles = 1 if args.collect_command == "run-once" else args.max_cycles
 
     def clock() -> datetime:
         return datetime.now(UTC)
@@ -440,9 +437,7 @@ async def _run_market_command(
 
         if args.command == "collect":
             if collection_targets is None or collection_policy is None:
-                raise MarketDataInconsistencyError(
-                    "A configuração da coleta contínua é inválida."
-                )
+                raise MarketDataInconsistencyError("A configuração da coleta contínua é inválida.")
             collection_service = ContinuousCollectionService(
                 instruments=asset_market_service,
                 history=history_service,

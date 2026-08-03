@@ -7,6 +7,7 @@ from app.api.routes import (
     admin_strategies,
     assets,
     health,
+    paper_trading,
     public,
     system,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "admin_strategies",
     "assets",
     "health",
+    "paper_trading",
     "public",
     "system",
 ]

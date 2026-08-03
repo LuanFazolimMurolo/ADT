@@ -4,7 +4,7 @@
 
 ## Status
 
-🟡 **Phase 5 paper-trading runtime in progress — 5-01 through 5-03 implemented locally**
+🟡 **Phase 5 paper-trading runtime in progress — 5-01 through 5-04 implemented locally**
 
 ⏳ **Formal Phase 1 closure pending operational homologation**
 
@@ -195,3 +195,11 @@ Create, advance, inspect and verify local simulated sessions with the
 through the existing Phase 3 engine and publishes an authenticated latest state;
 it never sends an exchange order. See
 [`docs/PAPER_TRADING.md`](./docs/PAPER_TRADING.md) for commands and limits.
+
+### Continuous paper runner and API (Phase 5-04)
+
+Run explicit sessions continuously outside FastAPI with `paper-trading runner`.
+The API exposes only paginated local state at `/api/v1/paper-trading/...`; HTTP
+requests never execute strategies. See
+[`docs/PAPER_TRADING.md`](./docs/PAPER_TRADING.md) for commands, endpoints and
+safety limits.

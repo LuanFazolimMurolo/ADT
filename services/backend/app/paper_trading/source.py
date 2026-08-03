@@ -50,9 +50,7 @@ class LocalRawPaperCandleSource:
         end: datetime | None = None,
     ) -> PaperCandleBatch:
         paper_session_id(config)
-        selected_end_override = (
-            None if end is None else require_utc(end, field_name="end")
-        )
+        selected_end_override = None if end is None else require_utc(end, field_name="end")
         if selected_end_override is not None and not config.timeframe.validate_open_time(
             selected_end_override
         ):
@@ -149,9 +147,7 @@ class InMemoryPaperSnapshotReader:
     def iter_candles(self, data_range: DataRange | None = None) -> Iterator[Candle]:
         selected = self._snapshot.data_range if data_range is None else data_range
         yield from (
-            candle
-            for candle in self._candles
-            if selected.start <= candle.open_time < selected.end
+            candle for candle in self._candles if selected.start <= candle.open_time < selected.end
         )
 
     def verify_unchanged(self) -> DatasetSnapshot:

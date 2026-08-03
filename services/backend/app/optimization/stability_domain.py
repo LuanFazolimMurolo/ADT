@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from decimal import Context, Decimal, ROUND_HALF_EVEN, localcontext
+from decimal import ROUND_HALF_EVEN, Context, Decimal, localcontext
 from enum import StrEnum
 
 from app.backtesting.reports import ComparisonMetric
@@ -221,9 +221,7 @@ def stability_policy_payload(policy: StabilityAnalysisPolicy) -> dict[str, objec
         "minimum_test_not_worse_ratio": decimal_text(policy.minimum_test_not_worse_ratio),
         "maximum_median_degradation": decimal_text(policy.maximum_median_degradation),
         "maximum_worst_degradation": decimal_text(policy.maximum_worst_degradation),
-        "maximum_parameter_turnover_ratio": decimal_text(
-            policy.maximum_parameter_turnover_ratio
-        ),
+        "maximum_parameter_turnover_ratio": decimal_text(policy.maximum_parameter_turnover_ratio),
     }
 
 
@@ -433,9 +431,7 @@ def stability_report_payload(report: StabilityReport) -> dict[str, object]:
             if report.degradation_distribution is None
             else metric_distribution_payload(report.degradation_distribution)
         ),
-        "controls": [
-            {"name": item.name.value, "passed": item.passed} for item in report.controls
-        ],
+        "controls": [{"name": item.name.value, "passed": item.passed} for item in report.controls],
         "overfitting_assessment": report.overfitting_assessment.value,
         "parameter_stability_assessment": report.parameter_stability_assessment.value,
         "assessment": report.assessment.value,
@@ -446,7 +442,7 @@ def validate_stability_report_values(report: StabilityReport) -> None:
     if not isinstance(report, StabilityReport):
         raise IncompatibleStabilityReportError()
     _exact_int(report.schema_version, "stability report schema", 1, 1)
-    for label, value in (
+    for label, digest_value in (
         ("walk-forward plan id", report.walk_forward_plan_id),
         ("walk-forward plan checksum", report.plan_checksum),
         ("walk-forward execution id", report.walk_forward_execution_id),
@@ -454,7 +450,7 @@ def validate_stability_report_values(report: StabilityReport) -> None:
         ("stability report checksum", report.checksum),
         ("stability report id", report.stability_report_id),
     ):
-        _sha256(value, label)
+        _sha256(digest_value, label)
     validate_stability_policy(report.policy)
     if (
         not isinstance(report.observations, tuple)
@@ -464,7 +460,7 @@ def validate_stability_report_values(report: StabilityReport) -> None:
         raise IncompatibleStabilityReportError("stability observations are invalid")
     for observation in report.observations:
         validate_stability_fold_observation(observation)
-    for label, value in (
+    for label, count_value in (
         ("fold count", report.fold_count),
         ("completed count", report.completed_count),
         ("failed count", report.failed_count),
@@ -472,7 +468,7 @@ def validate_stability_report_values(report: StabilityReport) -> None:
         ("parameter transition count", report.parameter_transition_count),
         ("parameter switch count", report.parameter_switch_count),
     ):
-        _exact_int(value, label, 0, MAX_STABILITY_FOLDS)
+        _exact_int(count_value, label, 0, MAX_STABILITY_FOLDS)
     for ratio in (
         report.completion_ratio,
         report.test_not_worse_ratio,
@@ -546,21 +542,19 @@ def validate_stability_report(report: StabilityReport) -> None:
         raise IncompatibleStabilityReportError(
             "first completed fold cannot declare a parameter change"
         )
-    if any(
-        item.parameter_changed_from_previous_completed is None for item in completed[1:]
-    ):
+    if any(item.parameter_changed_from_previous_completed is None for item in completed[1:]):
         raise IncompatibleStabilityReportError("parameter transitions are incomplete")
 
     previous_parameter_set_id: str | None = None
     for item in completed:
         validation_score = _required_decimal(item.validation_score)
         test_score = _required_decimal(item.test_score)
-        expected_degradation = signed_degradation(
+        expected_fold_degradation = signed_degradation(
             validation_score,
             test_score,
             report.policy.direction,
         )
-        if item.degradation != expected_degradation:
+        if item.degradation != expected_fold_degradation:
             raise IncompatibleStabilityReportError("fold degradation is inconsistent")
         if item.test_not_worse is not test_is_not_worse(
             validation_score,
@@ -582,11 +576,11 @@ def validate_stability_report(report: StabilityReport) -> None:
     degradation_values = tuple(_required_decimal(item.degradation) for item in completed)
     expected_validation = distribution_for(validation_values)
     expected_test = distribution_for(test_values)
-    expected_degradation = distribution_for(degradation_values)
+    expected_degradation_distribution = distribution_for(degradation_values)
     if (
         report.validation_distribution != expected_validation
         or report.test_distribution != expected_test
-        or report.degradation_distribution != expected_degradation
+        or report.degradation_distribution != expected_degradation_distribution
     ):
         raise IncompatibleStabilityReportError("metric distributions are inconsistent")
 
@@ -596,7 +590,7 @@ def validate_stability_report(report: StabilityReport) -> None:
         completion_ratio=expected_completion,
         test_not_worse_ratio=expected_not_worse,
         parameter_turnover_ratio=expected_turnover,
-        degradation_distribution=expected_degradation,
+        degradation_distribution=expected_degradation_distribution,
     )
     if report.controls != expected_controls:
         raise IncompatibleStabilityReportError("stability controls are inconsistent")
@@ -674,8 +668,7 @@ def controls_for(
         ),
         StabilityControlResult(
             StabilityControlName.MAX_WORST_DEGRADATION,
-            worst_degradation is not None
-            and worst_degradation <= policy.maximum_worst_degradation,
+            worst_degradation is not None and worst_degradation <= policy.maximum_worst_degradation,
         ),
         StabilityControlResult(
             StabilityControlName.MAX_PARAMETER_TURNOVER_RATIO,
@@ -779,9 +772,7 @@ def test_is_not_worse(
 
 def maximum_stability_report_bytes(fold_count: int) -> int:
     _exact_int(fold_count, "stability fold count", 2, MAX_STABILITY_FOLDS)
-    return STABILITY_BASE_BYTES_UPPER_BOUND + (
-        fold_count * STABILITY_BYTES_PER_FOLD_UPPER_BOUND
-    )
+    return STABILITY_BASE_BYTES_UPPER_BOUND + (fold_count * STABILITY_BYTES_PER_FOLD_UPPER_BOUND)
 
 
 def _exact_int(value: object, label: str, minimum: int, maximum: int) -> None:

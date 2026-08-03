@@ -68,9 +68,7 @@ class WalkForwardRepository:
         self,
         manifest: WalkForwardExecutionManifest,
         *,
-        semantic_validator: Callable[
-            [WalkForwardExecutionManifest], WalkForwardExecutionManifest
-        ]
+        semantic_validator: Callable[[WalkForwardExecutionManifest], WalkForwardExecutionManifest]
         | None = None,
     ) -> WalkForwardExecutionPublication:
         validate_walk_forward_execution_manifest(manifest)
@@ -229,9 +227,7 @@ def _validate_semantics(
     except WalkForwardError:
         raise
     except Exception as error:
-        raise WalkForwardPublicationError(
-            "walk-forward semantic validation failed"
-        ) from error
+        raise WalkForwardPublicationError("walk-forward semantic validation failed") from error
     if validated != manifest:
         raise WalkForwardPublicationError(
             "walk-forward semantic validator returned incompatible content"

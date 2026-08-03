@@ -118,8 +118,7 @@ class StabilityReportRepository:
                     )
             staging = ensure_safe_path(
                 self._market,
-                execution_root
-                / f".{report.stability_report_id}.tmp-{os.getpid()}-{uuid4().hex}",
+                execution_root / f".{report.stability_report_id}.tmp-{os.getpid()}-{uuid4().hex}",
             )
             renamed = False
             try:
@@ -199,9 +198,7 @@ class StabilityReportRepository:
             checksum,
             state,
         ):
-            raise IncompatibleStabilityDocumentError(
-                "stability publication record is incompatible"
-            )
+            raise IncompatibleStabilityDocumentError("stability publication record is incompatible")
         report = decode_stability_report_document(envelope)
         if (
             report.walk_forward_execution_id != expected.walk_forward_execution_id
@@ -240,9 +237,7 @@ def _validate_semantics(
         validated.stability_report_id != expected_report_id
         or validated.checksum != expected_checksum
     ):
-        raise StabilityPublicationError(
-            "stability report changed during semantic validation"
-        )
+        raise StabilityPublicationError("stability report changed during semantic validation")
 
 
 def _publication_bytes(report: StabilityReport, state: str) -> bytes:

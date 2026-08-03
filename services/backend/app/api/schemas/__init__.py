@@ -26,6 +26,18 @@ from app.api.schemas.movements import (
     MovementListResponse,
 )
 from app.api.schemas.pagination import PageMeta, PageParams, PaginatedResponse
+from app.api.schemas.paper_trading import (
+    PaperFillListResponse,
+    PaperFillResponse,
+    PaperOrderListResponse,
+    PaperOrderResponse,
+    PaperPortfolioResponse,
+    PaperRunnerSessionResultResponse,
+    PaperRunnerStatusResponse,
+    PaperSessionDetailResponse,
+    PaperSessionListResponse,
+    PaperSessionSummaryResponse,
+)
 from app.api.schemas.public import PublicSimulationSummaryResponse
 from app.api.schemas.settings import (
     SettingPatchRequest,
@@ -77,6 +89,16 @@ __all__ = [
     "PaginatedResponse",
     "PositiveFinancialDecimal",
     "PositiveFinancialDecimalStringInput",
+    "PaperFillListResponse",
+    "PaperFillResponse",
+    "PaperOrderListResponse",
+    "PaperOrderResponse",
+    "PaperPortfolioResponse",
+    "PaperRunnerSessionResultResponse",
+    "PaperRunnerStatusResponse",
+    "PaperSessionDetailResponse",
+    "PaperSessionListResponse",
+    "PaperSessionSummaryResponse",
     "PublicSimulationSummaryResponse",
     "SettingPatchRequest",
     "SettingResponse",

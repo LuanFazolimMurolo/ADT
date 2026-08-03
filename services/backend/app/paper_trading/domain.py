@@ -69,9 +69,7 @@ class PaperSessionConfig:
 
     def __post_init__(self) -> None:
         try:
-            if not isinstance(self.pair, TradingPair) or not isinstance(
-                self.timeframe, Timeframe
-            ):
+            if not isinstance(self.pair, TradingPair) or not isinstance(self.timeframe, Timeframe):
                 raise ValueError("pair and timeframe must be canonical")
             start_at = require_utc(self.start_at, field_name="start_at")
             if not self.timeframe.validate_open_time(start_at):
@@ -84,10 +82,9 @@ class PaperSessionConfig:
                 raise ValueError("warmup_candles must be a nonnegative integer")
             if self.warmup_candles > self.history_window:
                 raise ValueError("warmup_candles must not exceed history_window")
-            if (
-                type(self.strategy_lifecycle_version) is not int
-                or self.strategy_lifecycle_version not in {1, 2}
-            ):
+            if type(
+                self.strategy_lifecycle_version
+            ) is not int or self.strategy_lifecycle_version not in {1, 2}:
                 raise ValueError("strategy lifecycle version is invalid")
             if self.warmup_candles > 0 and self.strategy_lifecycle_version != 2:
                 raise ValueError("positive warmup requires strategy lifecycle 2")
@@ -180,6 +177,33 @@ class PaperSessionState:
 
 
 @dataclass(frozen=True, slots=True)
+class PaperSessionStateSummary:
+    """Small verified projection used by paginated read-only listings."""
+
+    session_id: str
+    config_checksum: str
+    state_id: str
+    state_checksum: str
+    evaluation_end: datetime
+    last_candle_open_time: datetime
+    candles_processed: int
+    orders_count: int
+    fills_count: int
+    portfolio: PortfolioSnapshot
+    risk_halt: bool
+    replayed_at: datetime
+    schema_version: int = 1
+
+    def __post_init__(self) -> None:
+        try:
+            validate_paper_state_summary(self)
+        except PaperSessionCorruptError:
+            raise
+        except Exception:
+            raise PaperSessionCorruptError() from None
+
+
+@dataclass(frozen=True, slots=True)
 class PaperRunResult:
     action: PaperRunAction
     state: PaperSessionState
@@ -190,6 +214,88 @@ class PaperRunResult:
         ):
             raise InvalidPaperSessionError("O resultado do ciclo de paper trading é inválido.")
         validate_paper_session_state(self.state)
+
+
+def paper_state_summary(state: PaperSessionState) -> PaperSessionStateSummary:
+    validate_paper_session_state(state)
+    return PaperSessionStateSummary(
+        session_id=state.session_id,
+        config_checksum=state.config_checksum,
+        state_id=state.state_id,
+        state_checksum=state.checksum,
+        evaluation_end=state.evaluation_range.end,
+        last_candle_open_time=state.last_candle_open_time,
+        candles_processed=state.candles_processed,
+        orders_count=len(state.orders),
+        fills_count=len(state.fills),
+        portfolio=state.portfolio,
+        risk_halt=state.risk_halt,
+        replayed_at=state.replayed_at,
+    )
+
+
+def validate_paper_state_summary(summary: PaperSessionStateSummary) -> None:
+    if not isinstance(summary, PaperSessionStateSummary):
+        raise PaperSessionCorruptError()
+    if type(summary.schema_version) is not int or summary.schema_version != 1:
+        raise PaperSessionCorruptError()
+    for digest in (
+        summary.session_id,
+        summary.config_checksum,
+        summary.state_id,
+        summary.state_checksum,
+    ):
+        if not isinstance(digest, str) or _SHA256.fullmatch(digest) is None:
+            raise PaperSessionCorruptError()
+    evaluation_end = _utc(summary.evaluation_end, "evaluation_end")
+    last_open = _utc(summary.last_candle_open_time, "last_candle_open_time")
+    _utc(summary.replayed_at, "replayed_at")
+    if last_open >= evaluation_end:
+        raise PaperSessionCorruptError()
+    if type(summary.candles_processed) is not int or summary.candles_processed < 1:
+        raise PaperSessionCorruptError()
+    if type(summary.orders_count) is not int or summary.orders_count < 0:
+        raise PaperSessionCorruptError()
+    if (
+        type(summary.fills_count) is not int
+        or summary.fills_count < 0
+        or summary.fills_count > summary.orders_count
+    ):
+        raise PaperSessionCorruptError()
+    _revalidate_portfolio(summary.portfolio)
+    if type(summary.risk_halt) is not bool:
+        raise PaperSessionCorruptError()
+
+
+def validate_paper_state_summary_against_config(
+    summary: PaperSessionStateSummary,
+    config: PaperSessionConfig,
+) -> None:
+    _revalidate_config(config)
+    validate_paper_state_summary(summary)
+    duration = config.timeframe.duration
+    expected_session_id = paper_session_id(config)
+    if (
+        summary.session_id != expected_session_id
+        or summary.config_checksum != paper_config_checksum(config)
+        or summary.evaluation_end <= config.start_at
+        or summary.last_candle_open_time != summary.evaluation_end - duration
+        or (summary.evaluation_end - config.start_at) % duration != timedelta(0)
+        or summary.candles_processed != (summary.evaluation_end - config.start_at) // duration
+        or summary.orders_count > min(config.max_orders, config.risk_limits.max_total_orders)
+        or summary.fills_count > summary.orders_count
+    ):
+        raise PaperSessionVerificationError()
+
+
+def validate_paper_state_summary_against_state(
+    summary: PaperSessionStateSummary,
+    state: PaperSessionState,
+) -> None:
+    validate_paper_state_summary(summary)
+    validate_paper_session_state(state)
+    if summary != paper_state_summary(state):
+        raise PaperSessionVerificationError()
 
 
 def paper_config_payload(config: PaperSessionConfig) -> dict[str, object]:
@@ -280,9 +386,7 @@ def paper_state_semantic_payload(state: PaperSessionState) -> dict[str, object]:
 def paper_state_id_from_payload(payload: dict[str, object]) -> str:
     if not isinstance(payload, dict):
         raise PaperSessionCorruptError()
-    return hashlib.sha256(
-        b"adt-paper-state-v1\x00" + canonical_json_bytes(payload)
-    ).hexdigest()
+    return hashlib.sha256(b"adt-paper-state-v1\x00" + canonical_json_bytes(payload)).hexdigest()
 
 
 def paper_state_checksum(state: PaperSessionState) -> str:
@@ -328,9 +432,7 @@ def build_paper_session_state(
     state_id = paper_state_id_from_payload(base)
     replayed_at = require_utc(replayed_at, field_name="replayed_at")
     checksum = hashlib.sha256(
-        canonical_json_bytes(
-            {**base, "replayed_at": replayed_at.isoformat(), "state_id": state_id}
-        )
+        canonical_json_bytes({**base, "replayed_at": replayed_at.isoformat(), "state_id": state_id})
     ).hexdigest()
     return PaperSessionState(
         session_id=session_id,
@@ -452,13 +554,13 @@ def _revalidate_orders_and_fills(
     for order in orders:
         if not isinstance(order, SimulatedOrder):
             raise PaperSessionCorruptError()
-        candidate = copy(order)
+        order_candidate = copy(order)
         try:
-            SimulatedOrder.__post_init__(candidate)
+            SimulatedOrder.__post_init__(order_candidate)
         except Exception:
             raise PaperSessionCorruptError() from None
         if (
-            candidate != order
+            order_candidate != order
             or not isinstance(order.status, OrderStatus)
             or not isinstance(order.intent, OrderIntent)
             or not isinstance(order.intent.side, OrderSide)
@@ -477,13 +579,13 @@ def _revalidate_orders_and_fills(
     for fill in fills:
         if not isinstance(fill, Fill):
             raise PaperSessionCorruptError()
-        candidate = copy(fill)
+        fill_candidate = copy(fill)
         try:
-            Fill.__post_init__(candidate)
+            Fill.__post_init__(fill_candidate)
         except Exception:
             raise PaperSessionCorruptError() from None
         if (
-            candidate != fill
+            fill_candidate != fill
             or not isinstance(fill.reason, FillReason)
             or not isinstance(fill.liquidity, FillLiquidity)
             or not isinstance(fill.side, OrderSide)

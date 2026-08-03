@@ -41,3 +41,13 @@ class PaperSessionCorruptError(PersistenceError):
 class PaperSessionVerificationError(PersistenceError):
     code = "paper_session_verification_failed"
     default_message = "A sessão de paper trading não pôde ser verificada."
+
+
+class PaperRunnerStateNotFoundError(ResourceNotFoundError):
+    code = "paper_runner_state_not_found"
+    default_message = "O runner de paper trading ainda não publicou um ciclo."
+
+
+class PaperRunnerCorruptError(PersistenceError):
+    code = "paper_runner_corrupt"
+    default_message = "O estado persistido do runner de paper trading está corrompido."

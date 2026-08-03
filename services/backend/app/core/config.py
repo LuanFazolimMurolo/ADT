@@ -84,6 +84,8 @@ _FIELD_ENVIRONMENT_NAMES = {
     "backtest_engine_version": "ADT_BACKTEST_ENGINE_VERSION",
     "backtest_schema_version": "ADT_BACKTEST_SCHEMA_VERSION",
     "paper_trading_max_replay_candles": "ADT_PAPER_TRADING_MAX_REPLAY_CANDLES",
+    "paper_trading_continuous_interval_seconds": ("ADT_PAPER_TRADING_CONTINUOUS_INTERVAL_SECONDS"),
+    "paper_trading_continuous_max_sessions": "ADT_PAPER_TRADING_CONTINUOUS_MAX_SESSIONS",
 }
 
 
@@ -156,6 +158,8 @@ class MarketDataSettings(BaseSettings):
     backtest_engine_version: str = Field(default="3b-1", min_length=1, max_length=64)
     backtest_schema_version: int = Field(default=2, ge=1, le=2)
     paper_trading_max_replay_candles: int = Field(default=200_000, ge=1, le=2_000_000)
+    paper_trading_continuous_interval_seconds: int = Field(default=30, ge=1, le=3_600)
+    paper_trading_continuous_max_sessions: int = Field(default=20, ge=1, le=1_000)
 
     @field_validator("market_user_agent")
     @classmethod

@@ -384,6 +384,7 @@ def test_source_validator_cannot_mutate_and_resign_the_input_manifest() -> None:
         )
     assert validator_reached_valid_manifest
 
+
 def test_invalid_source_contract_is_mapped_to_stability_error() -> None:
     plan, execution = _execution()
     object.__setattr__(execution, "status", "FAILED")
@@ -413,6 +414,7 @@ def test_payload_helper_rejects_hostile_control_without_attribute_leak() -> None
 
     with pytest.raises(IncompatibleStabilityReportError):
         stability_report_payload(report)
+
 
 def test_selected_holdout_metric_is_required() -> None:
     plan, execution = _execution()
@@ -553,16 +555,18 @@ def test_repository_publish_read_reuse_and_public_verification(tmp_path: Path) -
     assert not first.reused
     assert second.reused
     assert (
-        repository.read(execution.walk_forward_execution_id, report.stability_report_id)
+        repository.read(execution.walk_forward_execution_id, report.stability_report_id) == report
+    )
+    assert (
+        verify_published_stability_report(
+            repository,
+            report.stability_report_id,
+            plan,
+            execution,
+            source_validator=_source_validator,
+        )
         == report
     )
-    assert verify_published_stability_report(
-        repository,
-        report.stability_report_id,
-        plan,
-        execution,
-        source_validator=_source_validator,
-    ) == report
 
 
 def test_repository_requires_semantic_validation(tmp_path: Path) -> None:
@@ -614,8 +618,7 @@ def test_repository_recovers_corrupt_target(tmp_path: Path) -> None:
 
     assert not retried.reused
     assert (
-        repository.read(execution.walk_forward_execution_id, report.stability_report_id)
-        == report
+        repository.read(execution.walk_forward_execution_id, report.stability_report_id) == report
     )
     assert not tuple(target.parent.glob(".*.tmp-*"))
 

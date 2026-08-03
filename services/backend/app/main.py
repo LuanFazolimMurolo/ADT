@@ -19,6 +19,7 @@ from app.api.routes import (
     admin_strategies,
     assets,
     health,
+    paper_trading,
     public,
     system,
 )
@@ -31,6 +32,9 @@ from app.market_data.binance import BINANCE_MARKET_DATA_BASE_URL, BinanceSpotAda
 from app.market_data.continuous import ContinuousCollectionStateStore
 from app.market_data.http import PublicMarketHttpClient
 from app.middleware import RequestContextMiddleware
+from app.paper_trading.continuous import PaperRunnerStateStore
+from app.paper_trading.query import PaperTradingReadService
+from app.paper_trading.repository import PaperTradingRepository
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +118,17 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
                 catalog_ttl_seconds=app_settings.market_asset_catalog_ttl_seconds,
                 max_instruments=app_settings.market_asset_catalog_max_instruments,
             )
-            application.state.continuous_collection_state_store = (
-                ContinuousCollectionStateStore(app_settings.data_dir)
+            application.state.continuous_collection_state_store = ContinuousCollectionStateStore(
+                app_settings.data_dir
+            )
+            paper_repository = PaperTradingRepository(
+                app_settings.data_dir,
+                lock_timeout_seconds=app_settings.market_job_lock_timeout,
+                lock_stale_after_seconds=app_settings.market_job_stale_after,
+            )
+            application.state.paper_trading_read_service = PaperTradingReadService(paper_repository)
+            application.state.paper_runner_state_store = PaperRunnerStateStore(
+                app_settings.data_dir
             )
 
             try:
@@ -161,6 +174,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(assets.router)
     application.include_router(system.router)
     application.include_router(public.router)
+    application.include_router(paper_trading.router)
     application.include_router(admin.router)
     application.include_router(admin_simulations.router)
     application.include_router(admin_settings.router)

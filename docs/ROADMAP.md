@@ -542,6 +542,29 @@ serialization of arbitrary strategy state, HTTP mutation endpoints, dashboard,
 PostgreSQL session persistence, automatic strategy promotion, notifications,
 WebSocket/event streaming and live trading.
 
+### Phase 5-04: continuous paper-session runner and read-only API ✅
+
+**Scope**: Execute an explicit bounded set of immutable 5-03 sessions in a
+separate fixed-cadence process. Each cycle is sequential and failure-isolated,
+reuses the verified complete replay boundary and publishes one compact atomic
+latest-cycle document. FastAPI only reads persisted runner/session state; no
+request creates a session or invokes a strategy.
+
+**Delivered**:
+- [x] Separate paper `runner run-once`, `runner loop` and `runner status` commands
+- [x] Explicit sorted session IDs, bounded cadence and maximum session count
+- [x] Sequential `UPDATED`, `NOOP` and `FAILED` results with aggregate cycle state
+- [x] One active paper runner per persistent `ADT_DATA_DIR` volume
+- [x] Atomic canonical latest-cycle state with checksum and deterministic cycle ID
+- [x] Read-only paginated session, order, fill and runner-status API
+- [x] Decimal-string serialization and no strategy execution inside HTTP requests
+- [x] Deterministic remote-free tests and typed configuration limits
+
+**Explicitly deferred after 5-04**: dynamic session subscriptions, HTTP mutation,
+incremental serialization of arbitrary strategy state, dashboard, PostgreSQL
+persistence, notifications, WebSocket/event streaming, automatic promotion and
+live trading.
+
 **Deliverables**:
 - [ ] Position sizing engine
 - [ ] Stop-loss enforcement

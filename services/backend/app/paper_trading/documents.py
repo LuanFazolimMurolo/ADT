@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime
 from decimal import Decimal
@@ -34,15 +35,35 @@ from app.paper_trading.domain import (
     MAX_PAPER_DOCUMENT_BYTES,
     PaperSessionConfig,
     PaperSessionState,
+    PaperSessionStateSummary,
     paper_config_checksum,
     paper_config_payload,
     paper_session_id,
     validate_paper_session_state,
+    validate_paper_state_summary,
 )
 from app.paper_trading.errors import InvalidPaperSessionError, PaperSessionCorruptError
 
 _CONFIG_KEYS = frozenset({"config", "checksum", "session_id"})
 _STATE_KEYS = frozenset({"state", "checksum"})
+_SUMMARY_KEYS = frozenset({"summary", "checksum"})
+_SUMMARY_PAYLOAD_KEYS = frozenset(
+    {
+        "session_id",
+        "config_checksum",
+        "state_id",
+        "state_checksum",
+        "evaluation_end",
+        "last_candle_open_time",
+        "candles_processed",
+        "orders_count",
+        "fills_count",
+        "portfolio",
+        "risk_halt",
+        "replayed_at",
+        "schema_version",
+    }
+)
 _PAIR_KEYS = frozenset({"base", "quote"})
 _EXECUTION_KEYS = frozenset({"fees", "slippage", "intrabar_policy", "force_close_at_end"})
 _FEE_KEYS = frozenset({"maker_fee_bps", "taker_fee_bps"})
@@ -165,9 +186,7 @@ def decode_paper_config(raw: bytes) -> PaperSessionConfig:
 
 def encode_paper_state(state: PaperSessionState) -> bytes:
     validate_paper_session_state(state)
-    encoded = canonical_json_bytes(
-        {"state": canonical_value(state), "checksum": state.checksum}
-    )
+    encoded = canonical_json_bytes({"state": canonical_value(state), "checksum": state.checksum})
     if len(encoded) > MAX_PAPER_DOCUMENT_BYTES:
         raise PaperSessionCorruptError()
     return encoded
@@ -182,6 +201,49 @@ def decode_paper_state(raw: bytes) -> PaperSessionState:
         if not isinstance(payload, dict) or document["checksum"] != payload.get("checksum"):
             raise ValueError
         return _state_from_payload(payload)
+    except PaperSessionCorruptError:
+        raise
+    except Exception:
+        raise PaperSessionCorruptError() from None
+
+
+def encode_paper_state_summary(summary: PaperSessionStateSummary) -> bytes:
+    validate_paper_state_summary(summary)
+    payload = canonical_value(summary)
+    checksum = hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
+    encoded = canonical_json_bytes({"summary": payload, "checksum": checksum})
+    if len(encoded) > MAX_PAPER_DOCUMENT_BYTES:
+        raise PaperSessionCorruptError()
+    return encoded
+
+
+def decode_paper_state_summary(raw: bytes) -> PaperSessionStateSummary:
+    try:
+        document = _load_json(raw)
+        if not isinstance(document, dict) or frozenset(document) != _SUMMARY_KEYS:
+            raise ValueError
+        payload = _object(document["summary"])
+        _require_keys(payload, _SUMMARY_PAYLOAD_KEYS)
+        if document["checksum"] != hashlib.sha256(canonical_json_bytes(payload)).hexdigest():
+            raise ValueError
+        summary = PaperSessionStateSummary(
+            session_id=_string(payload["session_id"]),
+            config_checksum=_string(payload["config_checksum"]),
+            state_id=_string(payload["state_id"]),
+            state_checksum=_string(payload["state_checksum"]),
+            evaluation_end=_datetime(payload["evaluation_end"]),
+            last_candle_open_time=_datetime(payload["last_candle_open_time"]),
+            candles_processed=_int(payload["candles_processed"]),
+            orders_count=_int(payload["orders_count"]),
+            fills_count=_int(payload["fills_count"]),
+            portfolio=_portfolio(_object(payload["portfolio"])),
+            risk_halt=_bool(payload["risk_halt"]),
+            replayed_at=_datetime(payload["replayed_at"]),
+            schema_version=_int(payload["schema_version"]),
+        )
+        if canonical_value(summary) != payload:
+            raise ValueError
+        return summary
     except PaperSessionCorruptError:
         raise
     except Exception:
@@ -381,11 +443,7 @@ def _intent(payload: dict[str, object]) -> OrderIntent:
         time_in_force=TimeInForce(_string(payload["time_in_force"])),
         limit_price=_optional_decimal(payload["limit_price"]),
         stop_price=_optional_decimal(payload["stop_price"]),
-        client_tag=(
-            None
-            if payload["client_tag"] is None
-            else _string(payload["client_tag"])
-        ),
+        client_tag=(None if payload["client_tag"] is None else _string(payload["client_tag"])),
     )
 
 
@@ -402,9 +460,7 @@ def _order(payload: dict[str, object]) -> SimulatedOrder:
         opened_at=_optional_datetime(payload["opened_at"]),
         terminal_at=_optional_datetime(payload["terminal_at"]),
         rejection_code=(
-            None
-            if payload["rejection_code"] is None
-            else _string(payload["rejection_code"])
+            None if payload["rejection_code"] is None else _string(payload["rejection_code"])
         ),
     )
 

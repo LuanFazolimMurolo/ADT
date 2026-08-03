@@ -83,15 +83,11 @@ class AssetCatalogSnapshot:
     source: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.exchange, Exchange) or not isinstance(
-            self.market_type, MarketType
-        ):
+        if not isinstance(self.exchange, Exchange) or not isinstance(self.market_type, MarketType):
             raise MarketDataInconsistencyError("A identidade do catálogo é inválida.")
         if not isinstance(self.instruments, tuple) or not self.instruments:
             raise MarketDataInconsistencyError("Os instrumentos do catálogo são inválidos.")
-        if not isinstance(self.fetched_at, datetime) or not isinstance(
-            self.expires_at, datetime
-        ):
+        if not isinstance(self.fetched_at, datetime) or not isinstance(self.expires_at, datetime):
             raise MarketDataInconsistencyError("A validade temporal do catálogo é inválida.")
         fetched_at = require_utc(self.fetched_at, field_name="fetched_at")
         expires_at = require_utc(self.expires_at, field_name="expires_at")
@@ -155,9 +151,7 @@ class AssetCatalogPage:
             raise MarketDataInconsistencyError("A página de ativos está fora de ordem.")
         if len({item.symbol for item in self.items}) != len(self.items):
             raise MarketDataInconsistencyError("A página contém ativos duplicados.")
-        if not isinstance(self.fetched_at, datetime) or not isinstance(
-            self.expires_at, datetime
-        ):
+        if not isinstance(self.fetched_at, datetime) or not isinstance(self.expires_at, datetime):
             raise MarketDataInconsistencyError("A validade temporal da página é inválida.")
         fetched_at = require_utc(self.fetched_at, field_name="fetched_at")
         expires_at = require_utc(self.expires_at, field_name="expires_at")
@@ -300,8 +294,7 @@ class AssetMarketService:
             fetched_at=fetched_at,
             expires_at=fetched_at + self._ttl,
             source=(
-                f"{self._adapter.exchange.value}_"
-                f"{self._adapter.market_type.value}_exchange_info"
+                f"{self._adapter.exchange.value}_{self._adapter.market_type.value}_exchange_info"
             ),
         )
         self._snapshot = snapshot

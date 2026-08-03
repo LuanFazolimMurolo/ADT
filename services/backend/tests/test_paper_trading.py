@@ -33,8 +33,10 @@ from app.paper_trading.commands import configure_paper_trading_parser
 from app.paper_trading.documents import (
     decode_paper_config,
     decode_paper_state,
+    decode_paper_state_summary,
     encode_paper_config,
     encode_paper_state,
+    encode_paper_state_summary,
 )
 from app.paper_trading.domain import (
     MAX_PAPER_DOCUMENT_BYTES,
@@ -53,6 +55,7 @@ from app.paper_trading.errors import (
     PaperSessionCorruptError,
     PaperSessionVerificationError,
 )
+from app.paper_trading.query import PaperTradingReadService
 from app.paper_trading.repository import PaperTradingRepository
 from app.paper_trading.service import PaperTradingService
 from app.strategies.domain import (
@@ -70,9 +73,7 @@ class FixedBuyStrategy:
     submitted: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
-        self.descriptor = StrategyDescriptor(
-            "paper-buy-test", "1", (("quantity", self.quantity),)
-        )
+        self.descriptor = StrategyDescriptor("paper-buy-test", "1", (("quantity", self.quantity),))
 
     def on_start(self, context: StrategyContext) -> tuple[OrderIntent, ...]:
         del context
@@ -106,9 +107,7 @@ class BuyPlugin:
         name="paper-buy-test",
         version="1",
         description="Test-only fixed-quantity paper strategy.",
-        parameters=(
-            StrategyParameterSpec("quantity", StrategyParameterKind.DECIMAL),
-        ),
+        parameters=(StrategyParameterSpec("quantity", StrategyParameterKind.DECIMAL),),
     )
 
     def build(
@@ -287,6 +286,23 @@ def test_run_once_preserves_open_order_at_cycle_boundary_and_fills_next_cycle(
     assert second.state.orders[0].status is OrderStatus.FILLED
     assert len(second.state.fills) == 1
     assert second.state.portfolio.base_quantity == Decimal("0.1")
+
+
+def test_run_once_accepts_native_binance_close_timestamp(tmp_path: Path) -> None:
+    candle = replace(
+        _candle(0),
+        close_time=_candle(0).close_time - timedelta(milliseconds=1),
+    )
+    source = FakeSource((candle,))
+    service = _service(tmp_path, source)
+    config = _config()
+    session_id = paper_session_id(config)
+    service.create(config)
+
+    result = service.run_once(session_id)
+
+    assert result.action is PaperRunAction.UPDATED
+    assert result.state.candles_processed == 1
 
 
 def test_unchanged_source_returns_noop(tmp_path: Path) -> None:
@@ -557,3 +573,126 @@ def test_documents_reject_duplicate_keys_and_oversized_input() -> None:
         decode_paper_config(duplicate)
     with pytest.raises(PaperSessionCorruptError):
         decode_paper_state(b" " * (MAX_PAPER_DOCUMENT_BYTES + 1))
+
+
+def _config_with_capital(value: str) -> PaperSessionConfig:
+    return replace(_config(), initial_capital=Decimal(value))
+
+
+def test_read_service_decodes_only_configs_inside_requested_page(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = PaperTradingRepository(tmp_path)
+    configs = tuple(_config_with_capital(value) for value in ("1000", "2000", "3000"))
+    for config in configs:
+        repository.create(config)
+    expected_ids = tuple(sorted(paper_session_id(config) for config in configs))
+    opened: list[str] = []
+    original = PaperTradingRepository._read_config_path
+
+    def tracked(path: Path) -> PaperSessionConfig:
+        opened.append(path.parent.name)
+        return original(path)
+
+    monkeypatch.setattr(
+        PaperTradingRepository,
+        "_read_config_path",
+        staticmethod(tracked),
+    )
+    page = PaperTradingReadService(repository).list_sessions(page=2, page_size=1)
+
+    assert page.total == 3
+    assert page.total_pages == 3
+    assert tuple(item.session_id for item in page.items) == (expected_ids[1],)
+    assert opened == [expected_ids[1]]
+
+
+def test_read_service_uses_lightweight_summary_without_decoding_full_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = FakeSource((_candle(0), _candle(1)))
+    service = _service(tmp_path, source)
+    configs = tuple(_config_with_capital(value) for value in ("1000", "2000"))
+    states: dict[str, PaperSessionState] = {}
+    for config in configs:
+        session_id = paper_session_id(config)
+        service.create(config)
+        states[session_id] = service.run_once(session_id).state
+    selected_id = sorted(states)[0]
+
+    def forbidden(_path: Path) -> PaperSessionState:
+        raise AssertionError("a listagem não deve decodificar o estado completo")
+
+    monkeypatch.setattr(
+        PaperTradingRepository,
+        "_read_state_path",
+        staticmethod(forbidden),
+    )
+    page = PaperTradingReadService(service._repository).list_sessions(  # noqa: SLF001
+        page=1,
+        page_size=1,
+    )
+
+    assert tuple(item.session_id for item in page.items) == (selected_id,)
+    summary = page.items[0].summary
+    assert summary is not None
+    assert summary.orders_count == len(states[selected_id].orders)
+    assert summary.fills_count == len(states[selected_id].fills)
+
+
+def test_legacy_state_summary_is_migrated_once_for_selected_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = FakeSource((_candle(0), _candle(1)))
+    service = _service(tmp_path, source)
+    config = _config()
+    session_id = paper_session_id(config)
+    service.create(config)
+    service.run_once(session_id)
+    summary_path = tmp_path / "market" / "paper-trading" / session_id / "summary.json"
+    summary_path.unlink()
+    calls = 0
+    original = PaperTradingRepository._read_state_path
+
+    def tracked(path: Path) -> PaperSessionState:
+        nonlocal calls
+        calls += 1
+        return original(path)
+
+    monkeypatch.setattr(
+        PaperTradingRepository,
+        "_read_state_path",
+        staticmethod(tracked),
+    )
+    read = PaperTradingReadService(service._repository)  # noqa: SLF001
+    assert read.list_sessions(page=1, page_size=1).total == 1
+    assert summary_path.is_file()
+    assert calls == 1
+    assert read.list_sessions(page=1, page_size=1).total == 1
+    assert calls == 1
+
+
+def test_corrupt_or_divergent_state_summary_is_rejected(tmp_path: Path) -> None:
+    source = FakeSource((_candle(0), _candle(1)))
+    service = _service(tmp_path, source)
+    config = _config()
+    session_id = paper_session_id(config)
+    service.create(config)
+    service.run_once(session_id)
+    summary_path = tmp_path / "market" / "paper-trading" / session_id / "summary.json"
+    read = PaperTradingReadService(service._repository)  # noqa: SLF001
+
+    original = summary_path.read_bytes()
+    summary_path.write_text("{}")
+    with pytest.raises(PaperSessionCorruptError):
+        read.list_sessions(page=1, page_size=1)
+
+    summary_path.write_bytes(original)
+    summary = decode_paper_state_summary(original)
+    divergent = replace(summary, state_checksum="0" * 64)
+    summary_path.write_bytes(encode_paper_state_summary(divergent))
+    with pytest.raises(PaperSessionCorruptError):
+        read.list_sessions(page=1, page_size=1)

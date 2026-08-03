@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.backtesting.domain import EvaluationBacktestConfig
@@ -254,16 +254,17 @@ class PaperTradingService:
                     or candle.symbol != config.pair.symbol
                     or candle.timeframe != config.timeframe
                     or candle.open_time != expected_open
-                    or candle.close_time != expected_open + config.timeframe.duration
+                    or candle.close_time
+                    not in {
+                        expected_open + config.timeframe.duration,
+                        expected_open + config.timeframe.duration - timedelta(milliseconds=1),
+                    }
                     or not candle.is_closed
                 ):
                     raise ValueError
                 digest.update(canonical_candle_bytes(candle))
                 expected_open += config.timeframe.duration
-            if (
-                expected_open != batch.data_range.end
-                or digest.hexdigest() != batch.source_checksum
-            ):
+            if expected_open != batch.data_range.end or digest.hexdigest() != batch.source_checksum:
                 raise ValueError
         except PaperSessionVerificationError:
             raise
@@ -284,9 +285,7 @@ class PaperTradingService:
                 available_indicators=builtin_indicator_capabilities(),
             )
             if strategy.descriptor != config.strategy:
-                raise InvalidPaperSessionError(
-                    "A estratégia diverge da configuração da sessão."
-                )
+                raise InvalidPaperSessionError("A estratégia diverge da configuração da sessão.")
             return strategy
         except InvalidPaperSessionError:
             raise

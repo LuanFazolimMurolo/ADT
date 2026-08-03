@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -19,7 +20,15 @@ from app.backtesting.serialization import canonical_value
 from app.core.config import MarketDataSettings
 from app.domain.errors import InvalidDomainInputError
 from app.market_data.domain import TradingPair
+from app.market_data.locks import DatasetLockManager
 from app.market_data.timeframes import TIMEFRAMES, get_timeframe
+from app.paper_trading.continuous import (
+    PaperRunnerPolicy,
+    PaperRunnerStateStore,
+    PaperTradingContinuousRunner,
+    PaperTradingContinuousService,
+    paper_runner_state_payload,
+)
 from app.paper_trading.domain import (
     PaperSessionConfig,
     PaperSessionState,
@@ -64,6 +73,19 @@ def configure_paper_trading_parser(parser: argparse.ArgumentParser) -> None:
         if name == "run-once":
             command.add_argument("--yes", action="store_true")
 
+    runner = commands.add_parser(
+        "runner", help="Continuously execute explicit local paper sessions."
+    )
+    runner_commands = runner.add_subparsers(dest="runner_command", required=True)
+    for name in ("run-once", "loop"):
+        command = runner_commands.add_parser(name)
+        command.add_argument("--session-id", action="append", required=True)
+        command.add_argument("--yes", action="store_true")
+        if name == "loop":
+            command.add_argument("--interval-seconds", type=int)
+            command.add_argument("--max-cycles", type=int)
+    runner_commands.add_parser("status")
+
 
 def run_paper_trading_command(
     args: argparse.Namespace,
@@ -76,6 +98,41 @@ def run_paper_trading_command(
         lock_timeout_seconds=settings.market_job_lock_timeout,
         lock_stale_after_seconds=settings.market_job_stale_after,
     )
+    if args.paper_command == "runner":
+        state_store = PaperRunnerStateStore(settings.data_dir)
+        if args.runner_command == "status":
+            _emit(paper_runner_state_payload(state_store.require()), stdout)
+            return 0
+        if not args.yes:
+            raise InvalidDomainInputError("A execução contínua exige confirmação --yes.")
+        interval_seconds = (
+            args.interval_seconds
+            if args.runner_command == "loop" and args.interval_seconds is not None
+            else settings.paper_trading_continuous_interval_seconds
+        )
+        policy = PaperRunnerPolicy(
+            interval_seconds=interval_seconds,
+            max_sessions=settings.paper_trading_continuous_max_sessions,
+        )
+        selected = tuple(sorted(args.session_id))
+        runner = PaperTradingContinuousRunner(
+            service=PaperTradingContinuousService(service, policy=policy),
+            state_store=state_store,
+            lock_manager=DatasetLockManager(
+                settings.data_dir,
+                timeout_seconds=settings.market_job_lock_timeout,
+                stale_after_seconds=settings.market_job_stale_after,
+            ),
+        )
+        runner_state = asyncio.run(
+            runner.run(
+                selected,
+                max_cycles=(1 if args.runner_command == "run-once" else args.max_cycles),
+            )
+        )
+        _emit(paper_runner_state_payload(runner_state), stdout)
+        return 0
+
     if args.paper_command == "create":
         if not args.yes:
             raise InvalidDomainInputError("A criação da sessão exige confirmação --yes.")
@@ -149,11 +206,11 @@ def run_paper_trading_command(
         _emit({"action": result.action.value, "state": _state_summary(result.state)}, stdout)
         return 0
     if args.paper_command == "status":
-        state = service.status(args.session_id)
-        _emit(None if state is None else _state_summary(state), stdout)
+        session_state = service.status(args.session_id)
+        _emit(None if session_state is None else _state_summary(session_state), stdout)
         return 0
-    state = service.verify(args.session_id)
-    _emit({"verified": True, "state": _state_summary(state)}, stdout)
+    session_state = service.verify(args.session_id)
+    _emit({"verified": True, "state": _state_summary(session_state)}, stdout)
     return 0
 
 
@@ -164,9 +221,7 @@ def _parameters(
     try:
         payload = json.loads(raw_json)
     except ValueError:
-        raise InvalidDomainInputError(
-            "--parameters-json deve ser um objeto JSON válido."
-        ) from None
+        raise InvalidDomainInputError("--parameters-json deve ser um objeto JSON válido.") from None
     if not isinstance(payload, dict) or not all(isinstance(key, str) for key in payload):
         raise InvalidDomainInputError("--parameters-json deve ser um objeto JSON.")
     by_name = {item.name: item for item in specs}
@@ -211,11 +266,8 @@ def _emit(value: object, stdout: TextIO) -> None:
 
 def _utc_datetime(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if (
-        parsed.tzinfo is None
-        or parsed.utcoffset() is None
-        or parsed.utcoffset().total_seconds() != 0
-    ):
+    offset = parsed.utcoffset()
+    if parsed.tzinfo is None or offset is None or offset.total_seconds() != 0:
         raise argparse.ArgumentTypeError("use one timezone-aware UTC timestamp")
     return parsed
 

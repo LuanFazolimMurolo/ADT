@@ -167,9 +167,7 @@ def validate_instrument(instrument: object) -> Instrument:
         raise MarketDataInconsistencyError("A identidade do instrumento é inválida.")
     if not isinstance(instrument.pair, TradingPair):
         raise MarketDataInconsistencyError("O par do instrumento é inválido.")
-    if not isinstance(instrument.pair.base, str) or not isinstance(
-        instrument.pair.quote, str
-    ):
+    if not isinstance(instrument.pair.base, str) or not isinstance(instrument.pair.quote, str):
         raise MarketDataInconsistencyError("O par do instrumento é inválido.")
     canonical_pair = TradingPair(instrument.pair.base, instrument.pair.quote)
     if canonical_pair != instrument.pair:
@@ -184,9 +182,7 @@ def validate_instrument(instrument: object) -> Instrument:
     if type(instrument.active) is not bool:
         raise MarketDataInconsistencyError("O estado do instrumento é inválido.")
     for precision in (instrument.price_precision, instrument.quantity_precision):
-        if precision is not None and (
-            type(precision) is not int or not 0 <= precision <= 30
-        ):
+        if precision is not None and (type(precision) is not int or not 0 <= precision <= 30):
             raise MarketDataInconsistencyError("A precisão do instrumento é inválida.")
     return instrument
 
@@ -202,14 +198,8 @@ class MarketPrice:
 
     def __post_init__(self) -> None:
         validate_instrument(self.instrument)
-        if (
-            not isinstance(self.price, Decimal)
-            or not self.price.is_finite()
-            or self.price <= 0
-        ):
-            raise MarketDataInconsistencyError(
-                "O preço atual deve ser Decimal finito e positivo."
-            )
+        if not isinstance(self.price, Decimal) or not self.price.is_finite() or self.price <= 0:
+            raise MarketDataInconsistencyError("O preço atual deve ser Decimal finito e positivo.")
         if not isinstance(self.observed_at, datetime):
             raise MarketDataInconsistencyError("O instante da cotação é inválido.")
         observed_at = require_utc(self.observed_at, field_name="observed_at")

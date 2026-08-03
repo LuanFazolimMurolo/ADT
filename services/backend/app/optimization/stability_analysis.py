@@ -158,9 +158,7 @@ def _build_report(
 
     typed_observations = tuple(observations)
     completed = tuple(
-        item
-        for item in typed_observations
-        if item.source_status is WalkForwardFoldStatus.COMPLETED
+        item for item in typed_observations if item.source_status is WalkForwardFoldStatus.COMPLETED
     )
     completed_count = len(completed)
     failed_count = len(typed_observations) - completed_count
@@ -168,9 +166,7 @@ def _build_report(
     test_not_worse_count = sum(item.test_not_worse is True for item in completed)
     test_not_worse_ratio = ExactRatio(test_not_worse_count, completed_count or 1)
     transition_count = max(completed_count - 1, 0)
-    switch_count = sum(
-        item.parameter_changed_from_previous_completed is True for item in completed
-    )
+    switch_count = sum(item.parameter_changed_from_previous_completed is True for item in completed)
     turnover_ratio = ExactRatio(switch_count, transition_count or 1)
     validation_distribution = distribution_for(
         tuple(_required_metric(item.validation_score) for item in completed)
@@ -276,9 +272,7 @@ def _completed_observation(
         selection_decision_payload(selection)["parameters"],
     )
     changed = (
-        None
-        if previous_parameter_set_id is None
-        else parameter_set_id != previous_parameter_set_id
+        None if previous_parameter_set_id is None else parameter_set_id != previous_parameter_set_id
     )
     values = observation_values_payload(
         fold_id=fold_id,
@@ -397,9 +391,7 @@ def _validate_source(
             "walk-forward source verification returned an invalid manifest"
         ) from error
     except Exception as error:
-        raise IncompatibleStabilitySourceError(
-            "walk-forward source verification failed"
-        ) from error
+        raise IncompatibleStabilitySourceError("walk-forward source verification failed") from error
     if verified != execution:
         raise IncompatibleStabilitySourceError(
             "walk-forward source validator returned incompatible content"
@@ -408,9 +400,7 @@ def _validate_source(
         verified.walk_forward_execution_id != expected_execution_id
         or verified.checksum != expected_checksum
     ):
-        raise IncompatibleStabilitySourceError(
-            "walk-forward source changed during verification"
-        )
+        raise IncompatibleStabilitySourceError("walk-forward source changed during verification")
     return verified
 
 

@@ -165,6 +165,8 @@ def test_settings_are_typed_and_normalized(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("ADT_BACKTEST_ENGINE_VERSION", "3a-test.2")
     monkeypatch.setenv("ADT_BACKTEST_SCHEMA_VERSION", "2")
     monkeypatch.setenv("ADT_PAPER_TRADING_MAX_REPLAY_CANDLES", "40000")
+    monkeypatch.setenv("ADT_PAPER_TRADING_CONTINUOUS_INTERVAL_SECONDS", "20")
+    monkeypatch.setenv("ADT_PAPER_TRADING_CONTINUOUS_MAX_SESSIONS", "8")
 
     loaded_settings = get_settings()
 
@@ -207,6 +209,8 @@ def test_settings_are_typed_and_normalized(monkeypatch: pytest.MonkeyPatch) -> N
     assert loaded_settings.backtest_engine_version == "3a-test.2"
     assert loaded_settings.backtest_schema_version == 2
     assert loaded_settings.paper_trading_max_replay_candles == 40_000
+    assert loaded_settings.paper_trading_continuous_interval_seconds == 20
+    assert loaded_settings.paper_trading_continuous_max_sessions == 8
     assert loaded_settings.supabase_issuer == "https://project.example.test/auth/v1"
     assert isinstance(loaded_settings.supabase_publishable_key, SecretStr)
     assert isinstance(loaded_settings.supabase_database_url, SecretStr)
@@ -318,6 +322,8 @@ def test_backtest_settings_load_without_supabase_and_use_conservative_defaults()
     assert settings.backtest_engine_version == "3b-1"
     assert settings.backtest_schema_version == 2
     assert settings.paper_trading_max_replay_candles == 200_000
+    assert settings.paper_trading_continuous_interval_seconds == 30
+    assert settings.paper_trading_continuous_max_sessions == 20
 
 
 @pytest.mark.parametrize(
@@ -336,6 +342,8 @@ def test_backtest_settings_load_without_supabase_and_use_conservative_defaults()
         ("backtest_engine_version", "unsafe/version"),
         ("backtest_schema_version", 3),
         ("paper_trading_max_replay_candles", 2_000_001),
+        ("paper_trading_continuous_interval_seconds", 0),
+        ("paper_trading_continuous_max_sessions", 1_001),
     ],
 )
 def test_backtest_settings_have_safe_limits(field_name: str, value: object) -> None:

@@ -52,9 +52,7 @@ ETH_TARGET = ContinuousCollectionTarget(TradingPair("ETH", "USDT"), TIMEFRAME, 2
 
 class FakeInstrumentLookup:
     def __init__(self, instruments: dict[str, Instrument] | None = None) -> None:
-        self._instruments = (
-            {INSTRUMENT.symbol: INSTRUMENT} if instruments is None else instruments
-        )
+        self._instruments = {INSTRUMENT.symbol: INSTRUMENT} if instruments is None else instruments
         self.calls: list[str] = []
 
     async def get_asset(self, pair: TradingPair) -> Instrument:

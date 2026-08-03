@@ -59,3 +59,18 @@ MARKET_ERROR_RESPONSES: Final[dict[int | str, dict[str, Any]]] = {
         "The public market source is temporarily unavailable."
     ),
 }
+
+
+PAPER_TRADING_ERROR_RESPONSES: Final[dict[int | str, dict[str, Any]]] = {
+    status.HTTP_400_BAD_REQUEST: _error_response("The paper-trading request is invalid."),
+    status.HTTP_404_NOT_FOUND: _error_response("The paper-trading resource does not exist."),
+    status.HTTP_409_CONFLICT: _error_response(
+        "The paper-trading state is not currently available."
+    ),
+    status.HTTP_500_INTERNAL_SERVER_ERROR: _error_response(
+        "An unexpected paper-trading failure was safely normalized."
+    ),
+    status.HTTP_503_SERVICE_UNAVAILABLE: _error_response(
+        "The local paper-trading store is temporarily unavailable."
+    ),
+}

@@ -138,3 +138,55 @@ Phase 5-03 does not add:
 - incremental serialization of arbitrary strategy state;
 - exchange account access, API keys or live orders;
 - real-capital trading.
+
+
+## Continuous runner (Phase 5-04)
+
+Execute one cycle for explicit sessions:
+
+```bash
+.venv/bin/python -m app.cli paper-trading runner run-once \
+  --session-id <session_id> \
+  --session-id <another_session_id> \
+  --yes
+```
+
+Run at a fixed cadence:
+
+```bash
+.venv/bin/python -m app.cli paper-trading runner loop \
+  --session-id <session_id> \
+  --interval-seconds 30 \
+  --yes
+```
+
+For bounded operational validation, `--max-cycles N` stops the loop after N
+cycles. Read the latest runner state without executing a session:
+
+```bash
+.venv/bin/python -m app.cli paper-trading runner status
+```
+
+Only one runner may hold the volume-wide lease for an `ADT_DATA_DIR`. Sessions
+are unique, sorted and limited by
+`ADT_PAPER_TRADING_CONTINUOUS_MAX_SESSIONS`; cadence defaults to
+`ADT_PAPER_TRADING_CONTINUOUS_INTERVAL_SECONDS`. One session failure does not
+prevent later sessions in the same cycle.
+
+### Read-only API
+
+```text
+GET /api/v1/paper-trading/runner/status
+GET /api/v1/paper-trading/sessions
+GET /api/v1/paper-trading/sessions/{session_id}
+GET /api/v1/paper-trading/sessions/{session_id}/orders
+GET /api/v1/paper-trading/sessions/{session_id}/fills
+```
+
+The endpoints only decode and validate local canonical documents. They never
+create a session, advance a replay or contact Binance. Orders and fills are
+paginated, and every financial value is serialized as a JSON decimal string.
+
+Phase 5-04 still does not add dynamic subscriptions, mutation endpoints, a
+dashboard, PostgreSQL persistence, WebSocket streaming, notifications, strategy
+promotion or live orders.

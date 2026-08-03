@@ -993,3 +993,40 @@ latest state and decodes it again. Canonical config and state documents are
 limited to 16 MiB and reject duplicate JSON keys. There is no database
 migration, FastAPI mutation route, background scheduler, exchange account
 access or real order.
+
+
+## Phase 5-04 continuous paper-session operations
+
+The permanent paper runner remains a process separate from FastAPI:
+
+```text
+5-02 committed closed RAW candles
+    → explicit sorted session IDs
+    → volume-wide paper-runner lease
+    → sequential 5-03 `run_once` per session
+       → session-level lock and verified complete replay
+       → UPDATED / NOOP / sanitized FAILED
+    → canonical aggregate cycle state
+    → atomic latest-state publication
+
+FastAPI
+    → read-only repository/query service
+    → runner status, sessions, orders and fills
+    → never invokes strategy execution
+```
+
+The runner state is stored at
+`market/paper-trading/runner/state.json`. It has a monotonic cycle index, fixed
+policy, ordered unique results, domain-separated cycle ID and checksum. One
+kernel-backed global lease prevents two runner processes from operating on the
+same `ADT_DATA_DIR`; existing session locks still serialize each replay and its
+publication. Failures are isolated per session and persist only a stable error
+code.
+
+HTTP pagination is bounded to 100 items. Session summaries expose canonical
+configuration identity, latest replay boundary, order/fill counts, risk halt
+and portfolio values as decimal strings. Full order and fill collections are
+served by separate paginated endpoints. The API owns only read services and the
+runner state store, so a slow replay cannot be triggered through an HTTP
+request. There is no database migration, API key, account access or exchange
+order.

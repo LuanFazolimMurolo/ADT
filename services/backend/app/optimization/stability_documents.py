@@ -104,9 +104,7 @@ def decode_stability_report_document(envelope: Mapping[str, object]) -> Stabilit
                 payload["degradation_distribution"]
             ),
             controls=tuple(_decode_control(item) for item in _list(payload["controls"])),
-            overfitting_assessment=OverfittingAssessment(
-                _text(payload["overfitting_assessment"])
-            ),
+            overfitting_assessment=OverfittingAssessment(_text(payload["overfitting_assessment"])),
             parameter_stability_assessment=ParameterStabilityAssessment(
                 _text(payload["parameter_stability_assessment"])
             ),
@@ -116,9 +114,7 @@ def decode_stability_report_document(envelope: Mapping[str, object]) -> Stabilit
             schema_version=_integer(payload["schema_version"]),
         )
     except (StabilityAnalysisError, ValueError, TypeError) as error:
-        raise IncompatibleStabilityDocumentError(
-            "stability report values are invalid"
-        ) from error
+        raise IncompatibleStabilityDocumentError("stability report values are invalid") from error
     if stability_report_payload(report) != dict(payload):
         raise IncompatibleStabilityDocumentError("stability report is not canonical")
     return report
@@ -149,9 +145,7 @@ def _decode_policy(raw: object) -> StabilityAnalysisPolicy:
         minimum_test_not_worse_ratio=_decimal(value["minimum_test_not_worse_ratio"]),
         maximum_median_degradation=_decimal(value["maximum_median_degradation"]),
         maximum_worst_degradation=_decimal(value["maximum_worst_degradation"]),
-        maximum_parameter_turnover_ratio=_decimal(
-            value["maximum_parameter_turnover_ratio"]
-        ),
+        maximum_parameter_turnover_ratio=_decimal(value["maximum_parameter_turnover_ratio"]),
         kind=StabilityAnalysisKind(_text(value["kind"])),
         schema_version=_integer(value["schema_version"]),
     )
