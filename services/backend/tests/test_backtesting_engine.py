@@ -244,6 +244,21 @@ def _evaluation_config(
     )
 
 
+def test_terminal_order_policy_requires_exact_bool_before_execution() -> None:
+    rows = _candles("100")
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy()
+
+    with pytest.raises(StrategyFailureError, match="política terminal"):
+        DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+            _config(snapshot, strategy.descriptor),
+            strategy,
+            cancel_open_orders_at_end=1,  # type: ignore[arg-type]
+        )
+
+    assert not strategy.start_contexts
+
+
 def test_evaluation_warmup_only_observes_history_and_has_no_financial_events() -> None:
     rows = _candles("100", "101", "102", "103")
     snapshot = _snapshot(len(rows))

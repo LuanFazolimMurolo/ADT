@@ -4,15 +4,16 @@
 
 ## Status
 
-🟡 **Phase 5 market-data runtime in progress — 5-01 and 5-02 implemented locally**
+🟡 **Phase 5 paper-trading runtime in progress — 5-01 through 5-03 implemented locally**
 
 ⏳ **Formal Phase 1 closure pending operational homologation**
 
-The backend exposes a read-only Binance Spot asset catalog and can maintain an
+The backend exposes a read-only Binance Spot asset catalog, can maintain an
 explicit bounded set of RAW Parquet candle datasets from a separate collector
-process. It still performs no strategy scheduling, simulated order execution or
-real-capital trading. No migration or administrator bootstrap has been run
-against a remote Supabase project as part of this work.
+process and can replay deterministic local paper sessions over those closed
+candles. It still performs no permanent strategy scheduling, exchange-account
+operation or real-capital trading. No migration or administrator bootstrap has
+been run against a remote Supabase project as part of this work.
 
 ## What is ADT?
 
@@ -185,3 +186,12 @@ FastAPI exposes the same read-only state at
 `GET /api/v1/market/collection/status`. A cycle is `NOOP` for a target when the
 latest closed candle is already stored, so sub-timeframe polling does not
 re-fetch candles. No API key, account endpoint or trading permission is used.
+
+
+### Deterministic paper sessions (Phase 5-03)
+
+Create, advance, inspect and verify local simulated sessions with the
+`paper-trading` CLI group. A cycle replays the bounded closed-candle prefix
+through the existing Phase 3 engine and publishes an authenticated latest state;
+it never sends an exchange order. See
+[`docs/PAPER_TRADING.md`](./docs/PAPER_TRADING.md) for commands and limits.

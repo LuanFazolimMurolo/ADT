@@ -946,3 +946,50 @@ This delivery intentionally uses public Binance REST polling, not WebSockets.
 It needs no API key and accesses no account, balance, order or signed endpoint.
 It introduces no PostgreSQL table, migration, strategy schedule, simulated
 portfolio or trading action.
+
+## Phase 5-03 deterministic paper-trading replay
+
+Phase 5-03 adds a local execution boundary without introducing another trading
+engine:
+
+```text
+5-02 committed closed RAW candles
+    → session-specific dataset lease and recovery
+    → strict bounded candle projection and logical checksum
+    → synthetic immutable snapshot descriptor
+    → Phase 3 deterministic engine
+       → registered strategy factory and lifecycle
+       → execution model
+       → portfolio and ledger
+       → risk manager
+    → canonical latest paper state
+    → locked atomic publication
+```
+
+A session configuration is immutable and domain-separated into a deterministic
+session ID. It binds pair, timeframe, evaluation start, warmup, strategy and
+lifecycle, normalized parameters, simulated capital, execution assumptions,
+instrument constraints, risk limits and all operational ceilings. Changing an
+assumption creates another session.
+
+Version 1 intentionally performs complete bounded replay from the configured
+context start to the latest committed closed candle. It does not deserialize an
+opaque strategy object or carry mutable portfolio/indicator state between
+cycles. This trades runtime efficiency for reproducibility and permits
+`verify` to authenticate the persisted source range and rebuild the exact state.
+`ADT_PAPER_TRADING_MAX_REPLAY_CANDLES` bounds that cost.
+
+The ordinary backtest engine continues to cancel open orders at the terminal
+boundary by default. Paper replay explicitly disables only that terminal action,
+so an order created on the latest candle remains open and becomes eligible when
+a later closed candle extends the replay. Forced terminal liquidation is not a
+valid paper-session assumption.
+
+The repository stores strict canonical `config.json` and `state.json` below
+`market/paper-trading/<session_id>`. State publication validates the state
+against the immutable configuration, rejects range regression, uses the shared
+kernel-backed lock manager, fsyncs a temporary file, atomically replaces the
+latest state and decodes it again. Canonical config and state documents are
+limited to 16 MiB and reject duplicate JSON keys. There is no database
+migration, FastAPI mutation route, background scheduler, exchange account
+access or real order.

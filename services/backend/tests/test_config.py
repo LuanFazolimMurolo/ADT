@@ -70,6 +70,7 @@ def isolated_settings_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[N
         "ADT_BACKTEST_DEFAULT_SLIPPAGE_BPS",
         "ADT_BACKTEST_ENGINE_VERSION",
         "ADT_BACKTEST_SCHEMA_VERSION",
+        "ADT_PAPER_TRADING_MAX_REPLAY_CANDLES",
     ):
         monkeypatch.delenv(variable_name, raising=False)
     yield
@@ -163,6 +164,7 @@ def test_settings_are_typed_and_normalized(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("ADT_BACKTEST_DEFAULT_SLIPPAGE_BPS", "3.25")
     monkeypatch.setenv("ADT_BACKTEST_ENGINE_VERSION", "3a-test.2")
     monkeypatch.setenv("ADT_BACKTEST_SCHEMA_VERSION", "2")
+    monkeypatch.setenv("ADT_PAPER_TRADING_MAX_REPLAY_CANDLES", "40000")
 
     loaded_settings = get_settings()
 
@@ -204,6 +206,7 @@ def test_settings_are_typed_and_normalized(monkeypatch: pytest.MonkeyPatch) -> N
     assert loaded_settings.backtest_default_slippage_bps == Decimal("3.25")
     assert loaded_settings.backtest_engine_version == "3a-test.2"
     assert loaded_settings.backtest_schema_version == 2
+    assert loaded_settings.paper_trading_max_replay_candles == 40_000
     assert loaded_settings.supabase_issuer == "https://project.example.test/auth/v1"
     assert isinstance(loaded_settings.supabase_publishable_key, SecretStr)
     assert isinstance(loaded_settings.supabase_database_url, SecretStr)
@@ -314,6 +317,7 @@ def test_backtest_settings_load_without_supabase_and_use_conservative_defaults()
     assert settings.backtest_default_slippage_bps == Decimal("5")
     assert settings.backtest_engine_version == "3b-1"
     assert settings.backtest_schema_version == 2
+    assert settings.paper_trading_max_replay_candles == 200_000
 
 
 @pytest.mark.parametrize(
@@ -331,6 +335,7 @@ def test_backtest_settings_load_without_supabase_and_use_conservative_defaults()
         ("backtest_default_slippage_bps", Decimal("Infinity")),
         ("backtest_engine_version", "unsafe/version"),
         ("backtest_schema_version", 3),
+        ("paper_trading_max_replay_candles", 2_000_001),
     ],
 )
 def test_backtest_settings_have_safe_limits(field_name: str, value: object) -> None:
@@ -343,6 +348,10 @@ def test_backtest_settings_have_safe_limits(field_name: str, value: object) -> N
     [
         {"backtest_max_orders": 5, "backtest_max_open_orders": 6},
         {"backtest_max_candles": 5, "backtest_history_window": 6},
+        {
+            "backtest_max_candles": 100,
+            "paper_trading_max_replay_candles": 101,
+        },
         {
             "market_backfill_max_total_candles": 100,
             "market_continuous_bootstrap_candles": 101,

@@ -112,7 +112,11 @@ class DeterministicBacktestEngine:
         self,
         config: BacktestConfig,
         strategy: BacktestStrategy,
+        *,
+        cancel_open_orders_at_end: bool = True,
     ) -> BacktestExecutionResult:
+        if type(cancel_open_orders_at_end) is not bool:
+            raise StrategyFailureError("A política terminal de ordens é inválida.")
         if strategy.descriptor != config.strategy:
             raise StrategyFailureError("A identidade da estratégia diverge da configuração.")
         try:
@@ -340,7 +344,8 @@ class DeterministicBacktestEngine:
         if candles_processed == 0 or last_candle is None:
             raise SnapshotInvalidError("O intervalo do backtest não contém candles.")
 
-        self._cancel_open_orders(orders, last_candle.close_time)
+        if cancel_open_orders_at_end:
+            self._cancel_open_orders(orders, last_candle.close_time)
         if config.execution.force_close_at_end and portfolio.base_quantity > 0:
             if len(orders) >= min(config.max_orders, config.risk_limits.max_total_orders):
                 raise MaximumEventsExceededError(

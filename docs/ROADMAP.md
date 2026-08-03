@@ -514,20 +514,44 @@ and publishes only a small atomic latest-cycle state.
 - [x] Deterministic no-network tests and typed configuration limits
 
 **Explicitly deferred after 5-02**: WebSocket streaming, dynamic target
-subscriptions, PostgreSQL collector state, distributed collectors, strategy
-scheduling, simulated orders, positions, portfolio accounting, risk vetoes and
-live trading.
+subscriptions, PostgreSQL collector state, distributed collectors and live
+trading.
+
+### Phase 5-03: deterministic local paper-trading core ✅
+
+**Scope**: Create immutable paper-session identities and replay each bounded
+closed-candle prefix through the existing Phase 3 engine. The implementation
+reuses strategy factories, lifecycle/warmup behavior, execution assumptions,
+portfolio accounting, ledger and risk vetoes. A paper cycle preserves an open
+order at the current data boundary and republishes a complete authenticated
+latest state; ordinary backtests keep their existing terminal cancellation.
+
+**Delivered**:
+- [x] Versioned immutable paper-session configuration and deterministic ID
+- [x] Lifecycle-1 and lifecycle-2 warmup enforcement
+- [x] Closed RAW candle source with strict identity, continuity and checksum validation
+- [x] Replay through the Phase 3 engine, portfolio, execution and risk contracts
+- [x] Open-order preservation across growing replay prefixes
+- [x] Canonical config/state documents with atomic local publication
+- [x] State regression protection and exact source-range verification
+- [x] Local `create`, `run-once`, `status` and `verify` commands
+- [x] Bounded replay configuration and no-network deterministic tests
+
+**Explicitly deferred after 5-03**: permanent session scheduling, incremental
+serialization of arbitrary strategy state, HTTP mutation endpoints, dashboard,
+PostgreSQL session persistence, automatic strategy promotion, notifications,
+WebSocket/event streaming and live trading.
 
 **Deliverables**:
 - [ ] Position sizing engine
 - [ ] Stop-loss enforcement
 - [ ] Asset-level performance tracking
 - [ ] Market regime detection (trend/range/volatile)
-- [ ] Paper trading engine (real-time simulation)
+- [x] Paper trading engine (bounded local deterministic replay)
 - [ ] Live performance dashboard
 - [ ] Trade history & journal
 - [ ] Performance metrics (daily, weekly, monthly)
-- [ ] Risk limits & veto system
+- [x] Risk limits & veto system (reused from Phase 3)
 
 **Dependencies**: Phase 4 complete  
 **Estimated Duration**: 3 weeks  

@@ -55,6 +55,10 @@ from app.market_data.services import default_local_services
 from app.market_data.snapshots import DatasetSnapshotService
 from app.market_data.storage import ParquetCandleStore
 from app.market_data.timeframes import TIMEFRAMES, get_timeframe
+from app.paper_trading.commands import (
+    configure_paper_trading_parser,
+    run_paper_trading_command,
+)
 
 EXIT_OK = 0
 EXIT_INVALID_ARGUMENTS = 2
@@ -68,6 +72,10 @@ def build_parser() -> argparse.ArgumentParser:
     root = parser.add_subparsers(dest="group", required=True)
     backtest = root.add_parser("backtest", help="Run deterministic local snapshot backtests.")
     configure_backtest_parser(backtest)
+    paper = root.add_parser(
+        "paper-trading", help="Run deterministic local paper-trading sessions."
+    )
+    configure_paper_trading_parser(paper)
 
     market = root.add_parser("market-data", help="Operate local historical market data.")
     commands = market.add_subparsers(dest="command", required=True)
@@ -199,6 +207,12 @@ def main(
         resolved_settings = app_settings or get_market_data_settings()
         if args.group == "backtest":
             return run_backtest_command(
+                args,
+                settings=resolved_settings,
+                stdout=stdout,
+            )
+        if args.group == "paper-trading":
+            return run_paper_trading_command(
                 args,
                 settings=resolved_settings,
                 stdout=stdout,

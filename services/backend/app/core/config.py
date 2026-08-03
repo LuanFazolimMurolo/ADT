@@ -83,6 +83,7 @@ _FIELD_ENVIRONMENT_NAMES = {
     "backtest_default_slippage_bps": "ADT_BACKTEST_DEFAULT_SLIPPAGE_BPS",
     "backtest_engine_version": "ADT_BACKTEST_ENGINE_VERSION",
     "backtest_schema_version": "ADT_BACKTEST_SCHEMA_VERSION",
+    "paper_trading_max_replay_candles": "ADT_PAPER_TRADING_MAX_REPLAY_CANDLES",
 }
 
 
@@ -154,6 +155,7 @@ class MarketDataSettings(BaseSettings):
     )
     backtest_engine_version: str = Field(default="3b-1", min_length=1, max_length=64)
     backtest_schema_version: int = Field(default=2, ge=1, le=2)
+    paper_trading_max_replay_candles: int = Field(default=200_000, ge=1, le=2_000_000)
 
     @field_validator("market_user_agent")
     @classmethod
@@ -207,6 +209,10 @@ class MarketDataSettings(BaseSettings):
             raise ValueError("backtest_max_open_orders must not exceed backtest_max_orders")
         if self.backtest_history_window > self.backtest_max_candles:
             raise ValueError("backtest_history_window must not exceed backtest_max_candles")
+        if self.paper_trading_max_replay_candles > self.backtest_max_candles:
+            raise ValueError(
+                "paper_trading_max_replay_candles must not exceed backtest_max_candles"
+            )
         if self.market_continuous_bootstrap_candles > self.market_backfill_max_total_candles:
             raise ValueError(
                 "market_continuous_bootstrap_candles must not exceed "

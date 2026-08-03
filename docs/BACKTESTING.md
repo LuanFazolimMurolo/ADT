@@ -571,3 +571,25 @@ backtest, expand parameter combinations or publish result artifacts. Experiment
 manifests and execution, walk-forward analysis, purge/embargo windows,
 optimization reports, multiple assets, frontend orchestration, schedulers,
 paper trading and live trading remain outside this delivery.
+
+## Paper replay boundary (Phase 5-03)
+
+`DeterministicBacktestEngine.run()` retains terminal open-order cancellation as
+its default behavior for historical backtests. Phase 5-03 invokes the same
+engine with terminal cancellation disabled and with `force_close_at_end=false`.
+This is required because the latest committed candle is a temporary observation
+boundary rather than the end of a historical experiment. An order emitted on
+that candle must remain open so a later complete replay can process it on the
+next eligible candle.
+
+Every paper cycle starts with a new strategy, engine, portfolio, ledger and risk
+manager and replays the complete bounded RAW prefix. It does not resume mutable
+Python objects. Lifecycle 1 accepts no warmup; lifecycle 2 receives only the
+configured observation-only warmup before evaluation begins. The resulting
+orders, fills, portfolio and risk-halt state are therefore governed by the same
+contracts as Phase 3 and can be reproduced with the persisted source checksum.
+
+The paper layer adds no performance claim and does not promote an optimized
+strategy. It is a simulated execution substrate only. See
+[`PAPER_TRADING.md`](./PAPER_TRADING.md) for persistence, commands and safety
+limits.
