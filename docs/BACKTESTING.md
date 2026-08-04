@@ -100,8 +100,38 @@ reserve and
 drawdown constraints. Sales always retain the strategy's explicit quantity.
 
 CLI selection uses `--position-sizing` and `--position-sizing-value`. The value is
-forbidden with `explicit_quantity` and required for the other policies. Stop-loss
-enforcement is not part of this delivery.
+forbidden with `explicit_quantity` and required for the other policies.
+
+## Stop-loss enforcement (Phase 5-06)
+
+The compatibility default is `disabled`, which keeps the legacy `RiskLimits`
+payload and deterministic IDs unchanged. `fixed_percent` uses an identity-bearing
+`StopLossRiskLimits` extension and requires a percentage greater than zero and
+below 100:
+
+```text
+--stop-loss disabled
+--stop-loss fixed_percent --stop-loss-value 5
+```
+
+After every position-changing fill, the engine cancels any previous managed stop
+and projects one full-position `STOP_MARKET` sell from the weighted average entry
+price. The raw stop is truncated down to the instrument price tick; it is never
+rounded upward. The replacement order receives the reserved `engine-stop-loss`
+tag and becomes eligible under the normal next-candle order lifecycle. When the
+managed stop and strategy orders are eligible in the same candle, protection is
+processed first; strategy-order priority remains unchanged otherwise. A touch uses
+the stop trigger and a gap through the stop uses the candle open, both with normal
+taker fees and adverse slippage.
+
+When the position becomes flat, the managed stop is cancelled and no replacement
+is created. Drawdown halt cancels strategy orders but preserves the protective
+stop. If the engine cannot reserve the required open-order or total-order slot, it
+fails closed instead of leaving an unprotected position. Because the managed stop
+is a liquidation-only engine order, its triggered exit is not vetoed by minimum or
+maximum order-notional ceilings intended for strategy orders; portfolio accounting
+still enforces that the sale cannot exceed the held position. Strategy-created stop
+orders remain supported, but strategies may not use the reserved engine tag.
 
 ## Metrics
 

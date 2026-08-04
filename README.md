@@ -212,4 +212,12 @@ Opening Spot buys may instead use `fixed_notional` or `equity_percent` through
 `--position-sizing` and `--position-sizing-value`. The engine projects quantity
 with `Decimal`, adverse execution assumptions, fees, quantity step and quote
 reserve before the existing risk manager performs its final veto. Sales retain
-the strategy's explicit quantity, and stop-loss enforcement remains deferred.
+the strategy's explicit quantity.
+
+### Deterministic stop-loss enforcement (Phase 5-06)
+
+Backtests and paper sessions may enable an engine-managed full-position stop with
+`--stop-loss fixed_percent --stop-loss-value <percent>`. The compatibility default
+remains `disabled`. Enabled protection is persisted in canonical run, session and
+experiment identities, maintained after position-changing fills, and executed by
+the existing deterministic `STOP_MARKET` model without exchange access.

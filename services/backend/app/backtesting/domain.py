@@ -97,6 +97,13 @@ class PositionSizingKind(StrEnum):
     EQUITY_PERCENT = "equity_percent"
 
 
+class StopLossKind(StrEnum):
+    """Supported deterministic engine-managed protective-stop policies."""
+
+    DISABLED = "disabled"
+    FIXED_PERCENT = "fixed_percent"
+
+
 @dataclass(frozen=True, slots=True)
 class PositionSizingPolicy:
     """One immutable position-sizing policy included in run identity."""
@@ -124,6 +131,26 @@ class PositionSizingPolicy:
             raise ValueError("position sizing value must be finite and positive")
         if self.kind is PositionSizingKind.EQUITY_PERCENT and self.value > _PERCENT_DENOMINATOR:
             raise ValueError("equity percent sizing must not exceed 100")
+
+
+@dataclass(frozen=True, slots=True)
+class StopLossPolicy:
+    """One immutable stop-loss policy included in run identity when enabled."""
+
+    kind: StopLossKind = StopLossKind.DISABLED
+    value: Decimal | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, StopLossKind):
+            raise ValueError("stop loss kind must be supported")
+        if self.kind is StopLossKind.DISABLED:
+            if self.value is not None:
+                raise ValueError("disabled stop loss must not define value")
+            return
+        if not isinstance(self.value, Decimal) or not self.value.is_finite() or self.value <= 0:
+            raise ValueError("stop loss value must be finite and positive")
+        if self.kind is StopLossKind.FIXED_PERCENT and self.value >= _PERCENT_DENOMINATOR:
+            raise ValueError("fixed percent stop loss must be below 100")
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,6 +319,34 @@ class RiskLimits:
             if self.max_drawdown_pct > Decimal("100"):
                 raise ValueError("max_drawdown_pct must not exceed 100")
         _require_nonnegative(self.minimum_quote_reserve, "minimum_quote_reserve")
+
+
+@dataclass(frozen=True, slots=True)
+class StopLossRiskLimits(RiskLimits):
+    """Risk limits extended with one non-default engine-managed stop policy."""
+
+    stop_loss: StopLossPolicy = StopLossPolicy()
+
+    def __post_init__(self) -> None:
+        RiskLimits.__post_init__(self)
+        if not isinstance(self.stop_loss, StopLossPolicy):
+            raise ValueError("stop loss policy is invalid")
+        candidate = copy(self.stop_loss)
+        StopLossPolicy.__post_init__(candidate)
+        if candidate != self.stop_loss:
+            raise ValueError("stop loss policy is not canonical")
+        if candidate.kind is StopLossKind.DISABLED:
+            raise ValueError("stop-loss risk limits require a non-default policy")
+
+
+def stop_loss_policy_for(risk_limits: RiskLimits) -> StopLossPolicy:
+    """Return disabled legacy protection unless extended risk limits are present."""
+
+    if type(risk_limits) not in {RiskLimits, StopLossRiskLimits}:
+        raise ValueError("risk limits are invalid")
+    if isinstance(risk_limits, StopLossRiskLimits):
+        return risk_limits.stop_loss
+    return StopLossPolicy()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1004,6 +1059,8 @@ def _revalidate_instrument_constraints(value: object) -> None:
 def _revalidate_risk_limits(value: object) -> None:
     if not isinstance(value, RiskLimits):
         raise ValueError("risk limits are invalid")
+    if type(value) not in {RiskLimits, StopLossRiskLimits}:
+        raise ValueError("risk limits type is unsupported")
     if (
         isinstance(value.max_open_orders, bool)
         or not isinstance(value.max_open_orders, int)
@@ -1015,7 +1072,10 @@ def _revalidate_risk_limits(value: object) -> None:
         raise ValueError("risk limits are invalid")
     candidate = copy(value)
     try:
-        RiskLimits.__post_init__(candidate)
+        if isinstance(candidate, StopLossRiskLimits):
+            StopLossRiskLimits.__post_init__(candidate)
+        else:
+            RiskLimits.__post_init__(candidate)
     except Exception:
         raise ValueError("risk limits are invalid") from None
     if candidate != value:

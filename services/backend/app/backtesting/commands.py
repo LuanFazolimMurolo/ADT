@@ -27,6 +27,9 @@ from app.backtesting.domain import (
     PositionSizingPolicy,
     RiskLimits,
     SlippageModel,
+    StopLossKind,
+    StopLossPolicy,
+    StopLossRiskLimits,
 )
 from app.backtesting.engine import DeterministicBacktestEngine
 from app.backtesting.errors import SnapshotChangedError, SnapshotInvalidError
@@ -95,6 +98,12 @@ def configure_backtest_parser(parser: argparse.ArgumentParser) -> None:
         command.add_argument("--max-order-notional", type=_positive_decimal)
         command.add_argument("--max-position-notional", type=_positive_decimal)
         command.add_argument("--max-drawdown-pct", type=_percentage)
+        command.add_argument(
+            "--stop-loss",
+            choices=tuple(kind.value for kind in StopLossKind),
+            default=StopLossKind.DISABLED.value,
+        )
+        command.add_argument("--stop-loss-value", type=_exclusive_percentage)
         command.add_argument(
             "--minimum-quote-reserve",
             type=_nonnegative_decimal,
@@ -270,15 +279,7 @@ def prepare_backtest(
             minimum_notional=args.minimum_notional,
             maximum_notional=args.maximum_notional,
         ),
-        risk_limits=RiskLimits(
-            max_order_notional=args.max_order_notional,
-            max_position_notional=args.max_position_notional,
-            max_open_orders=settings.backtest_max_open_orders,
-            max_total_orders=settings.backtest_max_orders,
-            max_drawdown_pct=args.max_drawdown_pct,
-            allow_all_in=args.allow_all_in,
-            minimum_quote_reserve=args.minimum_quote_reserve,
-        ),
+        risk_limits=_risk_limits(args, settings),
         history_window=settings.backtest_history_window,
         max_candles=settings.backtest_max_candles,
         max_orders=settings.backtest_max_orders,
@@ -390,6 +391,46 @@ def _position_sizing_policy(args: argparse.Namespace) -> PositionSizingPolicy:
         raise InvalidDomainInputError(str(error)) from error
 
 
+def _risk_limits(
+    args: argparse.Namespace,
+    settings: MarketDataSettings,
+) -> RiskLimits:
+    policy = _stop_loss_policy(args)
+    if policy == StopLossPolicy():
+        return RiskLimits(
+            max_order_notional=args.max_order_notional,
+            max_position_notional=args.max_position_notional,
+            max_open_orders=settings.backtest_max_open_orders,
+            max_total_orders=settings.backtest_max_orders,
+            max_drawdown_pct=args.max_drawdown_pct,
+            allow_all_in=args.allow_all_in,
+            minimum_quote_reserve=args.minimum_quote_reserve,
+        )
+    return StopLossRiskLimits(
+        max_order_notional=args.max_order_notional,
+        max_position_notional=args.max_position_notional,
+        max_open_orders=settings.backtest_max_open_orders,
+        max_total_orders=settings.backtest_max_orders,
+        max_drawdown_pct=args.max_drawdown_pct,
+        allow_all_in=args.allow_all_in,
+        minimum_quote_reserve=args.minimum_quote_reserve,
+        stop_loss=policy,
+    )
+
+
+def _stop_loss_policy(args: argparse.Namespace) -> StopLossPolicy:
+    try:
+        kind = StopLossKind(args.stop_loss)
+        value = args.stop_loss_value
+        if kind is StopLossKind.DISABLED and value is not None:
+            raise ValueError("disabled stop loss does not accept a value")
+        if kind is not StopLossKind.DISABLED and value is None:
+            raise ValueError("selected stop loss requires --stop-loss-value")
+        return StopLossPolicy(kind=kind, value=value)
+    except ValueError as error:
+        raise InvalidDomainInputError(str(error)) from error
+
+
 def _positive_decimal(value: str) -> Decimal:
     parsed = _decimal(value)
     if parsed <= 0:
@@ -408,6 +449,13 @@ def _percentage(value: str) -> Decimal:
     parsed = _nonnegative_decimal(value)
     if parsed > Decimal("100"):
         raise argparse.ArgumentTypeError("percentage must not exceed 100")
+    return parsed
+
+
+def _exclusive_percentage(value: str) -> Decimal:
+    parsed = _positive_decimal(value)
+    if parsed >= Decimal("100"):
+        raise argparse.ArgumentTypeError("percentage must be below 100")
     return parsed
 
 

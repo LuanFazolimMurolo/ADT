@@ -24,9 +24,13 @@ from app.backtesting.domain import (
     PositionSizingPolicy,
     RiskLimits,
     SlippageModel,
+    StopLossKind,
+    StopLossPolicy,
+    StopLossRiskLimits,
     StrategyDescriptor,
     StrategyParameterValue,
     position_sizing_policy_for,
+    stop_loss_policy_for,
 )
 from app.backtesting.serialization import canonical_json_bytes
 from app.backtesting.strategy import StrategyContext
@@ -562,11 +566,17 @@ def test_cli_parser_exposes_paper_trading_commands() -> None:
             "1",
             "--initial-capital",
             "1000",
+            "--stop-loss",
+            "fixed_percent",
+            "--stop-loss-value",
+            "5",
             "--yes",
         ]
     )
     assert created.paper_command == "create"
     assert created.initial_capital == Decimal("1000")
+    assert created.stop_loss == "fixed_percent"
+    assert created.stop_loss_value == Decimal("5")
     status = parser.parse_args(["status", "--session-id", "a" * 64])
     assert status.paper_command == "status"
 
@@ -736,6 +746,45 @@ def test_paper_config_decoder_rejects_redundant_explicit_sizing() -> None:
         "kind": "explicit_quantity",
         "value": None,
         "minimum_quote_reserve": "0",
+    }
+
+    with pytest.raises(InvalidPaperSessionError):
+        decode_paper_config(json.dumps(raw).encode())
+
+
+def test_paper_config_round_trip_preserves_stop_loss() -> None:
+    config = _config()
+    updated = PaperSessionConfig(
+        **{
+            **{item.name: getattr(config, item.name) for item in fields(config)},
+            "risk_limits": StopLossRiskLimits(
+                max_open_orders=config.risk_limits.max_open_orders,
+                max_total_orders=config.risk_limits.max_total_orders,
+                stop_loss=StopLossPolicy(
+                    StopLossKind.FIXED_PERCENT,
+                    Decimal("5"),
+                ),
+            ),
+        }
+    )
+
+    assert decode_paper_config(encode_paper_config(updated)) == updated
+    assert paper_session_id(updated) != paper_session_id(config)
+
+
+def test_paper_config_decoder_accepts_legacy_risk_without_stop_loss() -> None:
+    raw = json.loads(encode_paper_config(_config()))
+
+    assert "stop_loss" not in raw["config"]["risk_limits"]
+    decoded = decode_paper_config(json.dumps(raw).encode())
+    assert stop_loss_policy_for(decoded.risk_limits) == StopLossPolicy()
+
+
+def test_paper_config_decoder_rejects_redundant_disabled_stop_loss() -> None:
+    raw = json.loads(encode_paper_config(_config()))
+    raw["config"]["risk_limits"]["stop_loss"] = {
+        "kind": "disabled",
+        "value": None,
     }
 
     with pytest.raises(InvalidPaperSessionError):

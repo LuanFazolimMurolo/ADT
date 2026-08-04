@@ -25,6 +25,7 @@ from app.backtesting.domain import (
     TimeInForce,
     evaluation_range_for,
     position_sizing_policy_for,
+    stop_loss_policy_for,
     strategy_lifecycle_version_for,
 )
 from app.backtesting.errors import (
@@ -54,12 +55,14 @@ from app.backtesting.risk import (
     RiskRejectionCode,
 )
 from app.backtesting.sizing import DeterministicPositionSizer
+from app.backtesting.stop_loss import DeterministicStopLossManager
 from app.backtesting.strategy import BacktestStrategy, StrategyContext
 from app.market_data.datasets import DatasetSnapshot
 from app.market_data.domain import Candle, DataRange, MarketType
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+_ENGINE_STOP_LOSS_TAG = "engine-stop-loss"
 
 
 class BacktestSnapshotReader(Protocol):
@@ -174,6 +177,10 @@ class DeterministicBacktestEngine:
                 else config.risk_limits.minimum_quote_reserve
             ),
         )
+        stop_loss = DeterministicStopLossManager(
+            policy=stop_loss_policy_for(config.risk_limits),
+            constraints=config.constraints,
+        )
         portfolio = initialize_portfolio(config.initial_capital)
         ledger = BacktestLedger()
         ledger.record_initial_capital(config.initial_capital, evaluation_range.start)
@@ -282,7 +289,10 @@ class DeterministicBacktestEngine:
                     fill_sequence=len(fills) + 1,
                     execution=execution,
                 )
-                fill_rejection = risk.validate_fill(fill, portfolio.snapshot())
+                engine_managed_stop = order.intent.client_tag == _ENGINE_STOP_LOSS_TAG
+                fill_rejection = (
+                    None if engine_managed_stop else risk.validate_fill(fill, portfolio.snapshot())
+                )
                 if fill_rejection is not None:
                     orders[order_position] = transition_order(
                         order,
@@ -299,6 +309,14 @@ class DeterministicBacktestEngine:
                     order,
                     OrderStatus.FILLED,
                     event_time=candle.open_time,
+                )
+                self._reconcile_stop_loss(
+                    manager=stop_loss,
+                    portfolio=portfolio,
+                    orders=orders,
+                    config=config,
+                    event_time=candle.open_time,
+                    created_candle_index=candle_index,
                 )
                 fill_context = self._context_from_previous_history(
                     snapshot=snapshot,
@@ -332,7 +350,11 @@ class DeterministicBacktestEngine:
             equity.append(self._equity_point(candle_index, candle, portfolio))
             if not risk_halt and risk.drawdown_halt_required(portfolio.snapshot()):
                 risk_halt = True
-                self._cancel_open_orders(orders, candle.close_time)
+                self._cancel_open_orders(
+                    orders,
+                    candle.close_time,
+                    preserve_engine_stop_loss=True,
+                )
 
             history.append(candle)
             candle_context = self._context(
@@ -383,6 +405,14 @@ class DeterministicBacktestEngine:
             orders.append(force_order)
             fills.append(force_fill)
             last_fill = force_fill
+            self._reconcile_stop_loss(
+                manager=stop_loss,
+                portfolio=portfolio,
+                orders=orders,
+                config=config,
+                event_time=last_candle.close_time,
+                created_candle_index=candles_processed - 1,
+            )
             equity[-1] = self._equity_point(candles_processed - 1, last_candle, portfolio)
 
         ledger.record_mark(
@@ -457,7 +487,13 @@ class DeterministicBacktestEngine:
         )
         return tuple(
             position
-            for position, _order in sorted(candidates, key=lambda item: order_priority_key(item[1]))
+            for position, _order in sorted(
+                candidates,
+                key=lambda item: (
+                    0 if item[1].intent.client_tag == _ENGINE_STOP_LOSS_TAG else 1,
+                    *order_priority_key(item[1]),
+                ),
+            )
         )
 
     @staticmethod
@@ -486,6 +522,10 @@ class DeterministicBacktestEngine:
         ):
             raise StrategyFailureError("A estratégia retornou intenções inválidas.")
         for intent in intents:
+            if intent.client_tag == _ENGINE_STOP_LOSS_TAG:
+                raise StrategyFailureError(
+                    "A estratégia usou uma client_tag reservada pelo engine."
+                )
             if len(orders) >= config.max_orders:
                 raise MaximumEventsExceededError("O backtest excedeu o limite seguro de ordens.")
             sequence = len(orders) + 1
@@ -530,6 +570,58 @@ class DeterministicBacktestEngine:
                     rejection_code=decision.rejection_code.value,
                 )
             orders.append(order)
+
+    @staticmethod
+    def _reconcile_stop_loss(
+        *,
+        manager: DeterministicStopLossManager,
+        portfolio: PortfolioState,
+        orders: list[SimulatedOrder],
+        config: BacktestConfig,
+        event_time: datetime,
+        created_candle_index: int,
+    ) -> None:
+        for position, order in enumerate(orders):
+            if (
+                order.status is OrderStatus.OPEN
+                and order.intent.client_tag == _ENGINE_STOP_LOSS_TAG
+            ):
+                orders[position] = transition_order(
+                    order,
+                    OrderStatus.CANCELLED,
+                    event_time=event_time,
+                )
+
+        decision = manager.evaluate(portfolio.snapshot())
+        if not decision.active:
+            return
+
+        order_limit = min(config.max_orders, config.risk_limits.max_total_orders)
+        if len(orders) >= order_limit:
+            raise MaximumEventsExceededError(
+                "A proteção de stop loss excederia o limite seguro de ordens."
+            )
+        open_order_count = sum(order.status is OrderStatus.OPEN for order in orders)
+        if open_order_count >= config.risk_limits.max_open_orders:
+            raise MaximumEventsExceededError(
+                "A proteção de stop loss excederia o limite de ordens abertas."
+            )
+
+        assert decision.stop_price is not None
+        order = create_order(
+            OrderIntent(
+                side=OrderSide.SELL,
+                order_type=OrderType.STOP_MARKET,
+                quantity=decision.quantity,
+                time_in_force=TimeInForce.GTC,
+                stop_price=decision.stop_price,
+                client_tag=_ENGINE_STOP_LOSS_TAG,
+            ),
+            sequence=len(orders) + 1,
+            created_at=event_time,
+            created_candle_index=created_candle_index,
+        )
+        orders.append(transition_order(order, OrderStatus.OPEN, event_time=event_time))
 
     @staticmethod
     def _make_fill(
@@ -607,9 +699,16 @@ class DeterministicBacktestEngine:
         return mark_to_market(mutation.after, candle.close), closed, fill
 
     @staticmethod
-    def _cancel_open_orders(orders: list[SimulatedOrder], event_time: datetime) -> None:
+    def _cancel_open_orders(
+        orders: list[SimulatedOrder],
+        event_time: datetime,
+        *,
+        preserve_engine_stop_loss: bool = False,
+    ) -> None:
         for position, order in enumerate(orders):
-            if order.status is OrderStatus.OPEN:
+            if order.status is OrderStatus.OPEN and not (
+                preserve_engine_stop_loss and order.intent.client_tag == _ENGINE_STOP_LOSS_TAG
+            ):
                 orders[position] = transition_order(
                     order,
                     OrderStatus.CANCELLED,

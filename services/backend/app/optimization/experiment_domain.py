@@ -21,8 +21,12 @@ from app.backtesting.domain import (
     RiskLimits,
     SlippageKind,
     SlippageModel,
+    StopLossKind,
+    StopLossPolicy,
+    StopLossRiskLimits,
     StrategyDescriptor,
     position_sizing_policy_for,
+    stop_loss_policy_for,
     strategy_lifecycle_version_for,
 )
 from app.market_data.domain import DataRange
@@ -364,6 +368,22 @@ def validate_experiment_backtest_configuration(
     risk = configuration.risk_limits
     if not isinstance(risk, RiskLimits):
         raise InvalidExperimentBacktestConfigurationError("risk limits are invalid")
+    if type(risk) not in {RiskLimits, StopLossRiskLimits}:
+        raise InvalidExperimentBacktestConfigurationError("risk limits type is unsupported")
+    try:
+        stop_loss = stop_loss_policy_for(risk)
+    except ValueError as error:
+        raise InvalidExperimentBacktestConfigurationError(str(error)) from error
+    if not isinstance(stop_loss, StopLossPolicy):
+        raise InvalidExperimentBacktestConfigurationError("stop loss policy is invalid")
+    try:
+        StopLossPolicy.__post_init__(stop_loss)
+    except ValueError as error:
+        raise InvalidExperimentBacktestConfigurationError(str(error)) from error
+    if isinstance(risk, StopLossRiskLimits) and stop_loss.kind is StopLossKind.DISABLED:
+        raise InvalidExperimentBacktestConfigurationError(
+            "stop-loss risk limits require a non-default policy"
+        )
     for optional_label, optional_value in (
         ("maximum order notional", risk.max_order_notional),
         ("maximum position notional", risk.max_position_notional),
@@ -719,18 +739,7 @@ def backtest_configuration_payload(
             "minimum_notional": decimal_text(configuration.constraints.minimum_notional),
             "maximum_notional": _optional_decimal(configuration.constraints.maximum_notional),
         },
-        "risk_limits": {
-            "max_order_notional": _optional_decimal(configuration.risk_limits.max_order_notional),
-            "max_position_notional": _optional_decimal(
-                configuration.risk_limits.max_position_notional
-            ),
-            "max_open_orders": configuration.risk_limits.max_open_orders,
-            "max_total_orders": configuration.risk_limits.max_total_orders,
-            "max_drawdown_pct": _optional_decimal(configuration.risk_limits.max_drawdown_pct),
-            "stop_on_max_drawdown": configuration.risk_limits.stop_on_max_drawdown,
-            "allow_all_in": configuration.risk_limits.allow_all_in,
-            "minimum_quote_reserve": decimal_text(configuration.risk_limits.minimum_quote_reserve),
-        },
+        "risk_limits": _risk_limits_payload(configuration.risk_limits),
         "limits": {
             "history_window": configuration.history_window,
             "max_candles": configuration.max_candles,
@@ -740,6 +749,25 @@ def backtest_configuration_payload(
         "engine_version": configuration.engine_version,
         "backtest_schema_version": configuration.schema_version,
     }
+
+
+def _risk_limits_payload(risk: RiskLimits) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "max_order_notional": _optional_decimal(risk.max_order_notional),
+        "max_position_notional": _optional_decimal(risk.max_position_notional),
+        "max_open_orders": risk.max_open_orders,
+        "max_total_orders": risk.max_total_orders,
+        "max_drawdown_pct": _optional_decimal(risk.max_drawdown_pct),
+        "stop_on_max_drawdown": risk.stop_on_max_drawdown,
+        "allow_all_in": risk.allow_all_in,
+        "minimum_quote_reserve": decimal_text(risk.minimum_quote_reserve),
+    }
+    if isinstance(risk, StopLossRiskLimits):
+        payload["stop_loss"] = {
+            "kind": risk.stop_loss.kind.value,
+            "value": _optional_decimal(risk.stop_loss.value),
+        }
+    return payload
 
 
 def parameter_document_payload(document: StrategyParameterDocument) -> list[dict[str, object]]:

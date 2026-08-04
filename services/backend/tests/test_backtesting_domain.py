@@ -27,6 +27,9 @@ from app.backtesting.domain import (
     RiskLimits,
     SimulatedOrder,
     SlippageModel,
+    StopLossKind,
+    StopLossPolicy,
+    StopLossRiskLimits,
     StrategyDescriptor,
     validate_backtest_config,
 )
@@ -232,4 +235,54 @@ def test_backtest_config_rejects_low_level_redundant_explicit_sizing() -> None:
     object.__setattr__(config, "execution", tampered)
 
     with pytest.raises(ValueError, match="non-default"):
+        validate_backtest_config(config)
+
+
+def test_stop_loss_policy_is_canonical_and_changes_risk_identity() -> None:
+    legacy = RiskLimits()
+    protected = StopLossRiskLimits(
+        stop_loss=StopLossPolicy(StopLossKind.FIXED_PERCENT, Decimal("5"))
+    )
+
+    assert canonical_value(legacy) != canonical_value(protected)
+    with pytest.raises(ValueError, match="must not define value"):
+        StopLossPolicy(StopLossKind.DISABLED, Decimal("5"))
+    with pytest.raises(ValueError, match="below 100"):
+        StopLossPolicy(StopLossKind.FIXED_PERCENT, Decimal("100"))
+    with pytest.raises(ValueError, match="non-default"):
+        StopLossRiskLimits()
+
+
+def test_backtest_config_rejects_low_level_disabled_stop_loss() -> None:
+    risk_limits = StopLossRiskLimits(
+        stop_loss=StopLossPolicy(StopLossKind.FIXED_PERCENT, Decimal("5"))
+    )
+    config = BacktestConfig(
+        snapshot_id="a" * 64,
+        data_range=DataRange(utc(2026, 1, 1), utc(2026, 1, 2)),
+        strategy=StrategyDescriptor("no-op", "1"),
+        initial_capital=Decimal("1000"),
+        execution=ExecutionAssumptions(
+            FeeModel(Decimal("0"), Decimal("0")),
+            SlippageModel(fixed_bps=Decimal("0")),
+        ),
+        constraints=InstrumentConstraints(
+            minimum_quantity=Decimal("0.001"),
+            quantity_step=Decimal("0.001"),
+            price_tick=Decimal("0.01"),
+            minimum_notional=Decimal("1"),
+        ),
+        risk_limits=risk_limits,
+        history_window=10,
+        max_candles=100,
+        max_orders=100,
+        max_events=1000,
+        engine_version="3b-1",
+        schema_version=2,
+    )
+    tampered = copy(config.risk_limits)
+    object.__setattr__(tampered, "stop_loss", StopLossPolicy())
+    object.__setattr__(config, "risk_limits", tampered)
+
+    with pytest.raises(ValueError, match="risk limits are invalid"):
         validate_backtest_config(config)

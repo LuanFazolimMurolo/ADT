@@ -18,6 +18,9 @@ from app.backtesting.domain import (
     PositionSizingPolicy,
     RiskLimits,
     SlippageModel,
+    StopLossKind,
+    StopLossPolicy,
+    StopLossRiskLimits,
 )
 from app.backtesting.serialization import canonical_value
 from app.core.config import MarketDataSettings
@@ -72,6 +75,12 @@ def configure_paper_trading_parser(parser: argparse.ArgumentParser) -> None:
     create.add_argument("--max-order-notional", type=_positive_decimal)
     create.add_argument("--max-position-notional", type=_positive_decimal)
     create.add_argument("--max-drawdown-pct", type=_percentage)
+    create.add_argument(
+        "--stop-loss",
+        choices=tuple(kind.value for kind in StopLossKind),
+        default=StopLossKind.DISABLED.value,
+    )
+    create.add_argument("--stop-loss-value", type=_exclusive_percentage)
     create.add_argument("--minimum-quote-reserve", type=_nonnegative_decimal, default=Decimal("0"))
     create.add_argument("--allow-all-in", action="store_true")
     create.add_argument("--yes", action="store_true")
@@ -170,15 +179,7 @@ def run_paper_trading_command(
                 minimum_notional=args.minimum_notional,
                 maximum_notional=args.maximum_notional,
             ),
-            risk_limits=RiskLimits(
-                max_order_notional=args.max_order_notional,
-                max_position_notional=args.max_position_notional,
-                max_open_orders=settings.backtest_max_open_orders,
-                max_total_orders=settings.backtest_max_orders,
-                max_drawdown_pct=args.max_drawdown_pct,
-                allow_all_in=args.allow_all_in,
-                minimum_quote_reserve=args.minimum_quote_reserve,
-            ),
+            risk_limits=_risk_limits(args, settings),
             history_window=settings.backtest_history_window,
             max_candles=settings.paper_trading_max_replay_candles,
             max_orders=settings.backtest_max_orders,
@@ -311,6 +312,46 @@ def _position_sizing_policy(args: argparse.Namespace) -> PositionSizingPolicy:
         raise InvalidDomainInputError(str(error)) from error
 
 
+def _risk_limits(
+    args: argparse.Namespace,
+    settings: MarketDataSettings,
+) -> RiskLimits:
+    policy = _stop_loss_policy(args)
+    if policy == StopLossPolicy():
+        return RiskLimits(
+            max_order_notional=args.max_order_notional,
+            max_position_notional=args.max_position_notional,
+            max_open_orders=settings.backtest_max_open_orders,
+            max_total_orders=settings.backtest_max_orders,
+            max_drawdown_pct=args.max_drawdown_pct,
+            allow_all_in=args.allow_all_in,
+            minimum_quote_reserve=args.minimum_quote_reserve,
+        )
+    return StopLossRiskLimits(
+        max_order_notional=args.max_order_notional,
+        max_position_notional=args.max_position_notional,
+        max_open_orders=settings.backtest_max_open_orders,
+        max_total_orders=settings.backtest_max_orders,
+        max_drawdown_pct=args.max_drawdown_pct,
+        allow_all_in=args.allow_all_in,
+        minimum_quote_reserve=args.minimum_quote_reserve,
+        stop_loss=policy,
+    )
+
+
+def _stop_loss_policy(args: argparse.Namespace) -> StopLossPolicy:
+    try:
+        kind = StopLossKind(args.stop_loss)
+        value = args.stop_loss_value
+        if kind is StopLossKind.DISABLED and value is not None:
+            raise ValueError("disabled stop loss does not accept a value")
+        if kind is not StopLossKind.DISABLED and value is None:
+            raise ValueError("selected stop loss requires --stop-loss-value")
+        return StopLossPolicy(kind=kind, value=value)
+    except ValueError as error:
+        raise InvalidDomainInputError(str(error)) from error
+
+
 def _positive_decimal(value: str) -> Decimal:
     result = _decimal(value)
     if result <= 0:
@@ -329,6 +370,13 @@ def _percentage(value: str) -> Decimal:
     result = _nonnegative_decimal(value)
     if result > 100:
         raise argparse.ArgumentTypeError("must not exceed 100")
+    return result
+
+
+def _exclusive_percentage(value: str) -> Decimal:
+    result = _positive_decimal(value)
+    if result >= Decimal("100"):
+        raise argparse.ArgumentTypeError("must be below 100")
     return result
 
 

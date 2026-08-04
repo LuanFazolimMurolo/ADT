@@ -16,6 +16,7 @@ from app.backtesting.domain import (
     ExecutionAssumptions,
     FeeModel,
     Fill,
+    FillReason,
     InstrumentConstraints,
     OrderIntent,
     OrderSide,
@@ -26,6 +27,9 @@ from app.backtesting.domain import (
     PositionSizingPolicy,
     RiskLimits,
     SlippageModel,
+    StopLossKind,
+    StopLossPolicy,
+    StopLossRiskLimits,
     StrategyDescriptor,
     TimeInForce,
     evaluation_range_for,
@@ -176,6 +180,21 @@ def _candles(*closes: str) -> tuple[Candle, ...]:
             close=close,
         )
         for index, close in enumerate(closes)
+    )
+
+
+def _ohlc_candles(*rows: tuple[str, str, str, str]) -> tuple[Candle, ...]:
+    start = utc(2026, 1, 1)
+    return tuple(
+        candle(
+            start + timedelta(hours=index),
+            timeframe=get_timeframe("1h"),
+            open_price=open_price,
+            high=high,
+            low=low,
+            close=close,
+        )
+        for index, (open_price, high, low, close) in enumerate(rows)
     )
 
 
@@ -879,3 +898,307 @@ def test_policy_sizing_zero_is_rejected_deterministically() -> None:
     assert result.orders[0].status is OrderStatus.REJECTED
     assert result.orders[0].rejection_code == RiskRejectionCode.INVALID_QUANTITY.value
     assert result.fills == ()
+
+
+def _fixed_stop_limits(
+    percent: str = "10",
+    *,
+    max_drawdown_pct: Decimal | None = None,
+    stop_on_max_drawdown: bool = True,
+    max_open_orders: int = 1_000,
+    max_total_orders: int = 100_000,
+) -> StopLossRiskLimits:
+    return StopLossRiskLimits(
+        max_drawdown_pct=max_drawdown_pct,
+        stop_on_max_drawdown=stop_on_max_drawdown,
+        max_open_orders=max_open_orders,
+        max_total_orders=max_total_orders,
+        stop_loss=StopLossPolicy(StopLossKind.FIXED_PERCENT, Decimal(percent)),
+    )
+
+
+def test_engine_managed_stop_loss_closes_full_position_on_trigger() -> None:
+    rows = _ohlc_candles(
+        ("100", "105", "95", "100"),
+        ("100", "105", "89", "95"),
+    )
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy(start_intents=(_market_buy("1"),))
+
+    result = DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+        _config(
+            snapshot,
+            strategy.descriptor,
+            risk_limits=_fixed_stop_limits(),
+        ),
+        strategy,
+    )
+
+    assert [order.status for order in result.orders] == [
+        OrderStatus.FILLED,
+        OrderStatus.FILLED,
+    ]
+    stop = result.orders[1]
+    assert stop.intent.side is OrderSide.SELL
+    assert stop.intent.order_type is OrderType.STOP_MARKET
+    assert stop.intent.quantity == Decimal("1.000")
+    assert stop.intent.stop_price == Decimal("90.0")
+    assert stop.intent.client_tag == "engine-stop-loss"
+    assert stop.created_candle_index == 0
+    assert stop.eligible_candle_index == 1
+    assert result.fills[1].reason is FillReason.STOP_TRIGGERED
+    assert result.fills[1].execution_price == Decimal("90.0")
+    assert result.final_portfolio.base_quantity == 0
+
+
+def test_engine_managed_stop_loss_uses_gap_open_price() -> None:
+    rows = _ohlc_candles(
+        ("100", "105", "95", "100"),
+        ("85", "90", "80", "88"),
+    )
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy(start_intents=(_market_buy("1"),))
+
+    result = DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+        _config(
+            snapshot,
+            strategy.descriptor,
+            risk_limits=_fixed_stop_limits(),
+        ),
+        strategy,
+    )
+
+    assert result.fills[1].reason is FillReason.STOP_GAP
+    assert result.fills[1].base_price == Decimal("85")
+    assert result.fills[1].execution_price == Decimal("85")
+
+
+def test_engine_managed_stop_loss_exit_bypasses_maximum_notional_vetoes() -> None:
+    rows = _ohlc_candles(
+        ("100", "105", "95", "100"),
+        ("100", "105", "95", "100"),
+        ("100", "105", "89", "95"),
+    )
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy(
+        start_intents=(_market_buy("1"),),
+        candle_intents={0: (_market_buy("1"),)},
+    )
+    base = _config(
+        snapshot,
+        strategy.descriptor,
+        risk_limits=StopLossRiskLimits(
+            max_order_notional=Decimal("110"),
+            stop_loss=StopLossPolicy(StopLossKind.FIXED_PERCENT, Decimal("10")),
+        ),
+    )
+    config = replace(
+        base,
+        constraints=replace(base.constraints, maximum_notional=Decimal("110")),
+    )
+
+    result = DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+        config,
+        strategy,
+    )
+
+    managed_stop = next(
+        order
+        for order in result.orders
+        if order.intent.client_tag == "engine-stop-loss" and order.status is OrderStatus.FILLED
+    )
+    assert managed_stop.intent.quantity == Decimal("2.000")
+    assert result.fills[-1].notional == Decimal("180.0000")
+    assert result.final_portfolio.base_quantity == 0
+
+
+def test_engine_managed_stop_loss_exit_bypasses_minimum_notional_veto() -> None:
+    rows = _ohlc_candles(
+        ("100", "105", "95", "100"),
+        ("5", "6", "4", "5"),
+    )
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy(start_intents=(_market_buy("1"),))
+    base = _config(
+        snapshot,
+        strategy.descriptor,
+        risk_limits=_fixed_stop_limits(),
+    )
+    config = replace(
+        base,
+        constraints=replace(base.constraints, minimum_notional=Decimal("10")),
+    )
+
+    result = DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+        config,
+        strategy,
+    )
+
+    assert result.fills[-1].reason is FillReason.STOP_GAP
+    assert result.fills[-1].notional == Decimal("5.000")
+    assert result.final_portfolio.base_quantity == 0
+
+
+def test_engine_managed_stop_loss_has_priority_over_older_strategy_order() -> None:
+    rows = _ohlc_candles(
+        ("100", "105", "95", "100"),
+        ("120", "125", "100", "120"),
+        ("100", "130", "90", "95"),
+    )
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy(
+        start_intents=(_market_buy("1"),),
+        candle_intents={
+            0: (
+                OrderIntent(
+                    OrderSide.SELL,
+                    OrderType.LIMIT,
+                    Decimal("1"),
+                    limit_price=Decimal("130"),
+                ),
+                _market_buy("1"),
+            )
+        },
+    )
+
+    result = DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+        _config(
+            snapshot,
+            strategy.descriptor,
+            risk_limits=_fixed_stop_limits(),
+        ),
+        strategy,
+    )
+
+    assert result.orders[4].intent.client_tag == "engine-stop-loss"
+    assert result.orders[4].status is OrderStatus.FILLED
+    assert result.orders[2].status is OrderStatus.CANCELLED
+    assert result.fills[-1].reason is FillReason.STOP_TRIGGERED
+    assert result.final_portfolio.base_quantity == 0
+
+
+def test_engine_managed_stop_loss_is_replaced_after_position_increase() -> None:
+    rows = _ohlc_candles(
+        ("100", "105", "95", "100"),
+        ("120", "125", "100", "120"),
+        ("120", "125", "110", "120"),
+    )
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy(
+        start_intents=(_market_buy("1"),),
+        candle_intents={0: (_market_buy("1"),)},
+    )
+
+    result = DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+        _config(
+            snapshot,
+            strategy.descriptor,
+            risk_limits=_fixed_stop_limits(),
+        ),
+        strategy,
+        cancel_open_orders_at_end=False,
+    )
+
+    first_stop = result.orders[1]
+    replacement = result.orders[3]
+    assert first_stop.status is OrderStatus.CANCELLED
+    assert first_stop.intent.quantity == Decimal("1.000")
+    assert first_stop.intent.stop_price == Decimal("90.0")
+    assert replacement.status is OrderStatus.OPEN
+    assert replacement.intent.quantity == Decimal("2.000")
+    assert replacement.intent.stop_price == Decimal("99.0")
+    assert result.final_portfolio.average_entry_price == Decimal("110")
+
+
+def test_engine_managed_stop_loss_is_cancelled_when_strategy_exits() -> None:
+    rows = _ohlc_candles(
+        ("100", "105", "95", "100"),
+        ("100", "105", "95", "100"),
+    )
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy(
+        start_intents=(_market_buy("1"),),
+        candle_intents={0: (OrderIntent(OrderSide.SELL, OrderType.MARKET, Decimal("1")),)},
+    )
+
+    result = DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+        _config(
+            snapshot,
+            strategy.descriptor,
+            risk_limits=_fixed_stop_limits(),
+        ),
+        strategy,
+        cancel_open_orders_at_end=False,
+    )
+
+    assert result.orders[1].intent.client_tag == "engine-stop-loss"
+    assert result.orders[1].status is OrderStatus.CANCELLED
+    assert not any(order.status is OrderStatus.OPEN for order in result.orders)
+    assert result.final_portfolio.base_quantity == 0
+
+
+def test_drawdown_halt_preserves_engine_managed_stop_loss() -> None:
+    rows = _ohlc_candles(("100", "105", "45", "50"))
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy(start_intents=(_market_buy("5"),))
+    limits = _fixed_stop_limits(
+        "50",
+        max_drawdown_pct=Decimal("10"),
+        stop_on_max_drawdown=True,
+    )
+
+    result = DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+        _config(snapshot, strategy.descriptor, risk_limits=limits),
+        strategy,
+        cancel_open_orders_at_end=False,
+    )
+
+    assert result.risk_halt is True
+    assert result.orders[1].status is OrderStatus.OPEN
+    assert result.orders[1].intent.client_tag == "engine-stop-loss"
+
+
+def test_engine_stop_loss_tag_is_reserved_for_engine_orders() -> None:
+    rows = _candles("100")
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy(
+        start_intents=(
+            OrderIntent(
+                OrderSide.SELL,
+                OrderType.STOP_MARKET,
+                Decimal("1"),
+                stop_price=Decimal("90"),
+                client_tag="engine-stop-loss",
+            ),
+        )
+    )
+
+    with pytest.raises(StrategyFailureError, match="client_tag reservada"):
+        DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+            _config(
+                snapshot,
+                strategy.descriptor,
+                risk_limits=_fixed_stop_limits(),
+            ),
+            strategy,
+        )
+
+
+def test_engine_stop_loss_fails_closed_when_order_limit_is_exhausted() -> None:
+    rows = _candles("100")
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy(start_intents=(_market_buy("1"),))
+    config = replace(
+        _config(
+            snapshot,
+            strategy.descriptor,
+            risk_limits=_fixed_stop_limits(max_open_orders=1, max_total_orders=1),
+        ),
+        max_orders=1,
+    )
+
+    with pytest.raises(MaximumEventsExceededError, match="stop loss"):
+        DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(
+            config,
+            strategy,
+        )

@@ -15,7 +15,11 @@ import pytest
 import app.backtesting.commands as commands_module
 import app.cli as cli_module
 from app.backtesting.commands import prepare_backtest, run_backtest_command
-from app.backtesting.domain import EquityPoint, PositionSizedExecutionAssumptions
+from app.backtesting.domain import (
+    EquityPoint,
+    PositionSizedExecutionAssumptions,
+    StopLossRiskLimits,
+)
 from app.backtesting.engine import BacktestExecutionResult
 from app.backtesting.ledger import BacktestLedger
 from app.backtesting.portfolio import initialize_portfolio, mark_to_market
@@ -468,3 +472,30 @@ def test_plan_accepts_fixed_notional_position_sizing(
     )
     assert prepared.config.execution.position_sizing.kind.value == "fixed_notional"
     assert prepared.config.execution.position_sizing.value == Decimal("250")
+
+
+def test_plan_accepts_fixed_percent_stop_loss(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = _snapshot()
+    monkeypatch.setattr(
+        commands_module,
+        "MarketDatasetReader",
+        lambda _path: _SnapshotReader(snapshot),
+    )
+    args = build_parser().parse_args(
+        _arguments()
+        + [
+            "--stop-loss",
+            "fixed_percent",
+            "--stop-loss-value",
+            "5",
+        ]
+    )
+
+    prepared = prepare_backtest(args, settings=_settings(tmp_path))
+
+    assert isinstance(prepared.config.risk_limits, StopLossRiskLimits)
+    assert prepared.config.risk_limits.stop_loss.kind.value == "fixed_percent"
+    assert prepared.config.risk_limits.stop_loss.value == Decimal("5")

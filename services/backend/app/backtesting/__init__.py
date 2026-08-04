@@ -44,9 +44,13 @@ from app.backtesting.domain import (
     SimulatedOrder,
     SlippageKind,
     SlippageModel,
+    StopLossKind,
+    StopLossPolicy,
+    StopLossRiskLimits,
     StrategyDescriptor,
     TimeInForce,
     position_sizing_policy_for,
+    stop_loss_policy_for,
     strategy_lifecycle_version_for,
     validate_backtest_config,
 )
@@ -98,6 +102,10 @@ from app.backtesting.sizing import (
     DeterministicPositionSizer,
     PositionSizingDecision,
 )
+from app.backtesting.stop_loss import (
+    DeterministicStopLossManager,
+    StopLossDecision,
+)
 from app.backtesting.verifier import BacktestResultVerifier, BacktestVerification
 from app.backtesting.visualization import (
     BacktestVisualization,
@@ -139,6 +147,7 @@ __all__ = [
     "DeterministicBacktestEngine",
     "DeterministicRiskManager",
     "DeterministicPositionSizer",
+    "DeterministicStopLossManager",
     "EquityPoint",
     "ExecutionAssumptions",
     "FeeModel",
@@ -168,6 +177,10 @@ __all__ = [
     "SimulatedOrder",
     "SlippageKind",
     "SlippageModel",
+    "StopLossDecision",
+    "StopLossKind",
+    "StopLossPolicy",
+    "StopLossRiskLimits",
     "StrategyDescriptor",
     "StrategyRegistration",
     "StrategyRegistry",
@@ -188,6 +201,7 @@ __all__ = [
     "initialize_portfolio",
     "mark_to_market",
     "position_sizing_policy_for",
+    "stop_loss_policy_for",
     "strategy_lifecycle_version_for",
     "validate_backtest_config",
     "verify_ledger",

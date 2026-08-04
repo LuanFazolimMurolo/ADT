@@ -1064,5 +1064,36 @@ risk rejection. Sells retain the strategy's explicit quantity. The risk manager
 remains authoritative for minimum quantity/notional, position and order ceilings,
 drawdown halt and all other vetoes.
 
-This delivery adds no stop-loss trigger, leverage, short selling, exchange access,
-HTTP mutation, scheduler or live-capital execution.
+This delivery adds no leverage, short selling, exchange access, HTTP mutation,
+scheduler or live-capital execution.
+
+## Phase 5-06 deterministic stop-loss enforcement
+
+Phase 5-06 extends `RiskLimits` only when protection is enabled. Legacy
+configurations remain plain `RiskLimits` and retain their original canonical
+payloads and IDs. `StopLossRiskLimits` carries one non-default `fixed_percent`
+policy, which is included in backtest, paper-session and experiment identities.
+Strict decoders accept both legacy and extended documents while rejecting a
+redundant disabled extension.
+
+The engine owns one reserved `engine-stop-loss` order per open position:
+
+```text
+position-changing fill
+    → recompute weighted-average-entry fixed-percent trigger
+    → truncate trigger down to instrument price tick
+    → cancel previous managed stop
+    → open full-position GTC STOP_MARKET for the next eligible candle
+    → existing deterministic execution model handles touch or gap
+```
+
+The managed order is replaced after every fill that changes position quantity or
+average entry price and removed when the position reaches zero. Drawdown halt
+preserves the managed stop while cancelling ordinary open orders. Order and event
+ceilings remain authoritative; inability to reserve protection fails closed. The
+engine tag is unavailable to strategy intents, preventing strategies from
+impersonating engine-owned protection.
+
+The feature remains local and deterministic: no scheduling change, HTTP mutation,
+exchange account, API key, network order placement, leverage or short selling is
+introduced.

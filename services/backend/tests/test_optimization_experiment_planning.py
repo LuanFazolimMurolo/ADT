@@ -26,6 +26,9 @@ from app.backtesting.domain import (
     PositionSizingPolicy,
     RiskLimits,
     SlippageModel,
+    StopLossKind,
+    StopLossPolicy,
+    StopLossRiskLimits,
     StrategyDescriptor,
     StrategyParameters,
 )
@@ -1358,6 +1361,54 @@ def test_experiment_configuration_rejects_low_level_redundant_explicit_sizing() 
     )
     configuration = replace(configuration, execution=execution)
     object.__setattr__(execution, "position_sizing", PositionSizingPolicy())
+
+    with pytest.raises(InvalidExperimentBacktestConfigurationError, match="non-default"):
+        validate_experiment_backtest_configuration(configuration)
+
+
+def test_experiment_document_preserves_stop_loss_policy() -> None:
+    configuration = _configuration()
+    policy = StopLossPolicy(StopLossKind.FIXED_PERCENT, Decimal("5"))
+    configuration = replace(
+        configuration,
+        risk_limits=StopLossRiskLimits(
+            max_open_orders=configuration.risk_limits.max_open_orders,
+            max_total_orders=configuration.risk_limits.max_total_orders,
+            stop_loss=policy,
+        ),
+    )
+    plan, snapshot, manifest = _plan(configuration=configuration)
+
+    document = ExperimentPlanningService().to_document(plan, snapshot, manifest)
+    restored = decode_experiment_document(document)
+
+    assert isinstance(restored.backtest_configuration.risk_limits, StopLossRiskLimits)
+    assert restored.backtest_configuration.risk_limits.stop_loss == policy
+
+
+def test_experiment_document_rejects_redundant_disabled_stop_loss() -> None:
+    _plan_value, _snapshot, _manifest, document = _document()
+    payload = _payload(document)
+    configuration = payload["backtest_configuration"]
+    assert isinstance(configuration, dict)
+    risk_limits = configuration["risk_limits"]
+    assert isinstance(risk_limits, dict)
+    risk_limits["stop_loss"] = {"kind": "disabled", "value": None}
+    _rehash(document)
+
+    with pytest.raises(IncompatibleExperimentDocumentError):
+        decode_experiment_document(document)
+
+
+def test_experiment_configuration_rejects_low_level_disabled_stop_loss() -> None:
+    configuration = _configuration()
+    risk_limits = StopLossRiskLimits(
+        max_open_orders=configuration.risk_limits.max_open_orders,
+        max_total_orders=configuration.risk_limits.max_total_orders,
+        stop_loss=StopLossPolicy(StopLossKind.FIXED_PERCENT, Decimal("5")),
+    )
+    configuration = replace(configuration, risk_limits=risk_limits)
+    object.__setattr__(risk_limits, "stop_loss", StopLossPolicy())
 
     with pytest.raises(InvalidExperimentBacktestConfigurationError, match="non-default"):
         validate_experiment_backtest_configuration(configuration)

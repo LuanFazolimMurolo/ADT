@@ -16,6 +16,9 @@ from app.backtesting.domain import (
     RiskLimits,
     SlippageKind,
     SlippageModel,
+    StopLossKind,
+    StopLossPolicy,
+    StopLossRiskLimits,
     StrategyDescriptor,
 )
 from app.optimization.canonical import canonical_json_bytes, decimal_text, document_checksum
@@ -209,6 +212,16 @@ def _position_sizing(raw: object) -> PositionSizingPolicy:
     )
 
 
+def _stop_loss(raw: object) -> StopLossPolicy:
+    value = _mapping(raw, "stop loss")
+    _exact_fields(value, {"kind", "value"}, "stop loss")
+    stop_value = value["value"]
+    return StopLossPolicy(
+        kind=StopLossKind(_text(value["kind"], "stop loss kind")),
+        value=None if stop_value is None else _decimal(stop_value, "stop loss value"),
+    )
+
+
 def _decode_backtest_configuration(raw: object) -> ExperimentBacktestConfiguration:
     value = _mapping(raw, "backtest configuration")
     _exact_fields(
@@ -254,20 +267,22 @@ def _decode_backtest_configuration(raw: object) -> ExperimentBacktestConfigurati
         "constraints",
     )
     risk = _mapping(value["risk_limits"], "risk limits")
-    _exact_fields(
-        risk,
-        {
-            "max_order_notional",
-            "max_position_notional",
-            "max_open_orders",
-            "max_total_orders",
-            "max_drawdown_pct",
-            "stop_on_max_drawdown",
-            "allow_all_in",
-            "minimum_quote_reserve",
-        },
-        "risk limits",
-    )
+    legacy_risk_fields = {
+        "max_order_notional",
+        "max_position_notional",
+        "max_open_orders",
+        "max_total_orders",
+        "max_drawdown_pct",
+        "stop_on_max_drawdown",
+        "allow_all_in",
+        "minimum_quote_reserve",
+    }
+    risk_fields = frozenset(risk)
+    if risk_fields not in {
+        frozenset(legacy_risk_fields),
+        frozenset(legacy_risk_fields | {"stop_loss"}),
+    }:
+        raise IncompatibleExperimentDocumentError("risk limits have unexpected fields")
     limits = _mapping(value["limits"], "backtest limits")
     _exact_fields(
         limits,
@@ -308,6 +323,54 @@ def _decode_backtest_configuration(raw: object) -> ExperimentBacktestConfigurati
         raise IncompatibleExperimentDocumentError(
             "execution model enum or value is invalid"
         ) from error
+    try:
+        risk_limits: RiskLimits
+        if "stop_loss" in risk:
+            risk_limits = StopLossRiskLimits(
+                max_order_notional=_optional_decimal(
+                    risk["max_order_notional"], "maximum order notional"
+                ),
+                max_position_notional=_optional_decimal(
+                    risk["max_position_notional"], "maximum position notional"
+                ),
+                max_open_orders=_integer(risk["max_open_orders"], "maximum open orders"),
+                max_total_orders=_integer(risk["max_total_orders"], "maximum total orders"),
+                max_drawdown_pct=_optional_decimal(
+                    risk["max_drawdown_pct"], "maximum drawdown percentage"
+                ),
+                stop_on_max_drawdown=_boolean(
+                    risk["stop_on_max_drawdown"], "stop-on-drawdown policy"
+                ),
+                allow_all_in=_boolean(risk["allow_all_in"], "all-in policy"),
+                minimum_quote_reserve=_decimal(
+                    risk["minimum_quote_reserve"], "minimum quote reserve"
+                ),
+                stop_loss=_stop_loss(risk["stop_loss"]),
+            )
+        else:
+            risk_limits = RiskLimits(
+                max_order_notional=_optional_decimal(
+                    risk["max_order_notional"], "maximum order notional"
+                ),
+                max_position_notional=_optional_decimal(
+                    risk["max_position_notional"], "maximum position notional"
+                ),
+                max_open_orders=_integer(risk["max_open_orders"], "maximum open orders"),
+                max_total_orders=_integer(risk["max_total_orders"], "maximum total orders"),
+                max_drawdown_pct=_optional_decimal(
+                    risk["max_drawdown_pct"], "maximum drawdown percentage"
+                ),
+                stop_on_max_drawdown=_boolean(
+                    risk["stop_on_max_drawdown"], "stop-on-drawdown policy"
+                ),
+                allow_all_in=_boolean(risk["allow_all_in"], "all-in policy"),
+                minimum_quote_reserve=_decimal(
+                    risk["minimum_quote_reserve"], "minimum quote reserve"
+                ),
+            )
+    except ValueError as error:
+        raise IncompatibleExperimentDocumentError("risk limits enum or value is invalid") from error
+
     configuration = ExperimentBacktestConfiguration(
         initial_capital=_decimal(value["initial_capital"], "initial capital"),
         execution=execution_contract,
@@ -318,22 +381,7 @@ def _decode_backtest_configuration(raw: object) -> ExperimentBacktestConfigurati
             minimum_notional=_decimal(constraints["minimum_notional"], "minimum notional"),
             maximum_notional=_optional_decimal(constraints["maximum_notional"], "maximum notional"),
         ),
-        risk_limits=RiskLimits(
-            max_order_notional=_optional_decimal(
-                risk["max_order_notional"], "maximum order notional"
-            ),
-            max_position_notional=_optional_decimal(
-                risk["max_position_notional"], "maximum position notional"
-            ),
-            max_open_orders=_integer(risk["max_open_orders"], "maximum open orders"),
-            max_total_orders=_integer(risk["max_total_orders"], "maximum total orders"),
-            max_drawdown_pct=_optional_decimal(
-                risk["max_drawdown_pct"], "maximum drawdown percentage"
-            ),
-            stop_on_max_drawdown=_boolean(risk["stop_on_max_drawdown"], "stop-on-drawdown policy"),
-            allow_all_in=_boolean(risk["allow_all_in"], "all-in policy"),
-            minimum_quote_reserve=_decimal(risk["minimum_quote_reserve"], "minimum quote reserve"),
-        ),
+        risk_limits=risk_limits,
         history_window=_integer(limits["history_window"], "history window"),
         max_candles=_integer(limits["max_candles"], "maximum candles"),
         max_orders=_integer(limits["max_orders"], "maximum orders"),

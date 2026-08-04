@@ -584,9 +584,28 @@ keeping the risk manager authoritative for final normalization and veto.
 dynamic risk allocation, exchange-account access, HTTP mutation, scheduling and
 live trading.
 
+### Phase 5-06: deterministic stop-loss enforcement ✅
+
+**Scope**: Maintain one engine-owned full-position protective stop in deterministic
+backtesting and paper replay while preserving disabled-policy identities and
+reusing the existing `STOP_MARKET` execution model.
+
+**Delivered**:
+- [x] Immutable disabled and fixed-percent stop-loss policies
+- [x] Weighted-average-entry trigger with Decimal-only price-tick truncation
+- [x] Automatic create, replace and cancel lifecycle after position-changing fills
+- [x] Deterministic touch and gap execution through the existing fill model
+- [x] Drawdown-halt preservation, reserved engine tag and fail-closed order limits
+- [x] Legacy-compatible backtest, paper and experiment identities and documents
+- [x] Backtest and paper CLI flags plus deterministic remote-free regression tests
+
+**Explicitly deferred after 5-06**: trailing stops, ATR/volatility stops, take-profit,
+OCO groups, leverage, shorts, exchange-account access, HTTP mutation and live
+trading.
+
 **Deliverables**:
 - [x] Position sizing engine
-- [ ] Stop-loss enforcement
+- [x] Stop-loss enforcement
 - [ ] Asset-level performance tracking
 - [ ] Market regime detection (trend/range/volatile)
 - [x] Paper trading engine (bounded local deterministic replay)

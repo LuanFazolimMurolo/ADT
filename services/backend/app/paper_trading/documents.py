@@ -27,6 +27,9 @@ from app.backtesting.domain import (
     SimulatedOrder,
     SlippageKind,
     SlippageModel,
+    StopLossKind,
+    StopLossPolicy,
+    StopLossRiskLimits,
     StrategyDescriptor,
     StrategyParameterValue,
     TimeInForce,
@@ -82,7 +85,7 @@ _CONSTRAINT_KEYS = frozenset(
         "maximum_notional",
     }
 )
-_RISK_KEYS = frozenset(
+_LEGACY_RISK_KEYS = frozenset(
     {
         "max_order_notional",
         "max_position_notional",
@@ -94,6 +97,8 @@ _RISK_KEYS = frozenset(
         "minimum_quote_reserve",
     }
 )
+_RISK_KEYS = _LEGACY_RISK_KEYS | {"stop_loss"}
+_STOP_LOSS_KEYS = frozenset({"kind", "value"})
 _RANGE_KEYS = frozenset({"start", "end"})
 _INTENT_KEYS = frozenset(
     {
@@ -448,16 +453,48 @@ def _constraints(payload: dict[str, object]) -> InstrumentConstraints:
 
 
 def _risk(payload: dict[str, object]) -> RiskLimits:
-    _require_keys(payload, _RISK_KEYS)
-    return RiskLimits(
-        max_order_notional=_optional_decimal(payload["max_order_notional"]),
-        max_position_notional=_optional_decimal(payload["max_position_notional"]),
-        max_open_orders=_int(payload["max_open_orders"]),
-        max_total_orders=_int(payload["max_total_orders"]),
-        max_drawdown_pct=_optional_decimal(payload["max_drawdown_pct"]),
-        stop_on_max_drawdown=_bool(payload["stop_on_max_drawdown"]),
-        allow_all_in=_bool(payload["allow_all_in"]),
-        minimum_quote_reserve=_decimal(payload["minimum_quote_reserve"]),
+    keys = frozenset(payload)
+    if keys not in {_LEGACY_RISK_KEYS, _RISK_KEYS}:
+        raise InvalidPaperSessionError()
+    max_order_notional = _optional_decimal(payload["max_order_notional"])
+    max_position_notional = _optional_decimal(payload["max_position_notional"])
+    max_open_orders = _int(payload["max_open_orders"])
+    max_total_orders = _int(payload["max_total_orders"])
+    max_drawdown_pct = _optional_decimal(payload["max_drawdown_pct"])
+    stop_on_max_drawdown = _bool(payload["stop_on_max_drawdown"])
+    allow_all_in = _bool(payload["allow_all_in"])
+    minimum_quote_reserve = _decimal(payload["minimum_quote_reserve"])
+    if "stop_loss" not in payload:
+        return RiskLimits(
+            max_order_notional=max_order_notional,
+            max_position_notional=max_position_notional,
+            max_open_orders=max_open_orders,
+            max_total_orders=max_total_orders,
+            max_drawdown_pct=max_drawdown_pct,
+            stop_on_max_drawdown=stop_on_max_drawdown,
+            allow_all_in=allow_all_in,
+            minimum_quote_reserve=minimum_quote_reserve,
+        )
+    return StopLossRiskLimits(
+        max_order_notional=max_order_notional,
+        max_position_notional=max_position_notional,
+        max_open_orders=max_open_orders,
+        max_total_orders=max_total_orders,
+        max_drawdown_pct=max_drawdown_pct,
+        stop_on_max_drawdown=stop_on_max_drawdown,
+        allow_all_in=allow_all_in,
+        minimum_quote_reserve=minimum_quote_reserve,
+        stop_loss=_stop_loss(payload["stop_loss"]),
+    )
+
+
+def _stop_loss(value: object) -> StopLossPolicy:
+    payload = _object(value)
+    _require_keys(payload, _STOP_LOSS_KEYS)
+    raw_value = payload["value"]
+    return StopLossPolicy(
+        kind=StopLossKind(_string(payload["kind"])),
+        value=None if raw_value is None else _decimal(raw_value),
     )
 
 

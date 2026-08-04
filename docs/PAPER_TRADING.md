@@ -131,8 +131,26 @@ persisted in canonical session and experiment documents and changes their
 deterministic identity. Existing documents without the extension decode as
 `explicit_quantity`.
 
-Position sizing does not add stop-loss enforcement, exchange access or live
-orders.
+Position sizing does not add exchange access or live orders.
+
+## Stop-loss enforcement (Phase 5-06)
+
+Paper-session creation accepts the same compatibility-preserving policy as a
+backtest:
+
+```text
+--stop-loss disabled
+--stop-loss fixed_percent --stop-loss-value 5
+```
+
+`disabled` is omitted from the canonical risk payload, so existing session IDs
+and documents remain unchanged. An enabled fixed-percent policy is persisted in
+the session identity and round-trips through local paper documents and experiment
+manifests. The replay engine maintains one full-position `STOP_MARKET` order after
+position-changing fills, replaces it when weighted average entry price or quantity
+changes, and removes it when the position becomes flat. Gap, touch, slippage, fee,
+order-limit and drawdown-halt behavior is identical to deterministic backtesting.
+No exchange account, API key or live order is involved.
 
 ## Safety limits
 
