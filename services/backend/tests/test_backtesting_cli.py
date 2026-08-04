@@ -499,3 +499,187 @@ def test_plan_accepts_fixed_percent_stop_loss(
     assert isinstance(prepared.config.risk_limits, StopLossRiskLimits)
     assert prepared.config.risk_limits.stop_loss.kind.value == "fixed_percent"
     assert prepared.config.risk_limits.stop_loss.value == Decimal("5")
+
+
+def test_asset_performance_generate_verifies_runs_in_canonical_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inspected: list[str] = []
+    captured: dict[str, object] = {}
+
+    class _Reader:
+        def __init__(self, data_dir: Path, **kwargs: object) -> None:
+            del data_dir, kwargs
+
+        def inspect(self, run_id: str) -> dict[str, object]:
+            inspected.append(run_id)
+            return {"run_id": run_id}
+
+    def build(summaries: object) -> dict[str, object]:
+        captured["summaries"] = summaries
+        return {"contract_version": 1, "report_id": "c" * 64}
+
+    monkeypatch.setattr(commands_module, "BacktestRunReader", _Reader)
+    monkeypatch.setattr(
+        commands_module,
+        "build_asset_performance_report_from_summaries",
+        build,
+    )
+    output = StringIO()
+
+    code = run_backtest_command(
+        build_parser().parse_args(
+            [
+                "backtest",
+                "asset-performance-generate",
+                "--run-id",
+                "b" * 64,
+                "--run-id",
+                "a" * 64,
+            ]
+        ),
+        settings=_settings(tmp_path),
+        stdout=output,
+    )
+
+    assert code == EXIT_OK
+    assert inspected == ["a" * 64, "b" * 64]
+    assert json.loads(output.getvalue())["report_id"] == "c" * 64
+    assert captured["summaries"] == (
+        {"run_id": "a" * 64},
+        {"run_id": "b" * 64},
+    )
+
+
+def test_asset_performance_export_requires_explicit_confirmation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Reader:
+        def __init__(self, data_dir: Path, **kwargs: object) -> None:
+            del data_dir, kwargs
+
+        def inspect(self, run_id: str) -> dict[str, object]:
+            return {"run_id": run_id}
+
+    monkeypatch.setattr(commands_module, "BacktestRunReader", _Reader)
+    monkeypatch.setattr(
+        commands_module,
+        "build_asset_performance_report_from_summaries",
+        lambda _summaries: {"report_id": "c" * 64},
+    )
+    errors = StringIO()
+
+    code = main(
+        [
+            "backtest",
+            "asset-performance-export",
+            "--run-id",
+            "a" * 64,
+        ],
+        app_settings=_settings(tmp_path),
+        stdout=StringIO(),
+        stderr=errors,
+    )
+
+    assert code == EXIT_DOMAIN_FAILURE
+    assert "--yes" in errors.getvalue()
+
+
+def test_asset_performance_export_publishes_verified_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    report = {"report_id": "c" * 64}
+
+    class _Reader:
+        def __init__(self, data_dir: Path, **kwargs: object) -> None:
+            del data_dir, kwargs
+
+        def inspect(self, run_id: str) -> dict[str, object]:
+            return {"run_id": run_id}
+
+    class _Store:
+        def __init__(self, data_dir: Path, **kwargs: object) -> None:
+            captured["data_dir"] = data_dir
+            captured["kwargs"] = kwargs
+
+        def publish(self, value: object) -> dict[str, object]:
+            captured["report"] = value
+            return {
+                "report_id": "c" * 64,
+                "relative_path": f"asset-performance-reports/{'c' * 64}",
+                "reused": False,
+                "run_count": 1,
+                "asset_count": 1,
+            }
+
+    monkeypatch.setattr(commands_module, "BacktestRunReader", _Reader)
+    monkeypatch.setattr(commands_module, "AssetPerformanceReportStore", _Store)
+    monkeypatch.setattr(
+        commands_module,
+        "build_asset_performance_report_from_summaries",
+        lambda _summaries: report,
+    )
+    output = StringIO()
+
+    code = run_backtest_command(
+        build_parser().parse_args(
+            [
+                "backtest",
+                "asset-performance-export",
+                "--run-id",
+                "a" * 64,
+                "--yes",
+            ]
+        ),
+        settings=_settings(tmp_path),
+        stdout=output,
+    )
+
+    assert code == EXIT_OK
+    assert json.loads(output.getvalue())["asset_count"] == 1
+    assert captured["report"] is report
+
+
+@pytest.mark.parametrize(
+    ("command", "expected_key"),
+    (
+        ("asset-performance-inspect", "contract_version"),
+        ("asset-performance-verify", "verified"),
+    ),
+)
+def test_asset_performance_read_commands_are_local(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    expected_key: str,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _Verifier:
+        def __init__(self, data_dir: Path) -> None:
+            captured["data_dir"] = data_dir
+
+        def inspect(self, report_id: str) -> dict[str, object]:
+            captured["report_id"] = report_id
+            return {"contract_version": 1}
+
+        def verify(self, report_id: str) -> dict[str, object]:
+            captured["report_id"] = report_id
+            return {"verified": True}
+
+    monkeypatch.setattr(commands_module, "AssetPerformanceReportVerifier", _Verifier)
+    output = StringIO()
+
+    code = run_backtest_command(
+        build_parser().parse_args(["backtest", command, "--report-id", "d" * 64]),
+        settings=_settings(tmp_path),
+        stdout=output,
+    )
+
+    assert code == EXIT_OK
+    assert expected_key in json.loads(output.getvalue())
+    assert captured["report_id"] == "d" * 64

@@ -4,15 +4,16 @@
 
 ## Status
 
-🟡 **Phase 5 paper-trading runtime in progress — 5-01 through 5-05 implemented locally**
+🟡 **Phase 5 paper-trading runtime in progress — 5-01 through 5-07 implemented locally**
 
 ⏳ **Formal Phase 1 closure pending operational homologation**
 
 The backend exposes a read-only Binance Spot asset catalog, can maintain an
 explicit bounded set of RAW Parquet candle datasets from a separate collector
 process, can replay deterministic local paper sessions over those closed
-candles and can size simulated Spot entries deterministically before final risk
-validation. It still performs no permanent strategy scheduling, exchange-account
+candles, can size simulated Spot entries and enforce fixed-percent protective
+stops deterministically, and can aggregate verified backtest results by canonical
+asset. It still performs no permanent strategy scheduling, exchange-account
 operation or real-capital trading. No migration or administrator bootstrap has
 been run against a remote Supabase project as part of this work.
 
@@ -221,3 +222,15 @@ Backtests and paper sessions may enable an engine-managed full-position stop wit
 remains `disabled`. Enabled protection is persisted in canonical run, session and
 experiment identities, maintained after position-changing fills, and executed by
 the existing deterministic `STOP_MARKET` model without exchange access.
+
+### Asset-level performance tracking (Phase 5-07)
+
+Between 1 and 100 verified completed backtests can be grouped deterministically by
+canonical exchange, market type and symbol. The local `backtest
+asset-performance-generate` command produces a content-addressed report without
+network access. `asset-performance-export --yes` publishes it atomically under
+`market/asset-performance-reports/<report_id>/`; the matching `inspect` and
+`verify` commands validate the exact report, manifest and source-run bindings.
+Capital, profit, run counts, closed trades and drawdown are consolidated, while
+non-additive ratios such as Sharpe, Sortino and profit factor are deliberately not
+averaged.

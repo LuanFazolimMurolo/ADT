@@ -15,6 +15,14 @@ from app.backtesting.artifacts import (
     build_backtest_result,
     build_run_id,
 )
+from app.backtesting.asset_performance import (
+    build_asset_performance_report_from_summaries,
+    normalize_asset_performance_run_ids,
+)
+from app.backtesting.asset_performance_artifacts import (
+    AssetPerformanceReportStore,
+    AssetPerformanceReportVerifier,
+)
 from app.backtesting.comparison_batch import load_comparison_batch_request
 from app.backtesting.domain import (
     BacktestConfig,
@@ -134,6 +142,16 @@ def configure_backtest_parser(parser: argparse.ArgumentParser) -> None:
         if name == "compare-export":
             compare.add_argument("--yes", action="store_true")
 
+    for name in ("asset-performance-generate", "asset-performance-export"):
+        asset_performance = commands.add_parser(name)
+        asset_performance.add_argument("--run-id", action="append", required=True)
+        if name == "asset-performance-export":
+            asset_performance.add_argument("--yes", action="store_true")
+
+    for name in ("asset-performance-inspect", "asset-performance-verify"):
+        asset_performance = commands.add_parser(name)
+        asset_performance.add_argument("--report-id", required=True)
+
     visualize = commands.add_parser("visualize")
     visualize.add_argument("--run-id", required=True)
     visualize.add_argument("--max-points", type=_bounded_visualization_points, default=500)
@@ -153,6 +171,14 @@ def run_backtest_command(
 ) -> int:
     """Execute one local command without constructing an HTTP client."""
     command = args.backtest_command
+    if command in {"asset-performance-inspect", "asset-performance-verify"}:
+        verifier = AssetPerformanceReportVerifier(settings.data_dir)
+        if command == "asset-performance-inspect":
+            _emit(verifier.inspect(args.report_id), stdout)
+        else:
+            _emit(verifier.verify(args.report_id), stdout)
+        return EXIT_OK
+
     if command == "compare-verify":
         verification = ComparisonReportExportVerifier(settings.data_dir).verify(args.report_id)
         _emit(verification, stdout)
@@ -167,6 +193,8 @@ def run_backtest_command(
         "compare-export",
         "compare-batch",
         "visualize",
+        "asset-performance-generate",
+        "asset-performance-export",
     }:
         reader = BacktestRunReader(
             settings.data_dir,
@@ -191,6 +219,27 @@ def run_backtest_command(
             except ValueError as error:
                 raise InvalidDomainInputError(str(error)) from error
             _emit(batch, stdout)
+        elif command in {"asset-performance-generate", "asset-performance-export"}:
+            try:
+                run_ids = normalize_asset_performance_run_ids(args.run_id)
+                report = build_asset_performance_report_from_summaries(
+                    tuple(reader.inspect(run_id) for run_id in run_ids)
+                )
+            except ValueError as error:
+                raise InvalidDomainInputError(str(error)) from error
+            if command == "asset-performance-generate":
+                _emit(report, stdout)
+                return EXIT_OK
+            if not args.yes:
+                raise InvalidDomainInputError(
+                    "A exportação por ativo exige confirmação explícita --yes."
+                )
+            asset_export = AssetPerformanceReportStore(
+                settings.data_dir,
+                lock_timeout_seconds=settings.market_job_lock_timeout,
+                lock_stale_after_seconds=settings.market_job_stale_after,
+            ).publish(report)
+            _emit(asset_export, stdout)
         else:
             try:
                 comparison = reader.compare(

@@ -223,7 +223,7 @@ def build_comparison_report(
     """Build one stable report from summaries returned only after verification."""
     if not _MIN_COMPARISON_RUNS <= len(summaries) <= _MAX_COMPARISON_RUNS:
         raise ValueError("comparison requires between 2 and 100 summaries")
-    entries = tuple(_entry_from_summary(summary) for summary in summaries)
+    entries = tuple(comparison_entry_from_summary(summary) for summary in summaries)
     run_ids = [entry.run_id for entry in entries]
     if len(set(run_ids)) != len(run_ids):
         raise ValueError("comparison summaries must reference unique runs")
@@ -271,6 +271,13 @@ def _required_metric(entry: BacktestComparisonEntry, metric: ComparisonMetric) -
     if value is None:  # pragma: no cover - filtered by caller
         raise TypeError("comparison metric is undefined")
     return value
+
+
+def comparison_entry_from_summary(
+    summary: Mapping[str, object],
+) -> BacktestComparisonEntry:
+    """Project one verified summary to the stable comparison-entry contract."""
+    return _entry_from_summary(summary)
 
 
 def _entry_from_summary(summary: Mapping[str, object]) -> BacktestComparisonEntry:

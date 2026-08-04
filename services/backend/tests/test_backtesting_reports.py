@@ -12,6 +12,7 @@ from app.backtesting.query import BacktestRunReader
 from app.backtesting.reports import (
     ComparisonMetric,
     build_comparison_report,
+    comparison_entry_from_summary,
     comparison_report_from_mapping,
     normalize_comparison_run_ids,
 )
@@ -181,3 +182,21 @@ def test_serialized_report_rejects_unknown_fields() -> None:
 
     with pytest.raises(BacktestResultCorruptError):
         comparison_report_from_mapping(value)
+
+
+def test_verified_summary_projection_is_public_and_canonical() -> None:
+    summary = _summary("a", total_return="10", sharpe_ratio="2")
+
+    entry = comparison_entry_from_summary(summary)
+
+    assert entry.run_id == "a" * 64
+    assert entry.dataset_key == "derived:binance:spot:BTC/USDT:1h"
+    assert entry.total_return == Decimal("10")
+
+
+def test_verified_summary_projection_rejects_noncomplete_status() -> None:
+    summary = _summary("a", total_return="10", sharpe_ratio="2")
+    summary["status"] = "RUNNING"
+
+    with pytest.raises(BacktestResultCorruptError):
+        comparison_entry_from_summary(summary)

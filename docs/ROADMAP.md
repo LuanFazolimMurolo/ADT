@@ -603,10 +603,31 @@ reusing the existing `STOP_MARKET` execution model.
 OCO groups, leverage, shorts, exchange-account access, HTTP mutation and live
 trading.
 
+### Phase 5-07: asset-level performance tracking ✅
+
+**Scope**: Aggregate only independently verified completed backtest summaries by
+canonical exchange, market type and symbol, without mutating historical run
+artifacts or inventing additive interpretations for per-run ratios.
+
+**Delivered**:
+- [x] Canonical asset identity derived from validated dataset keys
+- [x] Immutable per-run performance projections with source-result checksums
+- [x] Deterministic grouping of 1 to 100 unique verified runs by asset
+- [x] Capital-weighted return, capital, profit, run-count, trade and drawdown totals
+- [x] Stable best/worst run identities and content-addressed report IDs
+- [x] Atomic idempotent report publication with exact manifest/source bindings
+- [x] Local generate, export, inspect and verify CLI commands
+- [x] Remote-free typed tests covering canonical round trips and tamper rejection
+
+**Explicitly deferred after 5-07**: calendar-period performance series, market
+regime attribution, cross-asset portfolio accounting, strategy promotion,
+PostgreSQL/API persistence, dashboards, scheduling, notifications and live
+trading.
+
 **Deliverables**:
 - [x] Position sizing engine
 - [x] Stop-loss enforcement
-- [ ] Asset-level performance tracking
+- [x] Asset-level performance tracking
 - [ ] Market regime detection (trend/range/volatile)
 - [x] Paper trading engine (bounded local deterministic replay)
 - [ ] Live performance dashboard

@@ -159,6 +159,52 @@ Schema version 2 includes the advanced Phase 3B fields. This allows the current
 verifier to validate previously published Phase 3A artifacts without rewriting
 or mutating them.
 
+## Asset-level performance tracking (Phase 5-07)
+
+Phase 5-07 introduces a bounded, versioned aggregation contract over summaries
+that have already passed complete backtest verification. Each dataset key is
+projected to a canonical `(exchange, market_type, symbol)` identity while
+retaining dataset kind, timeframe, strategy identity and source run checksum.
+
+The report accepts between 1 and 100 unique runs and groups them deterministically
+by asset. It consolidates initial capital, final equity, net profit,
+capital-weighted return, profitable/losing/flat run counts, closed trades, the
+maximum observed drawdown and stable best/worst run identities. Input order does
+not affect the content-addressed `report_id`. Ratios such as Sharpe, Sortino and
+profit factor are deliberately not averaged or summed because independently
+computed run ratios are not directly additive.
+
+The summary bridge reuses the existing verified comparison projection, so an
+incomplete, malformed or non-`COMPLETE` summary is rejected as corrupt before it
+can enter an asset report. Generation remains read-only and network-free:
+
+```bash
+python -m app.cli backtest asset-performance-generate \
+  --run-id <RUN_A> \
+  --run-id <RUN_B>
+```
+
+A report can be published only with explicit confirmation:
+
+```bash
+python -m app.cli backtest asset-performance-export \
+  --run-id <RUN_A> \
+  --run-id <RUN_B> \
+  --yes
+```
+
+Exports are written atomically under
+`ADT_DATA_DIR/market/asset-performance-reports/<report_id>/` and contain exactly
+`manifest.json` and `report.json`. The report remains content-addressed, repeated
+publication is idempotent, and the manifest binds every source run ID and logical
+result checksum. Historical run artifacts and canonical run IDs are never changed.
+Inspect or independently verify one published report with:
+
+```bash
+python -m app.cli backtest asset-performance-inspect --report-id <REPORT_ID>
+python -m app.cli backtest asset-performance-verify --report-id <REPORT_ID>
+```
+
 The second Phase 3B delivery adds a versioned comparison report contract. It:
 
 - accepts between 2 and 100 unique run IDs;

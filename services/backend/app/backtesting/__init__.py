@@ -5,6 +5,25 @@ from app.backtesting.artifacts import (
     build_backtest_result,
     build_run_id,
 )
+from app.backtesting.asset_performance import (
+    AssetIdentity,
+    AssetPerformanceGroup,
+    AssetPerformanceReport,
+    AssetPerformanceRun,
+    asset_performance_report_from_mapping,
+    asset_performance_run,
+    build_asset_performance_report,
+    build_asset_performance_report_from_summaries,
+    normalize_asset_performance_run_ids,
+)
+from app.backtesting.asset_performance_artifacts import (
+    AssetPerformanceExportManifest,
+    AssetPerformanceExportResult,
+    AssetPerformanceReportStore,
+    AssetPerformanceReportVerifier,
+    AssetPerformanceSourceRun,
+    AssetPerformanceVerification,
+)
 from app.backtesting.comparison_batch import (
     BacktestComparisonBatch,
     ComparisonBatchGroup,
@@ -91,6 +110,7 @@ from app.backtesting.reports import (
     BacktestComparisonReport,
     ComparisonMetric,
     build_comparison_report,
+    comparison_entry_from_summary,
     comparison_report_from_mapping,
 )
 from app.backtesting.risk import (
@@ -115,6 +135,16 @@ from app.backtesting.visualization import (
 
 __all__ = [
     "ArtifactChecksum",
+    "AssetIdentity",
+    "AssetPerformanceGroup",
+    "AssetPerformanceReport",
+    "AssetPerformanceRun",
+    "AssetPerformanceExportManifest",
+    "AssetPerformanceExportResult",
+    "AssetPerformanceReportStore",
+    "AssetPerformanceReportVerifier",
+    "AssetPerformanceSourceRun",
+    "AssetPerformanceVerification",
     "BacktestArtifactStore",
     "BacktestComparisonBatch",
     "BacktestComparisonEntry",
@@ -186,12 +216,18 @@ __all__ = [
     "StrategyRegistry",
     "TimeInForce",
     "apply_fill",
+    "asset_performance_report_from_mapping",
+    "asset_performance_run",
+    "build_asset_performance_report",
+    "build_asset_performance_report_from_summaries",
+    "normalize_asset_performance_run_ids",
     "build_backtest_result",
     "build_backtest_visualization",
     "build_comparison_batch",
     "build_comparison_report",
     "build_comparison_report_id",
     "comparison_batch_request_from_mapping",
+    "comparison_entry_from_summary",
     "comparison_report_from_mapping",
     "load_comparison_batch_request",
     "render_comparison_csv",
