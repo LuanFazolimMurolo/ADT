@@ -22,6 +22,9 @@ from app.backtesting.domain import (
     ExecutionAssumptions,
     FeeModel,
     InstrumentConstraints,
+    PositionSizedExecutionAssumptions,
+    PositionSizingKind,
+    PositionSizingPolicy,
     RiskLimits,
     SlippageModel,
 )
@@ -64,6 +67,12 @@ def configure_backtest_parser(parser: argparse.ArgumentParser) -> None:
         command.add_argument("--snapshot-id", required=True)
         command.add_argument("--strategy", choices=registry.names, required=True)
         command.add_argument("--quantity", type=_positive_decimal)
+        command.add_argument(
+            "--position-sizing",
+            choices=tuple(kind.value for kind in PositionSizingKind),
+            default=PositionSizingKind.EXPLICIT_QUANTITY.value,
+        )
+        command.add_argument("--position-sizing-value", type=_positive_decimal)
         command.add_argument("--initial-capital", type=_positive_decimal, required=True)
         command.add_argument("--start", type=_utc_datetime)
         command.add_argument("--end", type=_utc_datetime)
@@ -253,24 +262,7 @@ def prepare_backtest(
         data_range=data_range,
         strategy=strategy.descriptor,
         initial_capital=args.initial_capital,
-        execution=ExecutionAssumptions(
-            fees=FeeModel(
-                args.maker_fee_bps
-                if args.maker_fee_bps is not None
-                else settings.backtest_default_maker_fee_bps,
-                args.taker_fee_bps
-                if args.taker_fee_bps is not None
-                else settings.backtest_default_taker_fee_bps,
-            ),
-            slippage=SlippageModel(
-                fixed_bps=(
-                    args.slippage_bps
-                    if args.slippage_bps is not None
-                    else settings.backtest_default_slippage_bps
-                )
-            ),
-            force_close_at_end=args.force_close_at_end,
-        ),
+        execution=_execution_assumptions(args, settings),
         constraints=InstrumentConstraints(
             minimum_quantity=args.minimum_quantity,
             quantity_step=args.quantity_step,
@@ -349,6 +341,53 @@ def _decimal(value: str) -> Decimal:
     if not parsed.is_finite():
         raise argparse.ArgumentTypeError("decimal must be finite")
     return parsed
+
+
+def _execution_assumptions(
+    args: argparse.Namespace,
+    settings: MarketDataSettings,
+) -> ExecutionAssumptions:
+    fees = FeeModel(
+        args.maker_fee_bps
+        if args.maker_fee_bps is not None
+        else settings.backtest_default_maker_fee_bps,
+        args.taker_fee_bps
+        if args.taker_fee_bps is not None
+        else settings.backtest_default_taker_fee_bps,
+    )
+    slippage = SlippageModel(
+        fixed_bps=(
+            args.slippage_bps
+            if args.slippage_bps is not None
+            else settings.backtest_default_slippage_bps
+        )
+    )
+    policy = _position_sizing_policy(args)
+    if policy == PositionSizingPolicy():
+        return ExecutionAssumptions(
+            fees=fees,
+            slippage=slippage,
+            force_close_at_end=args.force_close_at_end,
+        )
+    return PositionSizedExecutionAssumptions(
+        fees=fees,
+        slippage=slippage,
+        force_close_at_end=args.force_close_at_end,
+        position_sizing=policy,
+    )
+
+
+def _position_sizing_policy(args: argparse.Namespace) -> PositionSizingPolicy:
+    try:
+        kind = PositionSizingKind(args.position_sizing)
+        value = args.position_sizing_value
+        if kind is PositionSizingKind.EXPLICIT_QUANTITY and value is not None:
+            raise ValueError("explicit quantity sizing does not accept a value")
+        if kind is not PositionSizingKind.EXPLICIT_QUANTITY and value is None:
+            raise ValueError("selected position sizing requires --position-sizing-value")
+        return PositionSizingPolicy(kind=kind, value=value)
+    except ValueError as error:
+        raise InvalidDomainInputError(str(error)) from error
 
 
 def _positive_decimal(value: str) -> Decimal:

@@ -4,14 +4,15 @@
 
 ## Status
 
-🟡 **Phase 5 paper-trading runtime in progress — 5-01 through 5-04 implemented locally**
+🟡 **Phase 5 paper-trading runtime in progress — 5-01 through 5-05 implemented locally**
 
 ⏳ **Formal Phase 1 closure pending operational homologation**
 
 The backend exposes a read-only Binance Spot asset catalog, can maintain an
 explicit bounded set of RAW Parquet candle datasets from a separate collector
-process and can replay deterministic local paper sessions over those closed
-candles. It still performs no permanent strategy scheduling, exchange-account
+process, can replay deterministic local paper sessions over those closed
+candles and can size simulated Spot entries deterministically before final risk
+validation. It still performs no permanent strategy scheduling, exchange-account
 operation or real-capital trading. No migration or administrator bootstrap has
 been run against a remote Supabase project as part of this work.
 
@@ -203,3 +204,12 @@ The API exposes only paginated local state at `/api/v1/paper-trading/...`; HTTP
 requests never execute strategies. See
 [`docs/PAPER_TRADING.md`](./docs/PAPER_TRADING.md) for commands, endpoints and
 safety limits.
+
+### Deterministic position sizing (Phase 5-05)
+
+Backtests and paper sessions default to the legacy `explicit_quantity` policy.
+Opening Spot buys may instead use `fixed_notional` or `equity_percent` through
+`--position-sizing` and `--position-sizing-value`. The engine projects quantity
+with `Decimal`, adverse execution assumptions, fees, quantity step and quote
+reserve before the existing risk manager performs its final veto. Sales retain
+the strategy's explicit quantity, and stop-loss enforcement remains deferred.

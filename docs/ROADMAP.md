@@ -565,8 +565,27 @@ incremental serialization of arbitrary strategy state, dashboard, PostgreSQL
 persistence, notifications, WebSocket/event streaming, automatic promotion and
 live trading.
 
+### Phase 5-05: deterministic position sizing engine ✅
+
+**Scope**: Convert strategy intents into bounded Spot quantities before the
+existing risk manager, while preserving legacy explicit-quantity identities and
+keeping the risk manager authoritative for final normalization and veto.
+
+**Delivered**:
+- [x] Immutable explicit-quantity, fixed-notional and equity-percent policies
+- [x] Decimal-only adverse price, fee, quote-reserve and quantity-step projection
+- [x] Buy sizing before risk validation with deterministic zero-quantity rejection
+- [x] Explicit sell quantities and long-only Spot semantics preserved
+- [x] Identity-bearing extended execution contract with legacy ID compatibility
+- [x] Backtest and paper CLI flags plus canonical paper/experiment round trips
+- [x] Deterministic remote-free sizing, engine, CLI and document tests
+
+**Explicitly deferred after 5-05**: stop-loss enforcement, leverage, shorts,
+dynamic risk allocation, exchange-account access, HTTP mutation, scheduling and
+live trading.
+
 **Deliverables**:
-- [ ] Position sizing engine
+- [x] Position sizing engine
 - [ ] Stop-loss enforcement
 - [ ] Asset-level performance tracking
 - [ ] Market regime detection (trend/range/volatile)

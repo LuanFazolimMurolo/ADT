@@ -15,7 +15,7 @@ import pytest
 import app.backtesting.commands as commands_module
 import app.cli as cli_module
 from app.backtesting.commands import prepare_backtest, run_backtest_command
-from app.backtesting.domain import EquityPoint
+from app.backtesting.domain import EquityPoint, PositionSizedExecutionAssumptions
 from app.backtesting.engine import BacktestExecutionResult
 from app.backtesting.ledger import BacktestLedger
 from app.backtesting.portfolio import initialize_portfolio, mark_to_market
@@ -438,3 +438,33 @@ def test_compare_verify_emits_local_verification(
     assert code == EXIT_OK
     assert json.loads(output.getvalue())["run_count"] == 2
     assert captured["report_id"] == "d" * 64
+
+
+def test_plan_accepts_fixed_notional_position_sizing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = _snapshot()
+    monkeypatch.setattr(
+        commands_module,
+        "MarketDatasetReader",
+        lambda _path: _SnapshotReader(snapshot),
+    )
+    args = build_parser().parse_args(
+        _arguments()
+        + [
+            "--position-sizing",
+            "fixed_notional",
+            "--position-sizing-value",
+            "250",
+        ]
+    )
+
+    prepared = prepare_backtest(args, settings=_settings(tmp_path))
+
+    assert isinstance(
+        prepared.config.execution,
+        PositionSizedExecutionAssumptions,
+    )
+    assert prepared.config.execution.position_sizing.kind.value == "fixed_notional"
+    assert prepared.config.execution.position_sizing.value == Decimal("250")

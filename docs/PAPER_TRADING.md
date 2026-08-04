@@ -13,7 +13,7 @@ A paper session is one immutable identity containing:
 - evaluation start and optional lifecycle-2 warmup;
 - versioned strategy descriptor and normalized parameters;
 - initial simulated capital;
-- fee, slippage, instrument and risk assumptions;
+- fee, slippage, position-sizing, instrument and risk assumptions;
 - bounded replay, order and event limits;
 - engine and document schema versions.
 
@@ -110,6 +110,29 @@ example:
 ```text
 --parameters-json '{"fast_period":10,"slow_period":30,"quantity":"0.01"}'
 ```
+
+## Position sizing (Phase 5-05)
+
+Paper-session creation accepts the same deterministic sizing policies as a
+backtest:
+
+```text
+--position-sizing explicit_quantity
+--position-sizing fixed_notional --position-sizing-value 250
+--position-sizing equity_percent --position-sizing-value 10
+```
+
+`explicit_quantity` is the default and preserves legacy session identities. For
+opening buys, the other policies ignore the strategy-provided quantity and derive
+a quantity from quote notional or current simulated equity. Estimated slippage,
+fees, quantity step and quote reserve are applied before the existing risk
+manager. Sales continue to use explicit strategy quantity. The selected policy is
+persisted in canonical session and experiment documents and changes their
+deterministic identity. Existing documents without the extension decode as
+`explicit_quantity`.
+
+Position sizing does not add stop-loss enforcement, exchange access or live
+orders.
 
 ## Safety limits
 

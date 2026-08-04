@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import copy
 from dataclasses import FrozenInstanceError
 from datetime import timedelta
 from decimal import Decimal
@@ -20,12 +21,17 @@ from app.backtesting.domain import (
     OrderStatus,
     OrderType,
     PortfolioSnapshot,
+    PositionSizedExecutionAssumptions,
+    PositionSizingKind,
+    PositionSizingPolicy,
     RiskLimits,
     SimulatedOrder,
     SlippageModel,
     StrategyDescriptor,
+    validate_backtest_config,
 )
 from app.backtesting.errors import InvalidOrderIntentError
+from app.backtesting.serialization import canonical_value
 from app.market_data.domain import DataRange
 from tests.market_data_helpers import utc
 
@@ -159,3 +165,71 @@ def test_backtest_config_rejects_unimplemented_schema_version() -> None:
             engine_version="3b-1",
             schema_version=3,
         )
+
+
+def test_position_sizing_policy_is_canonical_and_changes_execution_identity() -> None:
+    explicit = ExecutionAssumptions(
+        FeeModel(Decimal("0"), Decimal("0")),
+        SlippageModel(fixed_bps=Decimal("0")),
+    )
+    sized = PositionSizedExecutionAssumptions(
+        FeeModel(Decimal("0"), Decimal("0")),
+        SlippageModel(fixed_bps=Decimal("0")),
+        position_sizing=PositionSizingPolicy(
+            PositionSizingKind.FIXED_NOTIONAL,
+            Decimal("100"),
+        ),
+    )
+
+    assert canonical_value(explicit) != canonical_value(sized)
+    with pytest.raises(ValueError):
+        PositionSizingPolicy(PositionSizingKind.EXPLICIT_QUANTITY, Decimal("1"))
+    with pytest.raises(ValueError, match="quote reserve"):
+        PositionSizingPolicy(
+            PositionSizingKind.EXPLICIT_QUANTITY,
+            minimum_quote_reserve=Decimal("1"),
+        )
+    with pytest.raises(ValueError, match="non-default"):
+        PositionSizedExecutionAssumptions(
+            FeeModel(Decimal("0"), Decimal("0")),
+            SlippageModel(fixed_bps=Decimal("0")),
+        )
+    with pytest.raises(ValueError):
+        PositionSizingPolicy(PositionSizingKind.EQUITY_PERCENT, Decimal("101"))
+
+
+def test_backtest_config_rejects_low_level_redundant_explicit_sizing() -> None:
+    execution = PositionSizedExecutionAssumptions(
+        FeeModel(Decimal("0"), Decimal("0")),
+        SlippageModel(fixed_bps=Decimal("0")),
+        position_sizing=PositionSizingPolicy(
+            PositionSizingKind.FIXED_NOTIONAL,
+            Decimal("100"),
+        ),
+    )
+    config = BacktestConfig(
+        snapshot_id="a" * 64,
+        data_range=DataRange(utc(2026, 1, 1), utc(2026, 1, 2)),
+        strategy=StrategyDescriptor("no-op", "1"),
+        initial_capital=Decimal("1000"),
+        execution=execution,
+        constraints=InstrumentConstraints(
+            minimum_quantity=Decimal("0.001"),
+            quantity_step=Decimal("0.001"),
+            price_tick=Decimal("0.01"),
+            minimum_notional=Decimal("1"),
+        ),
+        risk_limits=RiskLimits(),
+        history_window=10,
+        max_candles=100,
+        max_orders=100,
+        max_events=1000,
+        engine_version="3b-1",
+        schema_version=2,
+    )
+    tampered = copy(config.execution)
+    object.__setattr__(tampered, "position_sizing", PositionSizingPolicy())
+    object.__setattr__(config, "execution", tampered)
+
+    with pytest.raises(ValueError, match="non-default"):
+        validate_backtest_config(config)

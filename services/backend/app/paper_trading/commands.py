@@ -13,6 +13,9 @@ from app.backtesting.domain import (
     ExecutionAssumptions,
     FeeModel,
     InstrumentConstraints,
+    PositionSizedExecutionAssumptions,
+    PositionSizingKind,
+    PositionSizingPolicy,
     RiskLimits,
     SlippageModel,
 )
@@ -51,6 +54,12 @@ def configure_paper_trading_parser(parser: argparse.ArgumentParser) -> None:
     create.add_argument("--strategy", required=True)
     create.add_argument("--strategy-version", required=True)
     create.add_argument("--parameters-json", default="{}")
+    create.add_argument(
+        "--position-sizing",
+        choices=tuple(kind.value for kind in PositionSizingKind),
+        default=PositionSizingKind.EXPLICIT_QUANTITY.value,
+    )
+    create.add_argument("--position-sizing-value", type=_positive_decimal)
     create.add_argument("--initial-capital", type=_positive_decimal, required=True)
     create.add_argument("--maker-fee-bps", type=_nonnegative_decimal)
     create.add_argument("--taker-fee-bps", type=_nonnegative_decimal)
@@ -153,24 +162,7 @@ def run_paper_trading_command(
             strategy=strategy.descriptor,
             strategy_lifecycle_version=plugin.descriptor.lifecycle_version,
             initial_capital=args.initial_capital,
-            execution=ExecutionAssumptions(
-                fees=FeeModel(
-                    args.maker_fee_bps
-                    if args.maker_fee_bps is not None
-                    else settings.backtest_default_maker_fee_bps,
-                    args.taker_fee_bps
-                    if args.taker_fee_bps is not None
-                    else settings.backtest_default_taker_fee_bps,
-                ),
-                slippage=SlippageModel(
-                    fixed_bps=(
-                        args.slippage_bps
-                        if args.slippage_bps is not None
-                        else settings.backtest_default_slippage_bps
-                    )
-                ),
-                force_close_at_end=False,
-            ),
+            execution=_execution_assumptions(args, settings),
             constraints=InstrumentConstraints(
                 minimum_quantity=args.minimum_quantity,
                 quantity_step=args.quantity_step,
@@ -270,6 +262,53 @@ def _utc_datetime(value: str) -> datetime:
     if parsed.tzinfo is None or offset is None or offset.total_seconds() != 0:
         raise argparse.ArgumentTypeError("use one timezone-aware UTC timestamp")
     return parsed
+
+
+def _execution_assumptions(
+    args: argparse.Namespace,
+    settings: MarketDataSettings,
+) -> ExecutionAssumptions:
+    fees = FeeModel(
+        args.maker_fee_bps
+        if args.maker_fee_bps is not None
+        else settings.backtest_default_maker_fee_bps,
+        args.taker_fee_bps
+        if args.taker_fee_bps is not None
+        else settings.backtest_default_taker_fee_bps,
+    )
+    slippage = SlippageModel(
+        fixed_bps=(
+            args.slippage_bps
+            if args.slippage_bps is not None
+            else settings.backtest_default_slippage_bps
+        )
+    )
+    policy = _position_sizing_policy(args)
+    if policy == PositionSizingPolicy():
+        return ExecutionAssumptions(
+            fees=fees,
+            slippage=slippage,
+            force_close_at_end=False,
+        )
+    return PositionSizedExecutionAssumptions(
+        fees=fees,
+        slippage=slippage,
+        force_close_at_end=False,
+        position_sizing=policy,
+    )
+
+
+def _position_sizing_policy(args: argparse.Namespace) -> PositionSizingPolicy:
+    try:
+        kind = PositionSizingKind(args.position_sizing)
+        value = args.position_sizing_value
+        if kind is PositionSizingKind.EXPLICIT_QUANTITY and value is not None:
+            raise ValueError("explicit quantity sizing does not accept a value")
+        if kind is not PositionSizingKind.EXPLICIT_QUANTITY and value is None:
+            raise ValueError("selected position sizing requires --position-sizing-value")
+        return PositionSizingPolicy(kind=kind, value=value)
+    except ValueError as error:
+        raise InvalidDomainInputError(str(error)) from error
 
 
 def _positive_decimal(value: str) -> Decimal:

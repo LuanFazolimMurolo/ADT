@@ -19,10 +19,14 @@ from app.backtesting.domain import (
     OrderSide,
     OrderStatus,
     OrderType,
+    PositionSizedExecutionAssumptions,
+    PositionSizingKind,
+    PositionSizingPolicy,
     RiskLimits,
     SlippageModel,
     StrategyDescriptor,
     StrategyParameterValue,
+    position_sizing_policy_for,
 )
 from app.backtesting.serialization import canonical_json_bytes
 from app.backtesting.strategy import StrategyContext
@@ -696,3 +700,43 @@ def test_corrupt_or_divergent_state_summary_is_rejected(tmp_path: Path) -> None:
     summary_path.write_bytes(encode_paper_state_summary(divergent))
     with pytest.raises(PaperSessionCorruptError):
         read.list_sessions(page=1, page_size=1)
+
+
+def test_paper_config_round_trip_preserves_position_sizing() -> None:
+    config = _config()
+    updated = PaperSessionConfig(
+        **{
+            **{item.name: getattr(config, item.name) for item in fields(config)},
+            "execution": PositionSizedExecutionAssumptions(
+                fees=config.execution.fees,
+                slippage=config.execution.slippage,
+                position_sizing=PositionSizingPolicy(
+                    PositionSizingKind.EQUITY_PERCENT,
+                    Decimal("20"),
+                ),
+            ),
+        }
+    )
+
+    assert decode_paper_config(encode_paper_config(updated)) == updated
+    assert paper_session_id(updated) != paper_session_id(config)
+
+
+def test_paper_config_decoder_accepts_legacy_execution_without_sizing() -> None:
+    raw = json.loads(encode_paper_config(_config()))
+
+    assert "position_sizing" not in raw["config"]["execution"]
+    decoded = decode_paper_config(json.dumps(raw).encode())
+    assert position_sizing_policy_for(decoded.execution) == PositionSizingPolicy()
+
+
+def test_paper_config_decoder_rejects_redundant_explicit_sizing() -> None:
+    raw = json.loads(encode_paper_config(_config()))
+    raw["config"]["execution"]["position_sizing"] = {
+        "kind": "explicit_quantity",
+        "value": None,
+        "minimum_quote_reserve": "0",
+    }
+
+    with pytest.raises(InvalidPaperSessionError):
+        decode_paper_config(json.dumps(raw).encode())

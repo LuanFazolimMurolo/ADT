@@ -21,6 +21,9 @@ from app.backtesting.domain import (
     OrderSide,
     OrderStatus,
     OrderType,
+    PositionSizedExecutionAssumptions,
+    PositionSizingKind,
+    PositionSizingPolicy,
     RiskLimits,
     SlippageModel,
     StrategyDescriptor,
@@ -36,6 +39,7 @@ from app.backtesting.errors import (
     StrategyFailureError,
     UnsupportedBacktestMarketError,
 )
+from app.backtesting.risk import RiskRejectionCode
 from app.backtesting.strategy import BuyAndHoldExample, NoOpStrategy, StrategyContext
 from app.market_data.datasets import DatasetSnapshot
 from app.market_data.domain import Candle, DataRange, Exchange, MarketType, Timeframe
@@ -801,3 +805,77 @@ def test_force_close_respects_total_order_limit() -> None:
             config,
             strategy,
         )
+
+
+def test_fixed_notional_sizing_replaces_strategy_buy_quantity() -> None:
+    rows = _candles("100", "100")
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy(start_intents=(_market_buy("99"),))
+    base = _config(snapshot, strategy.descriptor)
+    config = replace(
+        base,
+        execution=PositionSizedExecutionAssumptions(
+            fees=base.execution.fees,
+            slippage=base.execution.slippage,
+            position_sizing=PositionSizingPolicy(
+                PositionSizingKind.FIXED_NOTIONAL,
+                Decimal("250"),
+            ),
+        ),
+    )
+
+    result = DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(config, strategy)
+
+    assert result.orders[0].intent.quantity == Decimal("2.500")
+    assert result.fills[0].quantity == Decimal("2.500")
+
+
+def test_policy_sizing_keeps_sell_quantity_explicit() -> None:
+    rows = _candles("100", "100")
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy(
+        start_intents=(_market_buy("99"),),
+        fill_intents=(OrderIntent(OrderSide.SELL, OrderType.MARKET, Decimal("1.234")),),
+    )
+    base = _config(snapshot, strategy.descriptor)
+    config = replace(
+        base,
+        execution=PositionSizedExecutionAssumptions(
+            fees=base.execution.fees,
+            slippage=base.execution.slippage,
+            position_sizing=PositionSizingPolicy(
+                PositionSizingKind.EQUITY_PERCENT,
+                Decimal("25"),
+            ),
+        ),
+    )
+
+    result = DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(config, strategy)
+
+    assert result.orders[0].intent.quantity == Decimal("2.500")
+    assert result.orders[1].intent.quantity == Decimal("1.234")
+
+
+def test_policy_sizing_zero_is_rejected_deterministically() -> None:
+    rows = _candles("100")
+    snapshot = _snapshot(len(rows))
+    strategy = RecordingStrategy(start_intents=(_market_buy("1"),))
+    base = _config(snapshot, strategy.descriptor)
+    config = replace(
+        base,
+        execution=PositionSizedExecutionAssumptions(
+            fees=base.execution.fees,
+            slippage=base.execution.slippage,
+            position_sizing=PositionSizingPolicy(
+                PositionSizingKind.FIXED_NOTIONAL,
+                Decimal("1"),
+                Decimal("1000"),
+            ),
+        ),
+    )
+
+    result = DeterministicBacktestEngine(FakeSnapshotReader(snapshot, rows)).run(config, strategy)
+
+    assert result.orders[0].status is OrderStatus.REJECTED
+    assert result.orders[0].rejection_code == RiskRejectionCode.INVALID_QUANTITY.value
+    assert result.fills == ()

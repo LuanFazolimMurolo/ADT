@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -24,6 +24,7 @@ from app.backtesting.domain import (
     SimulatedOrder,
     TimeInForce,
     evaluation_range_for,
+    position_sizing_policy_for,
     strategy_lifecycle_version_for,
 )
 from app.backtesting.errors import (
@@ -47,7 +48,12 @@ from app.backtesting.portfolio import (
     initialize_portfolio,
     mark_to_market,
 )
-from app.backtesting.risk import DeterministicRiskManager
+from app.backtesting.risk import (
+    DeterministicRiskManager,
+    RiskDecision,
+    RiskRejectionCode,
+)
+from app.backtesting.sizing import DeterministicPositionSizer
 from app.backtesting.strategy import BacktestStrategy, StrategyContext
 from app.market_data.datasets import DatasetSnapshot
 from app.market_data.domain import Candle, DataRange, MarketType
@@ -157,6 +163,17 @@ class DeterministicBacktestEngine:
             fees=config.execution.fees,
             slippage=config.execution.slippage,
         )
+        sizer = DeterministicPositionSizer(
+            policy=position_sizing_policy_for(config.execution),
+            constraints=config.constraints,
+            fees=config.execution.fees,
+            slippage=config.execution.slippage,
+            minimum_quote_reserve=(
+                Decimal("0")
+                if config.risk_limits.allow_all_in
+                else config.risk_limits.minimum_quote_reserve
+            ),
+        )
         portfolio = initialize_portfolio(config.initial_capital)
         ledger = BacktestLedger()
         ledger.record_initial_capital(config.initial_capital, evaluation_range.start)
@@ -227,6 +244,7 @@ class DeterministicBacktestEngine:
                     orders=orders,
                     config=config,
                     risk=risk,
+                    sizer=sizer,
                     risk_halt=risk_halt,
                 )
                 self._check_event_limit(config, orders, fills, ledger, equity)
@@ -300,6 +318,7 @@ class DeterministicBacktestEngine:
                     orders=orders,
                     config=config,
                     risk=risk,
+                    sizer=sizer,
                     risk_halt=risk_halt,
                 )
                 self._check_event_limit(config, orders, fills, ledger, equity)
@@ -336,6 +355,7 @@ class DeterministicBacktestEngine:
                 orders=orders,
                 config=config,
                 risk=risk,
+                sizer=sizer,
                 risk_halt=risk_halt,
             )
             self._check_event_limit(config, orders, fills, ledger, equity)
@@ -458,6 +478,7 @@ class DeterministicBacktestEngine:
         orders: list[SimulatedOrder],
         config: BacktestConfig,
         risk: DeterministicRiskManager,
+        sizer: DeterministicPositionSizer,
         risk_halt: bool,
     ) -> None:
         if not isinstance(intents, tuple) or any(
@@ -468,15 +489,30 @@ class DeterministicBacktestEngine:
             if len(orders) >= config.max_orders:
                 raise MaximumEventsExceededError("O backtest excedeu o limite seguro de ordens.")
             sequence = len(orders) + 1
-            decision = risk.evaluate_order(
+            sizing = sizer.size(
                 intent,
                 portfolio.snapshot(),
                 reference_price=reference_price,
-                open_order_count=sum(order.status is OrderStatus.OPEN for order in orders),
-                total_order_count=len(orders),
-                risk_halt=risk_halt,
             )
-            effective_intent = decision.normalized_intent or intent
+            if sizing.quantity > 0:
+                sized_intent = replace(intent, quantity=sizing.quantity)
+                decision = risk.evaluate_order(
+                    sized_intent,
+                    portfolio.snapshot(),
+                    reference_price=reference_price,
+                    open_order_count=sum(order.status is OrderStatus.OPEN for order in orders),
+                    total_order_count=len(orders),
+                    risk_halt=risk_halt,
+                )
+            else:
+                decision = RiskDecision(
+                    False,
+                    None,
+                    Decimal("0"),
+                    RiskRejectionCode.INVALID_QUANTITY,
+                )
+                sized_intent = intent
+            effective_intent = decision.normalized_intent or sized_intent
             order = create_order(
                 effective_intent,
                 sequence=sequence,

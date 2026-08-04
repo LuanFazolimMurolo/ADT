@@ -21,6 +21,9 @@ from app.backtesting.domain import (
     Fill,
     InstrumentConstraints,
     OrderIntent,
+    PositionSizedExecutionAssumptions,
+    PositionSizingKind,
+    PositionSizingPolicy,
     RiskLimits,
     SlippageModel,
     StrategyDescriptor,
@@ -77,6 +80,7 @@ from app.optimization import (
     calculate_run_spec_cardinality,
     canonical_experiment_document_bytes,
     decode_experiment_document,
+    validate_experiment_backtest_configuration,
     validate_experiment_plan,
     validate_planned_run_spec,
 )
@@ -1314,3 +1318,46 @@ def test_document_contains_only_json_scalars_and_never_float() -> None:
             assert value is None or isinstance(value, (str, int, bool))
 
     walk(document)
+
+
+def test_experiment_document_preserves_position_sizing_policy() -> None:
+    configuration = _configuration()
+    policy = PositionSizingPolicy(
+        PositionSizingKind.FIXED_NOTIONAL,
+        Decimal("250"),
+    )
+    configuration = replace(
+        configuration,
+        execution=PositionSizedExecutionAssumptions(
+            fees=configuration.execution.fees,
+            slippage=configuration.execution.slippage,
+            position_sizing=policy,
+        ),
+    )
+    plan, snapshot, manifest = _plan(configuration=configuration)
+
+    document = ExperimentPlanningService().to_document(plan, snapshot, manifest)
+    restored = decode_experiment_document(document)
+
+    assert isinstance(
+        restored.backtest_configuration.execution,
+        PositionSizedExecutionAssumptions,
+    )
+    assert restored.backtest_configuration.execution.position_sizing == policy
+
+
+def test_experiment_configuration_rejects_low_level_redundant_explicit_sizing() -> None:
+    configuration = _configuration()
+    execution = PositionSizedExecutionAssumptions(
+        fees=configuration.execution.fees,
+        slippage=configuration.execution.slippage,
+        position_sizing=PositionSizingPolicy(
+            PositionSizingKind.FIXED_NOTIONAL,
+            Decimal("250"),
+        ),
+    )
+    configuration = replace(configuration, execution=execution)
+    object.__setattr__(execution, "position_sizing", PositionSizingPolicy())
+
+    with pytest.raises(InvalidExperimentBacktestConfigurationError, match="non-default"):
+        validate_experiment_backtest_configuration(configuration)

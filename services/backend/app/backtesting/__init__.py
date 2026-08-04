@@ -37,12 +37,16 @@ from app.backtesting.domain import (
     OrderStatus,
     OrderType,
     PortfolioSnapshot,
+    PositionSizedExecutionAssumptions,
+    PositionSizingKind,
+    PositionSizingPolicy,
     RiskLimits,
     SimulatedOrder,
     SlippageKind,
     SlippageModel,
     StrategyDescriptor,
     TimeInForce,
+    position_sizing_policy_for,
     strategy_lifecycle_version_for,
     validate_backtest_config,
 )
@@ -90,6 +94,10 @@ from app.backtesting.risk import (
     RiskDecision,
     RiskRejectionCode,
 )
+from app.backtesting.sizing import (
+    DeterministicPositionSizer,
+    PositionSizingDecision,
+)
 from app.backtesting.verifier import BacktestResultVerifier, BacktestVerification
 from app.backtesting.visualization import (
     BacktestVisualization,
@@ -130,6 +138,7 @@ __all__ = [
     "ComparisonReportExportVerifier",
     "DeterministicBacktestEngine",
     "DeterministicRiskManager",
+    "DeterministicPositionSizer",
     "EquityPoint",
     "ExecutionAssumptions",
     "FeeModel",
@@ -147,6 +156,10 @@ __all__ = [
     "OrderType",
     "PortfolioMutation",
     "PortfolioSnapshot",
+    "PositionSizedExecutionAssumptions",
+    "PositionSizingDecision",
+    "PositionSizingKind",
+    "PositionSizingPolicy",
     "PortfolioState",
     "RiskDecision",
     "RiskLimits",
@@ -174,6 +187,7 @@ __all__ = [
     "derive_closed_trades",
     "initialize_portfolio",
     "mark_to_market",
+    "position_sizing_policy_for",
     "strategy_lifecycle_version_for",
     "validate_backtest_config",
     "verify_ledger",

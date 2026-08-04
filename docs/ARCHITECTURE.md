@@ -961,6 +961,7 @@ engine:
        → registered strategy factory and lifecycle
        → execution model
        → portfolio and ledger
+       → deterministic position sizer
        → risk manager
     → canonical latest paper state
     → locked atomic publication
@@ -1030,3 +1031,38 @@ served by separate paginated endpoints. The API owns only read services and the
 runner state store, so a slow replay cannot be triggered through an HTTP
 request. There is no database migration, API key, account access or exchange
 order.
+
+## Phase 5-05 deterministic position sizing
+
+Phase 5-05 inserts one pure sizing projection between strategy output and the
+existing risk manager:
+
+```text
+strategy OrderIntent
+    → deterministic position sizer
+       → explicit quantity, fixed quote notional or equity percentage
+       → adverse estimated price, fee and quote-reserve bound
+       → quantity-step truncation only
+    → normalized OrderIntent
+    → Phase 3 risk manager and final veto
+    → simulated order lifecycle
+```
+
+`explicit_quantity` is the compatibility default and keeps the original
+`ExecutionAssumptions` canonical payload and run/session IDs unchanged. A
+non-default policy uses `PositionSizedExecutionAssumptions`, so the policy becomes
+part of deterministic backtest, paper-session and optimization identities without
+rewriting legacy artifacts.
+
+For opening Spot buys, `fixed_notional` targets an exact quote amount and
+`equity_percent` targets between zero and 100 percent of current portfolio equity.
+The sizer uses only finite `Decimal` values, estimates market/stop execution with
+adverse configured slippage, applies maker/taker fees, honors the stricter policy
+or risk quote reserve, and truncates to the instrument quantity step. It never
+rounds exposure upward. A zero result becomes a deterministic invalid-quantity
+risk rejection. Sells retain the strategy's explicit quantity. The risk manager
+remains authoritative for minimum quantity/notional, position and order ceilings,
+drawdown halt and all other vetoes.
+
+This delivery adds no stop-loss trigger, leverage, short selling, exchange access,
+HTTP mutation, scheduler or live-capital execution.

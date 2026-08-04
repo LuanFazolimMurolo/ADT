@@ -10,6 +10,9 @@ from app.backtesting.domain import (
     FeeModel,
     InstrumentConstraints,
     IntrabarPolicy,
+    PositionSizedExecutionAssumptions,
+    PositionSizingKind,
+    PositionSizingPolicy,
     RiskLimits,
     SlippageKind,
     SlippageModel,
@@ -186,6 +189,26 @@ def _decode_plugin(raw: object) -> ExperimentPluginReference:
     )
 
 
+def _position_sizing(raw: object) -> PositionSizingPolicy:
+    if raw is None:
+        return PositionSizingPolicy()
+    value = _mapping(raw, "position sizing")
+    _exact_fields(
+        value,
+        {"kind", "value", "minimum_quote_reserve"},
+        "position sizing",
+    )
+    sizing_value = value["value"]
+    return PositionSizingPolicy(
+        kind=PositionSizingKind(_text(value["kind"], "position sizing kind")),
+        value=(None if sizing_value is None else _decimal(sizing_value, "position sizing value")),
+        minimum_quote_reserve=_decimal(
+            value["minimum_quote_reserve"],
+            "position sizing reserve",
+        ),
+    )
+
+
 def _decode_backtest_configuration(raw: object) -> ExperimentBacktestConfiguration:
     value = _mapping(raw, "backtest configuration")
     _exact_fields(
@@ -202,11 +225,18 @@ def _decode_backtest_configuration(raw: object) -> ExperimentBacktestConfigurati
         "backtest configuration",
     )
     execution = _mapping(value["execution"], "execution")
-    _exact_fields(
-        execution,
-        {"fees", "slippage", "intrabar_policy", "force_close_at_end"},
-        "execution",
-    )
+    execution_fields = frozenset(execution)
+    legacy_execution_fields = {
+        "fees",
+        "slippage",
+        "intrabar_policy",
+        "force_close_at_end",
+    }
+    if execution_fields not in {
+        frozenset(legacy_execution_fields),
+        frozenset(legacy_execution_fields | {"position_sizing"}),
+    }:
+        raise IncompatibleExperimentDocumentError("execution has unexpected fields")
     fees = _mapping(execution["fees"], "fees")
     _exact_fields(fees, {"maker_fee_bps", "taker_fee_bps"}, "fees")
     slippage = _mapping(execution["slippage"], "slippage")
@@ -245,18 +275,35 @@ def _decode_backtest_configuration(raw: object) -> ExperimentBacktestConfigurati
         "backtest limits",
     )
     try:
-        execution_contract = ExecutionAssumptions(
-            fees=FeeModel(
-                _decimal(fees["maker_fee_bps"], "maker fee"),
-                _decimal(fees["taker_fee_bps"], "taker fee"),
-            ),
-            slippage=SlippageModel(
-                kind=SlippageKind(_text(slippage["kind"], "slippage kind")),
-                fixed_bps=_decimal(slippage["fixed_bps"], "fixed slippage"),
-            ),
-            intrabar_policy=IntrabarPolicy(_text(execution["intrabar_policy"], "intrabar policy")),
-            force_close_at_end=_boolean(execution["force_close_at_end"], "force-close policy"),
+        fees_contract = FeeModel(
+            _decimal(fees["maker_fee_bps"], "maker fee"),
+            _decimal(fees["taker_fee_bps"], "taker fee"),
         )
+        slippage_contract = SlippageModel(
+            kind=SlippageKind(_text(slippage["kind"], "slippage kind")),
+            fixed_bps=_decimal(slippage["fixed_bps"], "fixed slippage"),
+        )
+        intrabar_policy = IntrabarPolicy(_text(execution["intrabar_policy"], "intrabar policy"))
+        force_close_at_end = _boolean(
+            execution["force_close_at_end"],
+            "force-close policy",
+        )
+        execution_contract: ExecutionAssumptions
+        if "position_sizing" in execution:
+            execution_contract = PositionSizedExecutionAssumptions(
+                fees=fees_contract,
+                slippage=slippage_contract,
+                intrabar_policy=intrabar_policy,
+                force_close_at_end=force_close_at_end,
+                position_sizing=_position_sizing(execution["position_sizing"]),
+            )
+        else:
+            execution_contract = ExecutionAssumptions(
+                fees=fees_contract,
+                slippage=slippage_contract,
+                intrabar_policy=intrabar_policy,
+                force_close_at_end=force_close_at_end,
+            )
     except ValueError as error:
         raise IncompatibleExperimentDocumentError(
             "execution model enum or value is invalid"

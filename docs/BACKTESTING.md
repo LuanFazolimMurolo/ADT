@@ -80,6 +80,29 @@ simulation ledger. Every entry contains a sequence and chained SHA-256 hash.
 Verification detects modification, deletion, reordering, duplication or broken
 balances.
 
+## Position sizing (Phase 5-05)
+
+The engine sizes each intent before final risk validation. The default
+`explicit_quantity` policy preserves historical behavior and canonical IDs. Two
+identity-bearing policies are available for opening Spot buys:
+
+- `fixed_notional`: target a fixed quote-asset notional;
+- `equity_percent`: target a positive percentage no greater than 100 of current
+  portfolio equity.
+
+Market and stop intents use the configured adverse slippage estimate and taker
+fee; limit intents use their limit price and maker fee. Available quote cash is
+bounded by the configured reserve, then quantity is truncated to the instrument
+step. The sizer never rounds up. A zero sized quantity becomes a deterministic
+invalid-quantity rejection before the order can open. The existing risk
+manager still normalizes and vetoes quantity/notional, position, order-count,
+reserve and
+drawdown constraints. Sales always retain the strategy's explicit quantity.
+
+CLI selection uses `--position-sizing` and `--position-sizing-value`. The value is
+forbidden with `explicit_quantity` and required for the other policies. Stop-loss
+enforcement is not part of this delivery.
+
 ## Metrics
 
 Phase 3A derives deterministic return, PnL, fee, slippage, drawdown, order, fill,

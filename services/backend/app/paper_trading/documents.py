@@ -20,6 +20,9 @@ from app.backtesting.domain import (
     OrderStatus,
     OrderType,
     PortfolioSnapshot,
+    PositionSizedExecutionAssumptions,
+    PositionSizingKind,
+    PositionSizingPolicy,
     RiskLimits,
     SimulatedOrder,
     SlippageKind,
@@ -65,7 +68,9 @@ _SUMMARY_PAYLOAD_KEYS = frozenset(
     }
 )
 _PAIR_KEYS = frozenset({"base", "quote"})
-_EXECUTION_KEYS = frozenset({"fees", "slippage", "intrabar_policy", "force_close_at_end"})
+_LEGACY_EXECUTION_KEYS = frozenset({"fees", "slippage", "intrabar_policy", "force_close_at_end"})
+_EXECUTION_KEYS = _LEGACY_EXECUTION_KEYS | {"position_sizing"}
+_POSITION_SIZING_KEYS = frozenset({"kind", "value", "minimum_quote_reserve"})
 _FEE_KEYS = frozenset({"maker_fee_bps", "taker_fee_bps"})
 _SLIPPAGE_KEYS = frozenset({"kind", "fixed_bps"})
 _CONSTRAINT_KEYS = frozenset(
@@ -385,22 +390,49 @@ def _parameter_value(kind: str, value: object) -> StrategyParameterValue:
 
 
 def _execution(payload: dict[str, object]) -> ExecutionAssumptions:
-    _require_keys(payload, _EXECUTION_KEYS)
+    keys = frozenset(payload)
+    if keys not in {_LEGACY_EXECUTION_KEYS, _EXECUTION_KEYS}:
+        raise InvalidPaperSessionError()
     fees = _object(payload["fees"])
     slippage = _object(payload["slippage"])
     _require_keys(fees, _FEE_KEYS)
     _require_keys(slippage, _SLIPPAGE_KEYS)
-    return ExecutionAssumptions(
-        fees=FeeModel(
-            _decimal(fees["maker_fee_bps"]),
-            _decimal(fees["taker_fee_bps"]),
-        ),
-        slippage=SlippageModel(
-            kind=SlippageKind(_string(slippage["kind"])),
-            fixed_bps=_decimal(slippage["fixed_bps"]),
-        ),
-        intrabar_policy=IntrabarPolicy(_string(payload["intrabar_policy"])),
-        force_close_at_end=_bool(payload["force_close_at_end"]),
+    fees_contract = FeeModel(
+        _decimal(fees["maker_fee_bps"]),
+        _decimal(fees["taker_fee_bps"]),
+    )
+    slippage_contract = SlippageModel(
+        kind=SlippageKind(_string(slippage["kind"])),
+        fixed_bps=_decimal(slippage["fixed_bps"]),
+    )
+    intrabar_policy = IntrabarPolicy(_string(payload["intrabar_policy"]))
+    force_close_at_end = _bool(payload["force_close_at_end"])
+    if "position_sizing" not in payload:
+        return ExecutionAssumptions(
+            fees=fees_contract,
+            slippage=slippage_contract,
+            intrabar_policy=intrabar_policy,
+            force_close_at_end=force_close_at_end,
+        )
+    return PositionSizedExecutionAssumptions(
+        fees=fees_contract,
+        slippage=slippage_contract,
+        intrabar_policy=intrabar_policy,
+        force_close_at_end=force_close_at_end,
+        position_sizing=_position_sizing(payload["position_sizing"]),
+    )
+
+
+def _position_sizing(value: object) -> PositionSizingPolicy:
+    if value is None:
+        return PositionSizingPolicy()
+    payload = _object(value)
+    _require_keys(payload, _POSITION_SIZING_KEYS)
+    raw_value = payload["value"]
+    return PositionSizingPolicy(
+        kind=PositionSizingKind(_string(payload["kind"])),
+        value=None if raw_value is None else _decimal(raw_value),
+        minimum_quote_reserve=_decimal(payload["minimum_quote_reserve"]),
     )
 
 

@@ -14,6 +14,7 @@ from app.backtesting.errors import InvalidOrderIntentError
 from app.market_data.domain import DataRange, require_utc
 
 _BPS_DENOMINATOR = Decimal("10000")
+_PERCENT_DENOMINATOR = Decimal("100")
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SAFE_TAG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -86,6 +87,43 @@ class SlippageKind(StrEnum):
 
 class IntrabarPolicy(StrEnum):
     CONSERVATIVE = "CONSERVATIVE"
+
+
+class PositionSizingKind(StrEnum):
+    """Supported deterministic sizing policies for opening Spot positions."""
+
+    EXPLICIT_QUANTITY = "explicit_quantity"
+    FIXED_NOTIONAL = "fixed_notional"
+    EQUITY_PERCENT = "equity_percent"
+
+
+@dataclass(frozen=True, slots=True)
+class PositionSizingPolicy:
+    """One immutable position-sizing policy included in run identity."""
+
+    kind: PositionSizingKind = PositionSizingKind.EXPLICIT_QUANTITY
+    value: Decimal | None = None
+    minimum_quote_reserve: Decimal = Decimal("0")
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, PositionSizingKind):
+            raise ValueError("position sizing kind must be supported")
+        if (
+            not isinstance(self.minimum_quote_reserve, Decimal)
+            or not self.minimum_quote_reserve.is_finite()
+            or self.minimum_quote_reserve < 0
+        ):
+            raise ValueError("minimum_quote_reserve must be finite and nonnegative")
+        if self.kind is PositionSizingKind.EXPLICIT_QUANTITY:
+            if self.value is not None:
+                raise ValueError("explicit quantity sizing must not define value")
+            if self.minimum_quote_reserve != 0:
+                raise ValueError("explicit quantity sizing must not define a quote reserve")
+            return
+        if not isinstance(self.value, Decimal) or not self.value.is_finite() or self.value <= 0:
+            raise ValueError("position sizing value must be finite and positive")
+        if self.kind is PositionSizingKind.EQUITY_PERCENT and self.value > _PERCENT_DENOMINATOR:
+            raise ValueError("equity percent sizing must not exceed 100")
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,12 +202,44 @@ class SlippageModel:
 
 @dataclass(frozen=True, slots=True)
 class ExecutionAssumptions:
-    """All assumptions that can affect simulated fills."""
+    """Legacy fill assumptions whose canonical identity remains unchanged."""
 
     fees: FeeModel
     slippage: SlippageModel
     intrabar_policy: IntrabarPolicy = IntrabarPolicy.CONSERVATIVE
     force_close_at_end: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class PositionSizedExecutionAssumptions(ExecutionAssumptions):
+    """Execution assumptions extended with an identity-bearing sizing policy."""
+
+    position_sizing: PositionSizingPolicy = PositionSizingPolicy()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.position_sizing, PositionSizingPolicy):
+            raise ValueError("position sizing policy is invalid")
+        candidate = copy(self.position_sizing)
+        PositionSizingPolicy.__post_init__(candidate)
+        if candidate != self.position_sizing:
+            raise ValueError("position sizing policy is not canonical")
+        if candidate.kind is PositionSizingKind.EXPLICIT_QUANTITY:
+            raise ValueError("position-sized execution requires a non-default policy")
+
+
+def position_sizing_policy_for(
+    execution: ExecutionAssumptions,
+) -> PositionSizingPolicy:
+    """Return explicit legacy sizing unless the extended contract is present."""
+
+    if type(execution) not in {
+        ExecutionAssumptions,
+        PositionSizedExecutionAssumptions,
+    }:
+        raise ValueError("execution assumptions are invalid")
+    if isinstance(execution, PositionSizedExecutionAssumptions):
+        return execution.position_sizing
+    return PositionSizingPolicy()
 
 
 @dataclass(frozen=True, slots=True)
@@ -877,6 +947,11 @@ def _revalidate_strategy_descriptor(value: object) -> None:
 def _revalidate_execution_assumptions(value: object) -> None:
     if not isinstance(value, ExecutionAssumptions):
         raise ValueError("execution must contain execution assumptions")
+    if type(value) not in {
+        ExecutionAssumptions,
+        PositionSizedExecutionAssumptions,
+    }:
+        raise ValueError("execution assumptions type is unsupported")
     if not isinstance(value.fees, FeeModel):
         raise ValueError("execution fee model is invalid")
     fees = copy(value.fees)
@@ -893,6 +968,18 @@ def _revalidate_execution_assumptions(value: object) -> None:
         SlippageModel.__post_init__(slippage)
     except Exception:
         raise ValueError("execution slippage model is invalid") from None
+    if isinstance(value, PositionSizedExecutionAssumptions):
+        if not isinstance(value.position_sizing, PositionSizingPolicy):
+            raise ValueError("execution position sizing policy is invalid")
+        position_sizing = copy(value.position_sizing)
+        try:
+            PositionSizingPolicy.__post_init__(position_sizing)
+        except Exception:
+            raise ValueError("execution position sizing policy is invalid") from None
+        if position_sizing != value.position_sizing:
+            raise ValueError("execution position sizing policy is not canonical")
+        if position_sizing.kind is PositionSizingKind.EXPLICIT_QUANTITY:
+            raise ValueError("execution position sizing policy must be non-default")
     if (
         slippage != value.slippage
         or value.slippage.kind is not SlippageKind.FIXED_BPS

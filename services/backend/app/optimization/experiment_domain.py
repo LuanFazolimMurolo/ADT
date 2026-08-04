@@ -15,10 +15,14 @@ from app.backtesting.domain import (
     FeeModel,
     InstrumentConstraints,
     IntrabarPolicy,
+    PositionSizedExecutionAssumptions,
+    PositionSizingKind,
+    PositionSizingPolicy,
     RiskLimits,
     SlippageKind,
     SlippageModel,
     StrategyDescriptor,
+    position_sizing_policy_for,
     strategy_lifecycle_version_for,
 )
 from app.market_data.domain import DataRange
@@ -305,6 +309,10 @@ def validate_experiment_backtest_configuration(
     if not isinstance(configuration.execution, ExecutionAssumptions):
         raise InvalidExperimentBacktestConfigurationError("execution assumptions are invalid")
     execution = configuration.execution
+    if type(execution) not in {ExecutionAssumptions, PositionSizedExecutionAssumptions}:
+        raise InvalidExperimentBacktestConfigurationError(
+            "execution assumptions type is unsupported"
+        )
     if not isinstance(execution.fees, FeeModel):
         raise InvalidExperimentBacktestConfigurationError("fee model is invalid")
     if not isinstance(execution.slippage, SlippageModel):
@@ -315,6 +323,20 @@ def validate_experiment_backtest_configuration(
         raise InvalidExperimentBacktestConfigurationError("intrabar policy is unsupported")
     if not isinstance(execution.force_close_at_end, bool):
         raise InvalidExperimentBacktestConfigurationError("force-close policy must be boolean")
+    position_sizing = position_sizing_policy_for(execution)
+    if not isinstance(position_sizing, PositionSizingPolicy):
+        raise InvalidExperimentBacktestConfigurationError("position sizing policy is invalid")
+    try:
+        PositionSizingPolicy.__post_init__(position_sizing)
+    except ValueError as error:
+        raise InvalidExperimentBacktestConfigurationError(str(error)) from error
+    if (
+        isinstance(execution, PositionSizedExecutionAssumptions)
+        and position_sizing.kind is PositionSizingKind.EXPLICIT_QUANTITY
+    ):
+        raise InvalidExperimentBacktestConfigurationError(
+            "position-sized execution requires a non-default policy"
+        )
     for label, value in (
         ("maker fee", execution.fees.maker_fee_bps),
         ("taker fee", execution.fees.taker_fee_bps),
@@ -668,20 +690,28 @@ def backtest_configuration_payload(
     configuration: ExperimentBacktestConfiguration,
 ) -> dict[str, object]:
     validate_experiment_backtest_configuration(configuration)
+    execution: dict[str, object] = {
+        "fees": {
+            "maker_fee_bps": decimal_text(configuration.execution.fees.maker_fee_bps),
+            "taker_fee_bps": decimal_text(configuration.execution.fees.taker_fee_bps),
+        },
+        "slippage": {
+            "kind": configuration.execution.slippage.kind.value,
+            "fixed_bps": decimal_text(configuration.execution.slippage.fixed_bps),
+        },
+        "intrabar_policy": configuration.execution.intrabar_policy.value,
+        "force_close_at_end": configuration.execution.force_close_at_end,
+    }
+    if isinstance(configuration.execution, PositionSizedExecutionAssumptions):
+        policy = configuration.execution.position_sizing
+        execution["position_sizing"] = {
+            "kind": policy.kind.value,
+            "value": _optional_decimal(policy.value),
+            "minimum_quote_reserve": decimal_text(policy.minimum_quote_reserve),
+        }
     return {
         "initial_capital": decimal_text(configuration.initial_capital),
-        "execution": {
-            "fees": {
-                "maker_fee_bps": decimal_text(configuration.execution.fees.maker_fee_bps),
-                "taker_fee_bps": decimal_text(configuration.execution.fees.taker_fee_bps),
-            },
-            "slippage": {
-                "kind": configuration.execution.slippage.kind.value,
-                "fixed_bps": decimal_text(configuration.execution.slippage.fixed_bps),
-            },
-            "intrabar_policy": configuration.execution.intrabar_policy.value,
-            "force_close_at_end": configuration.execution.force_close_at_end,
-        },
+        "execution": execution,
         "constraints": {
             "minimum_quantity": decimal_text(configuration.constraints.minimum_quantity),
             "quantity_step": decimal_text(configuration.constraints.quantity_step),
