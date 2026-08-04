@@ -7,7 +7,10 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from app.backtesting.domain import EvaluationBacktestConfig
+from app.backtesting.domain import (
+    EvaluationBacktestConfig,
+    RegimeAwareEvaluationBacktestConfig,
+)
 from app.backtesting.engine import DeterministicBacktestEngine
 from app.backtesting.serialization import canonical_json_bytes
 from app.backtesting.strategy import BacktestStrategy
@@ -150,23 +153,43 @@ class PaperTradingService:
             created_at=replay_time.isoformat(),
         )
         strategy = self._build_strategy(config)
-        backtest_config = EvaluationBacktestConfig(
-            snapshot_id=snapshot_id,
-            data_range=batch.data_range,
-            evaluation_range=DataRange(config.start_at, batch.data_range.end),
-            strategy_lifecycle_version=config.strategy_lifecycle_version,
-            strategy=config.strategy,
-            initial_capital=config.initial_capital,
-            execution=config.execution,
-            constraints=config.constraints,
-            risk_limits=config.risk_limits,
-            history_window=config.history_window,
-            max_candles=config.max_candles,
-            max_orders=config.max_orders,
-            max_events=config.max_events,
-            engine_version=config.engine_version,
-            schema_version=2,
-        )
+        if config.market_regime_policy is None:
+            backtest_config = EvaluationBacktestConfig(
+                snapshot_id=snapshot_id,
+                data_range=batch.data_range,
+                evaluation_range=DataRange(config.start_at, batch.data_range.end),
+                strategy_lifecycle_version=config.strategy_lifecycle_version,
+                strategy=config.strategy,
+                initial_capital=config.initial_capital,
+                execution=config.execution,
+                constraints=config.constraints,
+                risk_limits=config.risk_limits,
+                history_window=config.history_window,
+                max_candles=config.max_candles,
+                max_orders=config.max_orders,
+                max_events=config.max_events,
+                engine_version=config.engine_version,
+                schema_version=2,
+            )
+        else:
+            backtest_config = RegimeAwareEvaluationBacktestConfig(
+                snapshot_id=snapshot_id,
+                data_range=batch.data_range,
+                evaluation_range=DataRange(config.start_at, batch.data_range.end),
+                strategy_lifecycle_version=config.strategy_lifecycle_version,
+                strategy=config.strategy,
+                initial_capital=config.initial_capital,
+                execution=config.execution,
+                constraints=config.constraints,
+                risk_limits=config.risk_limits,
+                history_window=config.history_window,
+                max_candles=config.max_candles,
+                max_orders=config.max_orders,
+                max_events=config.max_events,
+                engine_version=config.engine_version,
+                schema_version=2,
+                market_regime_policy=config.market_regime_policy,
+            )
         reader = InMemoryPaperSnapshotReader(snapshot, batch.candles)
         execution = DeterministicBacktestEngine(reader).run(
             backtest_config,
@@ -192,6 +215,9 @@ class PaperTradingService:
             portfolio=execution.final_portfolio,
             risk_halt=execution.risk_halt,
             replayed_at=replay_time,
+            latest_market_regime=(
+                execution.market_regimes[-1] if execution.market_regimes else None
+            ),
         )
         validate_paper_state_against_config(state, config)
         return state

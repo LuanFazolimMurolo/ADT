@@ -152,6 +152,38 @@ changes, and removes it when the position becomes flat. Gap, touch, slippage, fe
 order-limit and drawdown-halt behavior is identical to deterministic backtesting.
 No exchange account, API key or live order is involved.
 
+## Market regime detection (Phase 5-08)
+
+Paper-session creation may opt in to the same deterministic detector used by
+backtesting:
+
+```text
+--market-regime
+--regime-fast-ema-period <positive integer>
+--regime-slow-ema-period <positive integer>
+--regime-atr-period <positive integer>
+--regime-volatile-atr-ratio <positive decimal>
+--regime-trend-strength-threshold <positive decimal>
+```
+
+The default periods and thresholds are 12/26 EMA, 14 ATR, `0.03` normalized ATR
+for volatility and `1` for trend strength. Overrides are invalid unless
+`--market-regime` is present. Enabling the detector creates an identity-bearing
+schema-2 session; schema-1 sessions remain canonical and byte-compatible, with no
+regime policy or regime state.
+
+Each replay uses `RegimeAwareEvaluationBacktestConfig` and the same closed-candle,
+no-look-ahead accumulator as historical backtesting. The latest atomic paper state
+persists only the final verified `MarketRegimePoint` for the currently available
+closed-candle prefix. Keeping one point preserves the bounded state contract while
+still exposing the current `warmup`, `trend`, `range` or `volatile` classification
+and its explainability metrics. Session verification reconstructs the replay and
+requires that exact latest point, event time and policy.
+
+Regime detection is observational. It does not place orders, select a strategy,
+change risk limits or grant exchange access. Machine-learning classification,
+strategy promotion and performance attribution by regime remain deferred.
+
 ## Safety limits
 
 `ADT_PAPER_TRADING_MAX_REPLAY_CANDLES` limits the complete context loaded by one

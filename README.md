@@ -4,7 +4,7 @@
 
 ## Status
 
-🟡 **Phase 5 paper-trading runtime in progress — 5-01 through 5-07 implemented locally**
+🟡 **Phase 5 paper-trading runtime in progress — 5-01 through 5-08 implemented locally**
 
 ⏳ **Formal Phase 1 closure pending operational homologation**
 
@@ -12,8 +12,9 @@ The backend exposes a read-only Binance Spot asset catalog, can maintain an
 explicit bounded set of RAW Parquet candle datasets from a separate collector
 process, can replay deterministic local paper sessions over those closed
 candles, can size simulated Spot entries and enforce fixed-percent protective
-stops deterministically, and can aggregate verified backtest results by canonical
-asset. It still performs no permanent strategy scheduling, exchange-account
+stops deterministically, can classify closed candles as trend, range or volatile
+without look-ahead, and can aggregate verified backtest results by canonical asset.
+It still performs no permanent strategy scheduling, exchange-account
 operation or real-capital trading. No migration or administrator bootstrap has
 been run against a remote Supabase project as part of this work.
 
@@ -234,3 +235,19 @@ network access. `asset-performance-export --yes` publishes it atomically under
 Capital, profit, run counts, closed trades and drawdown are consolidated, while
 non-additive ratios such as Sharpe, Sortino and profit factor are deliberately not
 averaged.
+
+### Deterministic market regime detection (Phase 5-08)
+
+Backtests may opt in with `--market-regime`. The versioned heuristic classifies
+each closed candle as `warmup`, `trend`, `range` or `volatile` from fast/slow EMA
+and normalized ATR values, with a separate `up`, `down` or `none` trend direction.
+The policy is part of the run identity, observations are exposed to strategies only
+after their candle closes, and verified runs persist an optional `regimes.jsonl`
+artifact that can be paged with `backtest regimes`. Legacy runs remain byte-for-byte
+compatible and do not produce regime data.
+
+Paper sessions use the same detector when explicitly enabled. Regime-aware sessions
+persist only the latest verified closed-candle observation in their bounded latest
+state; legacy schema-1 sessions remain unchanged. Phase 5-08 is deterministic
+feature engineering, not the machine-learning regime classifier deferred to Phase 8,
+and it does not automatically select or promote a strategy.

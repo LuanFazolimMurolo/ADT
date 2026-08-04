@@ -33,10 +33,22 @@ from app.indicators.protocols import (
     calculate_candles_as_of,
     calculate_composite_as_of,
 )
+from app.indicators.regime import (
+    SUPPORTED_MARKET_REGIME_POLICY_SCHEMA_VERSIONS,
+    DeterministicMarketRegimeDetector,
+    MarketRegimeKind,
+    MarketRegimePoint,
+    MarketRegimePolicy,
+    MarketRegimeSeries,
+    TrendDirection,
+    calculate_market_regimes_as_of,
+)
+from app.indicators.regime_incremental import MarketRegimeAccumulator
 from app.indicators.rsi import RelativeStrengthIndex
 
 __all__ = [
     "SUPPORTED_INDICATOR_SCHEMA_VERSIONS",
+    "SUPPORTED_MARKET_REGIME_POLICY_SCHEMA_VERSIONS",
     "AverageTrueRange",
     "BollingerBands",
     "CandleSeries",
@@ -45,6 +57,7 @@ __all__ = [
     "CompositeTechnicalIndicator",
     "DecimalSeries",
     "DecimalSeriesView",
+    "DeterministicMarketRegimeDetector",
     "ExponentialMovingAverage",
     "FutureDataAccessError",
     "IndicatorBundle",
@@ -56,13 +69,20 @@ __all__ = [
     "IndicatorSeries",
     "IndicatorSeriesView",
     "InvalidIndicatorInputError",
+    "MarketRegimeAccumulator",
+    "MarketRegimeKind",
+    "MarketRegimePoint",
+    "MarketRegimePolicy",
+    "MarketRegimeSeries",
     "MovingAverageConvergenceDivergence",
     "RelativeStrengthIndex",
     "SeriesPoint",
+    "TrendDirection",
     "TechnicalIndicator",
     "TrueRange",
     "UnsupportedIndicatorSchemaError",
     "calculate_as_of",
     "calculate_candles_as_of",
+    "calculate_market_regimes_as_of",
     "calculate_composite_as_of",
 ]

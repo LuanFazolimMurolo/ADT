@@ -33,11 +33,13 @@ from app.backtesting.domain import (
     PositionSizedExecutionAssumptions,
     PositionSizingKind,
     PositionSizingPolicy,
+    RegimeAwareBacktestConfig,
     RiskLimits,
     SlippageModel,
     StopLossKind,
     StopLossPolicy,
     StopLossRiskLimits,
+    market_regime_policy_for,
 )
 from app.backtesting.engine import DeterministicBacktestEngine
 from app.backtesting.errors import SnapshotChangedError, SnapshotInvalidError
@@ -52,6 +54,7 @@ from app.backtesting.serialization import canonical_value
 from app.backtesting.strategy import BacktestStrategy
 from app.core.config import MarketDataSettings
 from app.domain.errors import InvalidDomainInputError
+from app.indicators.regime import MarketRegimePolicy
 from app.market_data.datasets import DatasetSnapshot
 from app.market_data.domain import DataRange
 from app.market_data.snapshots import MarketDatasetReader
@@ -119,14 +122,23 @@ def configure_backtest_parser(parser: argparse.ArgumentParser) -> None:
         )
         command.add_argument("--allow-all-in", action="store_true")
         command.add_argument("--force-close-at-end", action="store_true")
+        command.add_argument("--market-regime", action="store_true")
+        command.add_argument("--regime-fast-ema-period", type=_positive_int)
+        command.add_argument("--regime-slow-ema-period", type=_positive_int)
+        command.add_argument("--regime-atr-period", type=_positive_int)
+        command.add_argument("--regime-volatile-atr-ratio", type=_positive_decimal)
+        command.add_argument(
+            "--regime-trend-strength-threshold",
+            type=_positive_decimal,
+        )
         if name == "run":
             command.add_argument("--yes", action="store_true")
             command.add_argument("--dry-run", action="store_true")
 
-    for name in ("inspect", "verify", "orders", "trades"):
+    for name in ("inspect", "verify", "orders", "trades", "regimes"):
         command = commands.add_parser(name)
         command.add_argument("--run-id", required=True)
-        if name in {"orders", "trades"}:
+        if name in {"orders", "trades", "regimes"}:
             command.add_argument("--offset", type=_nonnegative_int, default=0)
             command.add_argument("--limit", type=_bounded_page_size, default=20)
 
@@ -189,6 +201,7 @@ def run_backtest_command(
         "verify",
         "orders",
         "trades",
+        "regimes",
         "compare",
         "compare-export",
         "compare-batch",
@@ -210,6 +223,8 @@ def run_backtest_command(
             _emit(reader.orders(args.run_id, offset=args.offset, limit=args.limit), stdout)
         elif command == "trades":
             _emit(reader.trades(args.run_id, offset=args.offset, limit=args.limit), stdout)
+        elif command == "regimes":
+            _emit(reader.regimes(args.run_id, offset=args.offset, limit=args.limit), stdout)
         elif command == "visualize":
             _emit(reader.visualization(args.run_id, max_points=args.max_points), stdout)
         elif command == "compare-batch":
@@ -315,32 +330,54 @@ def prepare_backtest(
         raise SnapshotInvalidError("O intervalo excede a cobertura do snapshot.")
 
     strategy = StrategyRegistry().build(args.strategy, quantity=args.quantity)
-    config = BacktestConfig(
-        snapshot_id=snapshot.snapshot_id,
-        data_range=data_range,
-        strategy=strategy.descriptor,
-        initial_capital=args.initial_capital,
-        execution=_execution_assumptions(args, settings),
-        constraints=InstrumentConstraints(
-            minimum_quantity=args.minimum_quantity,
-            quantity_step=args.quantity_step,
-            price_tick=args.price_tick,
-            minimum_notional=args.minimum_notional,
-            maximum_notional=args.maximum_notional,
-        ),
-        risk_limits=_risk_limits(args, settings),
-        history_window=settings.backtest_history_window,
-        max_candles=settings.backtest_max_candles,
-        max_orders=settings.backtest_max_orders,
-        max_events=settings.backtest_max_events,
-        engine_version=settings.backtest_engine_version,
-        schema_version=settings.backtest_schema_version,
+    execution = _execution_assumptions(args, settings)
+    constraints = InstrumentConstraints(
+        minimum_quantity=args.minimum_quantity,
+        quantity_step=args.quantity_step,
+        price_tick=args.price_tick,
+        minimum_notional=args.minimum_notional,
+        maximum_notional=args.maximum_notional,
     )
+    risk_limits = _risk_limits(args, settings)
+    market_regime_policy = _market_regime_policy(args)
+    if market_regime_policy is None:
+        config = BacktestConfig(
+            snapshot_id=snapshot.snapshot_id,
+            data_range=data_range,
+            strategy=strategy.descriptor,
+            initial_capital=args.initial_capital,
+            execution=execution,
+            constraints=constraints,
+            risk_limits=risk_limits,
+            history_window=settings.backtest_history_window,
+            max_candles=settings.backtest_max_candles,
+            max_orders=settings.backtest_max_orders,
+            max_events=settings.backtest_max_events,
+            engine_version=settings.backtest_engine_version,
+            schema_version=settings.backtest_schema_version,
+        )
+    else:
+        config = RegimeAwareBacktestConfig(
+            snapshot_id=snapshot.snapshot_id,
+            data_range=data_range,
+            strategy=strategy.descriptor,
+            initial_capital=args.initial_capital,
+            execution=execution,
+            constraints=constraints,
+            risk_limits=risk_limits,
+            history_window=settings.backtest_history_window,
+            max_candles=settings.backtest_max_candles,
+            max_orders=settings.backtest_max_orders,
+            max_events=settings.backtest_max_events,
+            engine_version=settings.backtest_engine_version,
+            schema_version=settings.backtest_schema_version,
+            market_regime_policy=market_regime_policy,
+        )
     return PreparedBacktest(build_run_id(config, snapshot), config, strategy, snapshot)
 
 
 def _plan_payload(prepared: PreparedBacktest) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "action": "PLAN",
         "run_id": prepared.run_id.value,
         "snapshot_id": prepared.snapshot.snapshot_id,
@@ -361,6 +398,10 @@ def _plan_payload(prepared: PreparedBacktest) -> dict[str, object]:
         "writes_artifacts": False,
         "uses_network": False,
     }
+    market_regime_policy = market_regime_policy_for(prepared.config)
+    if market_regime_policy is not None:
+        payload["market_regime_policy"] = market_regime_policy
+    return payload
 
 
 def _result_payload(result: object, candle_count: int, *, published: bool) -> dict[str, object]:
@@ -478,6 +519,56 @@ def _stop_loss_policy(args: argparse.Namespace) -> StopLossPolicy:
         return StopLossPolicy(kind=kind, value=value)
     except ValueError as error:
         raise InvalidDomainInputError(str(error)) from error
+
+
+def _market_regime_policy(args: argparse.Namespace) -> MarketRegimePolicy | None:
+    overrides = (
+        args.regime_fast_ema_period,
+        args.regime_slow_ema_period,
+        args.regime_atr_period,
+        args.regime_volatile_atr_ratio,
+        args.regime_trend_strength_threshold,
+    )
+    if not args.market_regime:
+        if any(value is not None for value in overrides):
+            raise InvalidDomainInputError("Parâmetros de regime exigem a opção --market-regime.")
+        return None
+    defaults = MarketRegimePolicy()
+    try:
+        return MarketRegimePolicy(
+            fast_ema_period=(
+                defaults.fast_ema_period
+                if args.regime_fast_ema_period is None
+                else args.regime_fast_ema_period
+            ),
+            slow_ema_period=(
+                defaults.slow_ema_period
+                if args.regime_slow_ema_period is None
+                else args.regime_slow_ema_period
+            ),
+            atr_period=(
+                defaults.atr_period if args.regime_atr_period is None else args.regime_atr_period
+            ),
+            volatile_atr_ratio=(
+                defaults.volatile_atr_ratio
+                if args.regime_volatile_atr_ratio is None
+                else args.regime_volatile_atr_ratio
+            ),
+            trend_strength_threshold=(
+                defaults.trend_strength_threshold
+                if args.regime_trend_strength_threshold is None
+                else args.regime_trend_strength_threshold
+            ),
+        )
+    except ValueError as error:
+        raise InvalidDomainInputError(str(error)) from error
+
+
+def _positive_int(value: str) -> int:
+    parsed = _nonnegative_int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("integer must be positive")
+    return parsed
 
 
 def _positive_decimal(value: str) -> Decimal:

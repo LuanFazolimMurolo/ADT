@@ -25,6 +25,7 @@ from app.backtesting.domain import (
 from app.backtesting.serialization import canonical_value
 from app.core.config import MarketDataSettings
 from app.domain.errors import InvalidDomainInputError
+from app.indicators.regime import MarketRegimePolicy
 from app.market_data.domain import TradingPair
 from app.market_data.locks import DatasetLockManager
 from app.market_data.timeframes import TIMEFRAMES, get_timeframe
@@ -83,6 +84,15 @@ def configure_paper_trading_parser(parser: argparse.ArgumentParser) -> None:
     create.add_argument("--stop-loss-value", type=_exclusive_percentage)
     create.add_argument("--minimum-quote-reserve", type=_nonnegative_decimal, default=Decimal("0"))
     create.add_argument("--allow-all-in", action="store_true")
+    create.add_argument("--market-regime", action="store_true")
+    create.add_argument("--regime-fast-ema-period", type=_positive_int)
+    create.add_argument("--regime-slow-ema-period", type=_positive_int)
+    create.add_argument("--regime-atr-period", type=_positive_int)
+    create.add_argument("--regime-volatile-atr-ratio", type=_positive_decimal)
+    create.add_argument(
+        "--regime-trend-strength-threshold",
+        type=_positive_decimal,
+    )
     create.add_argument("--yes", action="store_true")
 
     for name in ("run-once", "status", "verify"):
@@ -185,6 +195,8 @@ def run_paper_trading_command(
             max_orders=settings.backtest_max_orders,
             max_events=settings.backtest_max_events,
             engine_version=settings.backtest_engine_version,
+            market_regime_policy=_market_regime_policy(args),
+            schema_version=2 if args.market_regime else 1,
         )
         service.create(config)
         _emit(
@@ -237,7 +249,7 @@ def _parameters(
 
 
 def _state_summary(state: PaperSessionState) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "session_id": state.session_id,
         "state_id": state.state_id,
         "dataset_version": state.dataset_version,
@@ -251,6 +263,9 @@ def _state_summary(state: PaperSessionState) -> dict[str, object]:
         "portfolio": canonical_value(state.portfolio),
         "replayed_at": state.replayed_at.isoformat(),
     }
+    if state.latest_market_regime is not None:
+        payload["latest_market_regime"] = canonical_value(state.latest_market_regime)
+    return payload
 
 
 def _emit(value: object, stdout: TextIO) -> None:
@@ -350,6 +365,56 @@ def _stop_loss_policy(args: argparse.Namespace) -> StopLossPolicy:
         return StopLossPolicy(kind=kind, value=value)
     except ValueError as error:
         raise InvalidDomainInputError(str(error)) from error
+
+
+def _market_regime_policy(args: argparse.Namespace) -> MarketRegimePolicy | None:
+    overrides = (
+        args.regime_fast_ema_period,
+        args.regime_slow_ema_period,
+        args.regime_atr_period,
+        args.regime_volatile_atr_ratio,
+        args.regime_trend_strength_threshold,
+    )
+    if not args.market_regime:
+        if any(value is not None for value in overrides):
+            raise InvalidDomainInputError("Parâmetros de regime exigem a opção --market-regime.")
+        return None
+    defaults = MarketRegimePolicy()
+    try:
+        return MarketRegimePolicy(
+            fast_ema_period=(
+                defaults.fast_ema_period
+                if args.regime_fast_ema_period is None
+                else args.regime_fast_ema_period
+            ),
+            slow_ema_period=(
+                defaults.slow_ema_period
+                if args.regime_slow_ema_period is None
+                else args.regime_slow_ema_period
+            ),
+            atr_period=(
+                defaults.atr_period if args.regime_atr_period is None else args.regime_atr_period
+            ),
+            volatile_atr_ratio=(
+                defaults.volatile_atr_ratio
+                if args.regime_volatile_atr_ratio is None
+                else args.regime_volatile_atr_ratio
+            ),
+            trend_strength_threshold=(
+                defaults.trend_strength_threshold
+                if args.regime_trend_strength_threshold is None
+                else args.regime_trend_strength_threshold
+            ),
+        )
+    except ValueError as error:
+        raise InvalidDomainInputError(str(error)) from error
+
+
+def _positive_int(value: str) -> int:
+    result = _nonnegative_int(value)
+    if result < 1:
+        raise argparse.ArgumentTypeError("must be positive")
+    return result
 
 
 def _positive_decimal(value: str) -> Decimal:

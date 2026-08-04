@@ -100,10 +100,11 @@ class BacktestRunReader:
     def _inspect_verified(self, verification: BacktestVerification) -> dict[str, object]:
         root = self._run_root(verification.run_id.value)
         manifest = self._envelope(root / "manifest.json", "manifest")
+        config = self._envelope(root / "config.json", "config")
         result = self._envelope(root / "result.json", "result")
         evaluation_range = manifest.get("evaluation_range", manifest.get("data_range"))
         context_range = manifest.get("context_range", manifest.get("data_range"))
-        return {
+        payload: dict[str, object] = {
             "run_id": verification.run_id.value,
             "status": manifest.get("status"),
             "engine_version": manifest.get("engine_version"),
@@ -128,6 +129,10 @@ class BacktestRunReader:
             "created_at": manifest.get("created_at"),
             "completed_at": manifest.get("completed_at"),
         }
+        if "market_regime_policy" in config:
+            payload["market_regime_policy"] = config["market_regime_policy"]
+            payload["market_regime_count"] = verification.market_regime_count
+        return payload
 
     def compare(
         self,
@@ -163,6 +168,26 @@ class BacktestRunReader:
                 offset=offset,
                 limit=limit,
                 total=verification.trade_count,
+            )
+
+    def regimes(self, run_id: str, *, offset: int, limit: int) -> dict[str, object]:
+        """Verify and page persisted closed-candle regime observations."""
+
+        self._validate_page(offset, limit)
+        with self._verified(run_id) as verification:
+            if verification.market_regime_count == 0:
+                return {
+                    "offset": offset,
+                    "limit": limit,
+                    "total": 0,
+                    "items": [],
+                    "truncated": False,
+                }
+            return self._page(
+                self._run_root(run_id) / "regimes.jsonl",
+                offset=offset,
+                limit=limit,
+                total=verification.market_regime_count,
             )
 
     def _page(

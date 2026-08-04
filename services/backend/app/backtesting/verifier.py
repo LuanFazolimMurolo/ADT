@@ -15,6 +15,8 @@ import pyarrow.parquet as pq
 from app.backtesting.artifacts import (
     build_logical_result_checksum,
     build_run_id_from_values,
+    rebuild_market_regime_observations,
+    validate_market_regime_observations,
 )
 from app.backtesting.domain import (
     SUPPORTED_STRATEGY_LIFECYCLE_VERSIONS,
@@ -39,14 +41,22 @@ from app.backtesting.metrics import calculate_metrics, derive_closed_trades, met
 from app.backtesting.portfolio import apply_fill, initialize_portfolio, mark_to_market
 from app.backtesting.serialization import (
     canonical_checksum,
+    canonical_value,
     file_checksum,
     read_json_envelope,
 )
+from app.indicators.regime import (
+    MarketRegimeKind,
+    MarketRegimePoint,
+    MarketRegimePolicy,
+    TrendDirection,
+)
 from app.market_data.datasets import DatasetSnapshot
+from app.market_data.domain import Candle, DataRange
 from app.market_data.filesystem import ensure_safe_path, market_root
 from app.market_data.locks import DatasetLockManager
 
-_EXPECTED_ARTIFACTS = {
+_BASE_EXPECTED_ARTIFACTS = {
     "config.json",
     "result.json",
     "orders.jsonl",
@@ -55,10 +65,13 @@ _EXPECTED_ARTIFACTS = {
     "equity.parquet",
     "trades.jsonl",
 }
+_REGIME_ARTIFACT_NAME = "regimes.jsonl"
 
 
 class SnapshotVerifier(Protocol):
     def open_snapshot(self, snapshot_id: str) -> DatasetSnapshot: ...
+
+    def iter_candles(self, data_range: DataRange | None = None) -> Iterator[Candle]: ...
 
     def verify_unchanged(self) -> DatasetSnapshot: ...
 
@@ -77,6 +90,7 @@ class BacktestVerification:
     trade_count: int
     candle_count: int
     strategy_lifecycle_version: int = 1
+    market_regime_count: int = 0
 
 
 class BacktestResultVerifier:
@@ -117,21 +131,26 @@ class BacktestResultVerifier:
         manifest = _read_envelope(root / "manifest.json", "manifest")
         if _dict(manifest, "run_id").get("value") != run_id.value:
             raise BacktestResultCorruptError("O run_id do manifest diverge do diretório.")
+        config_raw = _read_envelope(root / "config.json", "config")
+        market_regime_policy = _decode_market_regime_policy(config_raw)
+        expected_artifacts = set(_BASE_EXPECTED_ARTIFACTS)
+        if market_regime_policy is not None:
+            expected_artifacts.add(_REGIME_ARTIFACT_NAME)
         artifacts = manifest.get("artifacts")
         if not isinstance(artifacts, list):
             raise BacktestResultCorruptError("A lista de artefatos é inválida.")
         declared = [item.get("relative_path") for item in artifacts if isinstance(item, dict)]
         if (
-            len(declared) != len(_EXPECTED_ARTIFACTS)
+            len(declared) != len(expected_artifacts)
             or len(set(declared)) != len(declared)
-            or set(declared) != _EXPECTED_ARTIFACTS
+            or set(declared) != expected_artifacts
         ):
             raise BacktestResultCorruptError("O conjunto de artefatos do backtest é inválido.")
         try:
             actual_entries = {path.name for path in root.iterdir()}
         except OSError:
             raise BacktestResultCorruptError("O diretório do backtest é inválido.") from None
-        if actual_entries != _EXPECTED_ARTIFACTS | {"manifest.json"}:
+        if actual_entries != expected_artifacts | {"manifest.json"}:
             raise BacktestResultCorruptError(
                 "O diretório do backtest contém artefatos inesperados."
             )
@@ -149,7 +168,6 @@ class BacktestResultVerifier:
             if size != item.get("size_bytes") or file_checksum(path) != item.get("checksum"):
                 raise BacktestResultCorruptError("O checksum de um artefato diverge.")
 
-        config_raw = _read_envelope(root / "config.json", "config")
         result_raw = _read_envelope(root / "result.json", "result")
         period_start, evaluation_end, lifecycle_version = self._verify_manifest_config(
             manifest, config_raw
@@ -165,14 +183,50 @@ class BacktestResultVerifier:
         }
         if build_run_id_from_values(config_raw, snapshot_value) != run_id:
             raise BacktestResultCorruptError("A identidade lógica do run diverge.")
-        verified_snapshot = self._verify_snapshot(manifest)
+        verified_snapshot, snapshot_reader = self._verify_snapshot(manifest)
 
         orders = tuple(_decode_order(item) for item in _read_jsonl(root / "orders.jsonl"))
         fills = tuple(_decode_fill(item) for item in _read_jsonl(root / "fills.jsonl"))
         ledger = tuple(_decode_ledger(item) for item in _read_jsonl(root / "ledger.jsonl"))
         trades = tuple(_decode_trade(item) for item in _read_jsonl(root / "trades.jsonl"))
         equity = read_equity_artifact(root / "equity.parquet")
+        market_regimes = (
+            ()
+            if market_regime_policy is None
+            else tuple(
+                _decode_market_regime_point(item)
+                for item in _read_jsonl(root / _REGIME_ARTIFACT_NAME)
+            )
+        )
         candle_count = _int(result_raw.get("candles_processed"))
+        expected_market_regimes: tuple[MarketRegimePoint, ...] | None = None
+        if market_regime_policy is not None:
+            context_start, context_end = _decode_range(_dict(config_raw, "data_range"))
+            context_range = DataRange(context_start, context_end)
+            evaluation_range = DataRange(period_start, evaluation_end)
+            try:
+                expected_market_regimes = rebuild_market_regime_observations(
+                    market_regime_policy,
+                    snapshot_reader.iter_candles(context_range),
+                    context_range=context_range,
+                    evaluation_range=evaluation_range,
+                )
+                snapshot_after_read = snapshot_reader.verify_unchanged()
+            except Exception:
+                raise BacktestResultCorruptError(
+                    "Os regimes não puderam ser reconstruídos do snapshot."
+                ) from None
+            if snapshot_after_read != verified_snapshot:
+                raise BacktestResultCorruptError(
+                    "O snapshot mudou durante a reconstrução dos regimes."
+                )
+        _verify_market_regimes(
+            policy=market_regime_policy,
+            points=market_regimes,
+            equity=equity,
+            result_raw=result_raw,
+            expected_points=expected_market_regimes,
+        )
         _verify_evaluation_boundaries(
             orders=orders,
             fills=fills,
@@ -227,6 +281,7 @@ class BacktestResultVerifier:
             equity_curve=equity,
             final_portfolio=final_portfolio,
             risk_halt=_bool(result_raw.get("risk_halt")),
+            market_regimes=market_regimes,
         )
         try:
             metrics = calculate_metrics(
@@ -247,6 +302,7 @@ class BacktestResultVerifier:
             execution=execution,
             trades=trades,
             metrics=metrics_value,
+            market_regimes=(None if market_regime_policy is None else market_regimes),
         )
         if logical_checksum != manifest.get(
             "logical_result_checksum"
@@ -270,6 +326,7 @@ class BacktestResultVerifier:
             trade_count=len(trades),
             candle_count=execution.candles_processed,
             strategy_lifecycle_version=lifecycle_version,
+            market_regime_count=len(market_regimes),
         )
 
     @staticmethod
@@ -369,7 +426,9 @@ class BacktestResultVerifier:
             raise BacktestResultCorruptError("Os timestamps do manifest são inválidos.")
         return evaluation_start, evaluation_end, lifecycle_version
 
-    def _verify_snapshot(self, manifest: dict[str, Any]) -> DatasetSnapshot:
+    def _verify_snapshot(
+        self, manifest: dict[str, Any]
+    ) -> tuple[DatasetSnapshot, SnapshotVerifier]:
         reader = self._snapshot_factory(self._data_dir)
         try:
             snapshot = reader.open_snapshot(_str(manifest.get("snapshot_id")))
@@ -398,7 +457,76 @@ class BacktestResultVerifier:
             )
             if actual_values != expected_values:
                 raise BacktestResultCorruptError("O snapshot associado ao run diverge.")
-        return verified
+        return verified, reader
+
+
+def _decode_market_regime_policy(
+    config: dict[str, Any],
+) -> MarketRegimePolicy | None:
+    if "market_regime_policy" not in config:
+        return None
+    raw = config.get("market_regime_policy")
+    if not isinstance(raw, dict):
+        raise BacktestResultCorruptError("A política de regime do backtest é inválida.")
+    try:
+        policy = MarketRegimePolicy(
+            fast_ema_period=_int(raw.get("fast_ema_period")),
+            slow_ema_period=_int(raw.get("slow_ema_period")),
+            atr_period=_int(raw.get("atr_period")),
+            volatile_atr_ratio=_decimal(raw.get("volatile_atr_ratio")),
+            trend_strength_threshold=_decimal(raw.get("trend_strength_threshold")),
+            schema_version=_int(raw.get("schema_version")),
+        )
+    except (BacktestResultCorruptError, ValueError):
+        raise BacktestResultCorruptError("A política de regime do backtest é inválida.") from None
+    if canonical_value(policy) != raw:
+        raise BacktestResultCorruptError("A política de regime do backtest não é canônica.")
+    return policy
+
+
+def _decode_market_regime_point(raw: dict[str, Any]) -> MarketRegimePoint:
+    try:
+        point = MarketRegimePoint(
+            event_time=datetime.fromisoformat(_str(raw.get("event_time"))),
+            regime=MarketRegimeKind(_str(raw.get("regime"))),
+            trend_direction=TrendDirection(_str(raw.get("trend_direction"))),
+            fast_ema=_optional_decimal(raw.get("fast_ema")),
+            slow_ema=_optional_decimal(raw.get("slow_ema")),
+            atr=_optional_decimal(raw.get("atr")),
+            atr_ratio=_optional_decimal(raw.get("atr_ratio")),
+            trend_strength=_optional_decimal(raw.get("trend_strength")),
+        )
+    except (BacktestResultCorruptError, ValueError):
+        raise BacktestResultCorruptError("Um ponto de regime do backtest é inválido.") from None
+    if canonical_value(point) != raw:
+        raise BacktestResultCorruptError("Um ponto de regime do backtest não é canônico.")
+    return point
+
+
+def _verify_market_regimes(
+    *,
+    policy: MarketRegimePolicy | None,
+    points: tuple[MarketRegimePoint, ...],
+    equity: tuple[EquityPoint, ...],
+    result_raw: dict[str, Any],
+    expected_points: tuple[MarketRegimePoint, ...] | None,
+) -> None:
+    if policy is None:
+        if expected_points is not None:
+            raise BacktestResultCorruptError("A reconstrução de regimes é inconsistente.")
+        if points or "market_regime_count" in result_raw:
+            raise BacktestResultCorruptError(
+                "Um backtest legado contém dados de regime inesperados."
+            )
+        return
+    if _int(result_raw.get("market_regime_count")) != len(points):
+        raise BacktestResultCorruptError("A contagem de regimes do resultado diverge.")
+    try:
+        validate_market_regime_observations(policy, points, equity)
+    except (AttributeError, TypeError, ValueError):
+        raise BacktestResultCorruptError("A série de regimes do backtest é inválida.") from None
+    if expected_points is None or points != expected_points:
+        raise BacktestResultCorruptError("A série de regimes diverge dos candles do snapshot.")
 
 
 def _default_snapshot_factory(data_dir: Path) -> SnapshotVerifier:

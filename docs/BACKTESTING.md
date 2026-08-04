@@ -133,6 +133,63 @@ maximum order-notional ceilings intended for strategy orders; portfolio accounti
 still enforces that the sale cannot exceed the held position. Strategy-created stop
 orders remain supported, but strategies may not use the reserved engine tag.
 
+## Market regime detection (Phase 5-08)
+
+Market-regime calculation is an explicit, identity-bearing extension. Legacy
+`BacktestConfig` and `EvaluationBacktestConfig` instances do not calculate, expose
+or persist regime data. Regime-aware configurations bind one immutable
+`MarketRegimePolicy` into the canonical run identity. The default policy is:
+
+```text
+fast EMA: 12
+slow EMA: 26
+ATR: 14
+volatile ATR/close threshold: 0.03
+trend-strength threshold: 1
+```
+
+For each closed candle, the detector computes fast EMA, slow EMA, ATR, normalized
+ATR (`ATR / close`) and trend strength (`abs(fast EMA - slow EMA) / ATR`) with a
+fixed high-precision `Decimal` context. The warmup prefix is classified as
+`warmup`. After warmup, volatility has explicit priority: an ATR ratio at or above
+the threshold is `volatile`; otherwise sufficient EMA separation is `trend`; the
+remaining observations are `range`. Trend direction is stored separately as `up`,
+`down` or `none`. Non-positive closes, non-canonical policies and misaligned points
+are rejected.
+
+The engine uses a constant-memory incremental accumulator whose results must match
+the batch calculation exactly. A strategy callback receives only the regime of the
+latest candle that has already closed. Fill callbacks therefore cannot observe the
+regime of the candle currently producing their fill. The detector is observational:
+it does not alter order priority, execution, sizing, stop-loss behavior or strategy
+decisions by itself.
+
+Enable the default policy on `plan` or `run` with `--market-regime`. Optional
+overrides require that flag:
+
+```text
+--regime-fast-ema-period <positive integer>
+--regime-slow-ema-period <positive integer>
+--regime-atr-period <positive integer>
+--regime-volatile-atr-ratio <positive decimal>
+--regime-trend-strength-threshold <positive decimal>
+```
+
+A completed regime-aware run contains an authenticated `regimes.jsonl` series
+aligned one-to-one with evaluated equity points. The policy and point count are
+included in inspect output, the logical result checksum includes the series, and
+the independent verifier reconstructs every point and rejects rechecksummed
+semantic tampering. Decimal strings are serialized losslessly without dependence on
+the ambient decimal precision. Page observations with:
+
+```bash
+.venv/bin/python -m app.cli backtest regimes \
+  --run-id <run-id> --offset 0 --limit 20
+```
+
+Phase 5-08 is a deterministic heuristic contract. Machine-learning regime
+classification and automatic strategy selection remain outside this phase.
+
 ## Metrics
 
 Phase 3A derives deterministic return, PnL, fee, slippage, drawdown, order, fill,
@@ -316,12 +373,13 @@ ADT_DATA_DIR/
         ledger.jsonl
         equity.parquet
         trades.jsonl
+        regimes.jsonl  # present only for regime-aware runs
 ```
 
 The deterministic `run_id` includes the snapshot identity, strategy descriptor,
 canonical parameters, capital, interval, execution assumptions, risk limits,
-engine version and schema version. Operational timestamps are excluded from the
-logical identity.
+optional market-regime policy, engine version and schema version. Operational
+timestamps are excluded from the logical identity.
 
 Publication writes a staging directory, fsyncs artifacts, writes the manifest
 last and atomically renames the directory. Existing valid results are reused;
@@ -366,6 +424,7 @@ Inspect and independently verify a result:
 .venv/bin/python -m app.cli backtest verify --run-id <run-id>
 .venv/bin/python -m app.cli backtest orders --run-id <run-id> --limit 20
 .venv/bin/python -m app.cli backtest trades --run-id <run-id> --limit 20
+.venv/bin/python -m app.cli backtest regimes --run-id <run-id> --limit 20
 ```
 
 The CLI uses a fixed strategy registry and never imports a module supplied by a

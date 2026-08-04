@@ -11,6 +11,7 @@ from enum import StrEnum
 from typing import TypeAlias
 
 from app.backtesting.errors import InvalidOrderIntentError
+from app.indicators.regime import MarketRegimePolicy
 from app.market_data.domain import DataRange, require_utc
 
 _BPS_DENOMINATOR = Decimal("10000")
@@ -645,6 +646,28 @@ class EvaluationBacktestConfig(BacktestConfig):
             raise ValueError("strategy lifecycle version 1 does not support warmup")
 
 
+@dataclass(frozen=True, slots=True)
+class RegimeAwareBacktestConfig(BacktestConfig):
+    """Backtest config extended with identity-bearing regime observation."""
+
+    market_regime_policy: MarketRegimePolicy
+
+    def __post_init__(self) -> None:
+        BacktestConfig.__post_init__(self)
+        _revalidate_market_regime_policy(self.market_regime_policy)
+
+
+@dataclass(frozen=True, slots=True)
+class RegimeAwareEvaluationBacktestConfig(EvaluationBacktestConfig):
+    """Warmup-aware config extended with identity-bearing regime observation."""
+
+    market_regime_policy: MarketRegimePolicy
+
+    def __post_init__(self) -> None:
+        EvaluationBacktestConfig.__post_init__(self)
+        _revalidate_market_regime_policy(self.market_regime_policy)
+
+
 def validate_backtest_config(config: BacktestConfig) -> None:
     """Revalidate one immutable config without repairing hostile mutations."""
 
@@ -652,8 +675,12 @@ def validate_backtest_config(config: BacktestConfig) -> None:
         raise ValueError("backtest config is invalid")
     candidate = copy(config)
     try:
-        if isinstance(candidate, EvaluationBacktestConfig):
+        if isinstance(candidate, RegimeAwareEvaluationBacktestConfig):
+            RegimeAwareEvaluationBacktestConfig.__post_init__(candidate)
+        elif isinstance(candidate, EvaluationBacktestConfig):
             EvaluationBacktestConfig.__post_init__(candidate)
+        elif isinstance(candidate, RegimeAwareBacktestConfig):
+            RegimeAwareBacktestConfig.__post_init__(candidate)
         else:
             BacktestConfig.__post_init__(candidate)
     except ValueError as error:
@@ -662,6 +689,18 @@ def validate_backtest_config(config: BacktestConfig) -> None:
         raise ValueError("backtest config is invalid") from None
     if candidate != config:
         raise ValueError("backtest config is not canonical")
+
+
+def market_regime_policy_for(config: BacktestConfig) -> MarketRegimePolicy | None:
+    """Return the enabled policy without changing legacy config identity."""
+
+    validate_backtest_config(config)
+    if isinstance(
+        config,
+        (RegimeAwareBacktestConfig, RegimeAwareEvaluationBacktestConfig),
+    ):
+        return config.market_regime_policy
+    return None
 
 
 def evaluation_range_for(config: BacktestConfig) -> DataRange:
@@ -1080,6 +1119,18 @@ def _revalidate_risk_limits(value: object) -> None:
         raise ValueError("risk limits are invalid") from None
     if candidate != value:
         raise ValueError("risk limits are not canonical")
+
+
+def _revalidate_market_regime_policy(value: object) -> None:
+    if type(value) is not MarketRegimePolicy:
+        raise ValueError("market regime policy is invalid")
+    candidate = copy(value)
+    try:
+        MarketRegimePolicy.__post_init__(candidate)
+    except Exception:
+        raise ValueError("market regime policy is invalid") from None
+    if candidate != value:
+        raise ValueError("market regime policy is not canonical")
 
 
 def _validate_strategy_lifecycle_version(value: object) -> int:

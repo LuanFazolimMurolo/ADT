@@ -22,13 +22,15 @@ from app.backtesting.domain import (
     OrderStatus,
     OrderType,
     PortfolioSnapshot,
+    RegimeAwareEvaluationBacktestConfig,
     RiskLimits,
     SimulatedOrder,
     StrategyDescriptor,
     TimeInForce,
     validate_backtest_config,
 )
-from app.backtesting.serialization import canonical_json_bytes, canonical_value
+from app.backtesting.serialization import canonical_json_bytes, canonical_value, decimal_text
+from app.indicators.regime import MarketRegimeKind, MarketRegimePoint, MarketRegimePolicy
 from app.market_data.domain import Candle, DataRange, Timeframe, TradingPair, require_utc
 from app.paper_trading.errors import (
     InvalidPaperSessionError,
@@ -37,7 +39,8 @@ from app.paper_trading.errors import (
 )
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_SUPPORTED_SCHEMA_VERSIONS = frozenset({1})
+_SUPPORTED_CONFIG_SCHEMA_VERSIONS = frozenset({1, 2})
+_SUPPORTED_STATE_SCHEMA_VERSIONS = frozenset({1, 2})
 MAX_PAPER_DOCUMENT_BYTES = 16 * 1024 * 1024
 
 
@@ -65,6 +68,7 @@ class PaperSessionConfig:
     max_orders: int
     max_events: int
     engine_version: str
+    market_regime_policy: MarketRegimePolicy | None = None
     schema_version: int = 1
 
     def __post_init__(self) -> None:
@@ -92,28 +96,53 @@ class PaperSessionConfig:
                 raise ValueError("paper trading must not force-close at cycle end")
             if (
                 type(self.schema_version) is not int
-                or self.schema_version not in _SUPPORTED_SCHEMA_VERSIONS
+                or self.schema_version not in _SUPPORTED_CONFIG_SCHEMA_VERSIONS
             ):
                 raise ValueError("paper session schema version is unsupported")
+            if self.schema_version == 1:
+                if self.market_regime_policy is not None:
+                    raise ValueError("paper session schema 1 does not support market regime")
+            else:
+                _revalidate_market_regime_policy(self.market_regime_policy)
             context_start = start_at - self.warmup_candles * self.timeframe.duration
             context_end = start_at + self.timeframe.duration
-            EvaluationBacktestConfig(
-                snapshot_id="paper-session-validation",
-                data_range=DataRange(context_start, context_end),
-                evaluation_range=DataRange(start_at, context_end),
-                strategy_lifecycle_version=self.strategy_lifecycle_version,
-                strategy=self.strategy,
-                initial_capital=self.initial_capital,
-                execution=self.execution,
-                constraints=self.constraints,
-                risk_limits=self.risk_limits,
-                history_window=self.history_window,
-                max_candles=self.max_candles,
-                max_orders=self.max_orders,
-                max_events=self.max_events,
-                engine_version=self.engine_version,
-                schema_version=2,
-            )
+            if self.market_regime_policy is None:
+                EvaluationBacktestConfig(
+                    snapshot_id="paper-session-validation",
+                    data_range=DataRange(context_start, context_end),
+                    evaluation_range=DataRange(start_at, context_end),
+                    strategy_lifecycle_version=self.strategy_lifecycle_version,
+                    strategy=self.strategy,
+                    initial_capital=self.initial_capital,
+                    execution=self.execution,
+                    constraints=self.constraints,
+                    risk_limits=self.risk_limits,
+                    history_window=self.history_window,
+                    max_candles=self.max_candles,
+                    max_orders=self.max_orders,
+                    max_events=self.max_events,
+                    engine_version=self.engine_version,
+                    schema_version=2,
+                )
+            else:
+                RegimeAwareEvaluationBacktestConfig(
+                    snapshot_id="paper-session-validation",
+                    data_range=DataRange(context_start, context_end),
+                    evaluation_range=DataRange(start_at, context_end),
+                    strategy_lifecycle_version=self.strategy_lifecycle_version,
+                    strategy=self.strategy,
+                    initial_capital=self.initial_capital,
+                    execution=self.execution,
+                    constraints=self.constraints,
+                    risk_limits=self.risk_limits,
+                    history_window=self.history_window,
+                    max_candles=self.max_candles,
+                    max_orders=self.max_orders,
+                    max_events=self.max_events,
+                    engine_version=self.engine_version,
+                    schema_version=2,
+                    market_regime_policy=self.market_regime_policy,
+                )
             object.__setattr__(self, "start_at", start_at)
         except InvalidPaperSessionError:
             raise
@@ -165,6 +194,7 @@ class PaperSessionState:
     replayed_at: datetime
     state_id: str
     checksum: str
+    latest_market_regime: MarketRegimePoint | None = None
     schema_version: int = 1
 
     def __post_init__(self) -> None:
@@ -300,7 +330,7 @@ def validate_paper_state_summary_against_state(
 
 def paper_config_payload(config: PaperSessionConfig) -> dict[str, object]:
     _revalidate_config(config)
-    return {
+    payload: dict[str, object] = {
         "schema_version": config.schema_version,
         "pair": {"base": config.pair.base, "quote": config.pair.quote},
         "timeframe": config.timeframe.code,
@@ -315,7 +345,7 @@ def paper_config_payload(config: PaperSessionConfig) -> dict[str, object]:
             ],
         },
         "strategy_lifecycle_version": config.strategy_lifecycle_version,
-        "initial_capital": _decimal_text(config.initial_capital),
+        "initial_capital": decimal_text(config.initial_capital),
         "execution": canonical_value(config.execution),
         "constraints": canonical_value(config.constraints),
         "risk_limits": canonical_value(config.risk_limits),
@@ -325,6 +355,9 @@ def paper_config_payload(config: PaperSessionConfig) -> dict[str, object]:
         "max_events": config.max_events,
         "engine_version": config.engine_version,
     }
+    if config.market_regime_policy is not None:
+        payload["market_regime_policy"] = canonical_value(config.market_regime_policy)
+    return payload
 
 
 def _parameter_payload(value: object) -> dict[str, object]:
@@ -335,18 +368,10 @@ def _parameter_payload(value: object) -> dict[str, object]:
     if isinstance(value, int):
         return {"type": "integer", "value": value}
     if isinstance(value, Decimal):
-        return {"type": "decimal", "value": _decimal_text(value)}
+        return {"type": "decimal", "value": decimal_text(value)}
     if isinstance(value, str):
         return {"type": "string", "value": value}
     raise InvalidPaperSessionError("Parâmetro de estratégia não suportado.")
-
-
-def _decimal_text(value: Decimal) -> str:
-    if not isinstance(value, Decimal) or not value.is_finite():
-        raise InvalidPaperSessionError("Valor Decimal inválido.")
-    if value == 0:
-        return "0"
-    return format(value.normalize(), "f")
 
 
 def paper_config_checksum(config: PaperSessionConfig) -> str:
@@ -361,7 +386,7 @@ def paper_session_id(config: PaperSessionConfig) -> str:
 def _paper_state_semantic_payload_unchecked(
     state: PaperSessionState,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "schema_version": state.schema_version,
         "session_id": state.session_id,
         "config_checksum": state.config_checksum,
@@ -376,6 +401,9 @@ def _paper_state_semantic_payload_unchecked(
         "portfolio": canonical_value(state.portfolio),
         "risk_halt": state.risk_halt,
     }
+    if state.latest_market_regime is not None:
+        payload["latest_market_regime"] = canonical_value(state.latest_market_regime)
+    return payload
 
 
 def paper_state_semantic_payload(state: PaperSessionState) -> dict[str, object]:
@@ -389,14 +417,20 @@ def paper_state_id_from_payload(payload: dict[str, object]) -> str:
     return hashlib.sha256(b"adt-paper-state-v1\x00" + canonical_json_bytes(payload)).hexdigest()
 
 
-def paper_state_checksum(state: PaperSessionState) -> str:
+def paper_state_document_payload(state: PaperSessionState) -> dict[str, object]:
     validate_paper_session_state(state)
-    payload = _paper_state_semantic_payload_unchecked(state)
-    document = {
-        **payload,
+    return {
+        **_paper_state_semantic_payload_unchecked(state),
         "replayed_at": state.replayed_at.isoformat(),
         "state_id": state.state_id,
+        "checksum": state.checksum,
     }
+
+
+def paper_state_checksum(state: PaperSessionState) -> str:
+    validate_paper_session_state(state)
+    document = paper_state_document_payload(state)
+    document.pop("checksum")
     return hashlib.sha256(canonical_json_bytes(document)).hexdigest()
 
 
@@ -410,12 +444,18 @@ def build_paper_session_state(
     portfolio: PortfolioSnapshot,
     risk_halt: bool,
     replayed_at: datetime,
+    latest_market_regime: MarketRegimePoint | None = None,
 ) -> PaperSessionState:
     session_id = paper_session_id(config)
     evaluation_range = DataRange(config.start_at, batch.data_range.end)
     last_open = batch.candles[-1].open_time
-    base = {
-        "schema_version": 1,
+    state_schema_version = 2 if config.market_regime_policy is not None else 1
+    if state_schema_version == 1 and latest_market_regime is not None:
+        raise PaperSessionCorruptError()
+    if state_schema_version == 2 and latest_market_regime is None:
+        raise PaperSessionCorruptError()
+    base: dict[str, object] = {
+        "schema_version": state_schema_version,
         "session_id": session_id,
         "config_checksum": paper_config_checksum(config),
         "dataset_version": batch.dataset_version,
@@ -429,6 +469,8 @@ def build_paper_session_state(
         "portfolio": canonical_value(portfolio),
         "risk_halt": risk_halt,
     }
+    if latest_market_regime is not None:
+        base["latest_market_regime"] = canonical_value(latest_market_regime)
     state_id = paper_state_id_from_payload(base)
     replayed_at = require_utc(replayed_at, field_name="replayed_at")
     checksum = hashlib.sha256(
@@ -450,16 +492,24 @@ def build_paper_session_state(
         replayed_at=replayed_at,
         state_id=state_id,
         checksum=checksum,
+        latest_market_regime=latest_market_regime,
+        schema_version=state_schema_version,
     )
 
 
 def validate_paper_session_state(state: PaperSessionState) -> None:
     if not isinstance(state, PaperSessionState):
         raise PaperSessionCorruptError()
-    if type(state.schema_version) is not int or state.schema_version not in (
-        _SUPPORTED_SCHEMA_VERSIONS
+    if (
+        type(state.schema_version) is not int
+        or state.schema_version not in _SUPPORTED_STATE_SCHEMA_VERSIONS
     ):
         raise PaperSessionCorruptError()
+    if state.schema_version == 1:
+        if state.latest_market_regime is not None:
+            raise PaperSessionCorruptError()
+    else:
+        _revalidate_market_regime_point(state.latest_market_regime)
     for digest in (
         state.session_id,
         state.config_checksum,
@@ -491,6 +541,10 @@ def validate_paper_session_state(state: PaperSessionState) -> None:
     replayed_at = _utc(state.replayed_at, "replayed_at")
     if last_open < state.evaluation_range.start or last_open >= state.data_range.end:
         raise PaperSessionCorruptError()
+    if state.latest_market_regime is not None and not (
+        last_open < state.latest_market_regime.event_time <= state.data_range.end
+    ):
+        raise PaperSessionCorruptError()
     semantic = _paper_state_semantic_payload_unchecked(state)
     if paper_state_id_from_payload(semantic) != state.state_id:
         raise PaperSessionCorruptError()
@@ -518,6 +572,16 @@ def validate_paper_state_against_config(
         or state.evaluation_range.end != state.data_range.end
     ):
         raise PaperSessionVerificationError()
+    if config.market_regime_policy is None:
+        if state.schema_version != 1 or state.latest_market_regime is not None:
+            raise PaperSessionVerificationError()
+    else:
+        if state.schema_version != 2 or state.latest_market_regime is None:
+            raise PaperSessionVerificationError()
+        detector_points_seen = config.warmup_candles + state.candles_processed
+        expected_warmup = detector_points_seen <= config.market_regime_policy.warmup_points
+        if (state.latest_market_regime.regime is MarketRegimeKind.WARMUP) != expected_warmup:
+            raise PaperSessionVerificationError()
     duration = config.timeframe.duration
     if (state.data_range.end - state.data_range.start) % duration != timedelta(0):
         raise PaperSessionVerificationError()
@@ -627,6 +691,30 @@ def _utc(value: object, field_name: str) -> datetime:
         raise PaperSessionCorruptError() from None
 
 
+def _revalidate_market_regime_policy(value: object) -> None:
+    if not isinstance(value, MarketRegimePolicy):
+        raise InvalidPaperSessionError("A política de regime da sessão é inválida.")
+    candidate = copy(value)
+    try:
+        MarketRegimePolicy.__post_init__(candidate)
+    except Exception:
+        raise InvalidPaperSessionError("A política de regime da sessão é inválida.") from None
+    if candidate != value:
+        raise InvalidPaperSessionError("A política de regime da sessão não é canônica.")
+
+
+def _revalidate_market_regime_point(value: object) -> None:
+    if not isinstance(value, MarketRegimePoint):
+        raise PaperSessionCorruptError()
+    candidate = copy(value)
+    try:
+        MarketRegimePoint.__post_init__(candidate)
+    except Exception:
+        raise PaperSessionCorruptError() from None
+    if candidate != value:
+        raise PaperSessionCorruptError()
+
+
 def _revalidate_config(config: PaperSessionConfig) -> None:
     if not isinstance(config, PaperSessionConfig):
         raise InvalidPaperSessionError()
@@ -647,11 +735,12 @@ def _revalidate_config(config: PaperSessionConfig) -> None:
             max_orders=config.max_orders,
             max_events=config.max_events,
             engine_version=config.engine_version,
+            market_regime_policy=config.market_regime_policy,
             schema_version=config.schema_version,
         )
         context_end = config.start_at + config.timeframe.duration
-        validate_backtest_config(
-            EvaluationBacktestConfig(
+        if config.market_regime_policy is None:
+            validation_config = EvaluationBacktestConfig(
                 snapshot_id="paper-session-validation",
                 data_range=DataRange(config.context_start, context_end),
                 evaluation_range=DataRange(config.start_at, context_end),
@@ -668,7 +757,26 @@ def _revalidate_config(config: PaperSessionConfig) -> None:
                 engine_version=config.engine_version,
                 schema_version=2,
             )
-        )
+        else:
+            validation_config = RegimeAwareEvaluationBacktestConfig(
+                snapshot_id="paper-session-validation",
+                data_range=DataRange(config.context_start, context_end),
+                evaluation_range=DataRange(config.start_at, context_end),
+                strategy_lifecycle_version=config.strategy_lifecycle_version,
+                strategy=config.strategy,
+                initial_capital=config.initial_capital,
+                execution=config.execution,
+                constraints=config.constraints,
+                risk_limits=config.risk_limits,
+                history_window=config.history_window,
+                max_candles=config.max_candles,
+                max_orders=config.max_orders,
+                max_events=config.max_events,
+                engine_version=config.engine_version,
+                schema_version=2,
+                market_regime_policy=config.market_regime_policy,
+            )
+        validate_backtest_config(validation_config)
     except InvalidPaperSessionError:
         raise
     except Exception:

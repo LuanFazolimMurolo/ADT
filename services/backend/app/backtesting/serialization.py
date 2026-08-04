@@ -17,7 +17,10 @@ def decimal_text(value: Decimal) -> str:
         raise ValueError("non-finite Decimal cannot be serialized")
     if value == 0:
         return "0"
-    return format(value.normalize(), "f")
+    text = format(value, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
 
 
 def canonical_value(value: object) -> object:

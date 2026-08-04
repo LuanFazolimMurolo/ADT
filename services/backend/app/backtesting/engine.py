@@ -24,6 +24,7 @@ from app.backtesting.domain import (
     SimulatedOrder,
     TimeInForce,
     evaluation_range_for,
+    market_regime_policy_for,
     position_sizing_policy_for,
     stop_loss_policy_for,
     strategy_lifecycle_version_for,
@@ -57,6 +58,8 @@ from app.backtesting.risk import (
 from app.backtesting.sizing import DeterministicPositionSizer
 from app.backtesting.stop_loss import DeterministicStopLossManager
 from app.backtesting.strategy import BacktestStrategy, StrategyContext
+from app.indicators.regime import MarketRegimePoint
+from app.indicators.regime_incremental import MarketRegimeAccumulator
 from app.market_data.datasets import DatasetSnapshot
 from app.market_data.domain import Candle, DataRange, MarketType
 
@@ -105,6 +108,7 @@ class BacktestExecutionResult:
     equity_curve: tuple[EquityPoint, ...]
     final_portfolio: PortfolioSnapshot
     risk_halt: bool
+    market_regimes: tuple[MarketRegimePoint, ...] = ()
 
 
 class DeterministicBacktestEngine:
@@ -131,6 +135,7 @@ class DeterministicBacktestEngine:
         try:
             evaluation_range = evaluation_range_for(config)
             lifecycle_version = strategy_lifecycle_version_for(config)
+            regime_policy = market_regime_policy_for(config)
         except ValueError as error:
             raise StrategyFailureError("A configuração de lifecycle é inválida.") from error
         has_warmup = evaluation_range.start > config.data_range.start
@@ -181,12 +186,16 @@ class DeterministicBacktestEngine:
             policy=stop_loss_policy_for(config.risk_limits),
             constraints=config.constraints,
         )
+        regime_accumulator = (
+            None if regime_policy is None else MarketRegimeAccumulator(regime_policy)
+        )
         portfolio = initialize_portfolio(config.initial_capital)
         ledger = BacktestLedger()
         ledger.record_initial_capital(config.initial_capital, evaluation_range.start)
         orders: list[SimulatedOrder] = []
         fills: list[Fill] = []
         equity: list[EquityPoint] = []
+        market_regimes: list[MarketRegimePoint] = []
         history: deque[Candle] = deque(maxlen=config.history_window)
         risk_halt = False
         last_fill: Fill | None = None
@@ -194,6 +203,7 @@ class DeterministicBacktestEngine:
         previous_open_time: datetime | None = None
         context_candles_seen = 0
         candles_processed = 0
+        last_closed_regime: MarketRegimePoint | None = None
         start_context = self._context(
             snapshot=snapshot,
             candle_index=-1,
@@ -203,6 +213,7 @@ class DeterministicBacktestEngine:
             orders=orders,
             last_fill=None,
             risk_halt=False,
+            market_regime=None,
         )
         pending_start_intents = self._strategy_call(strategy.on_start, start_context)
 
@@ -214,6 +225,9 @@ class DeterministicBacktestEngine:
             if context_candles_seen >= config.max_candles:
                 raise MaximumCandlesExceededError()
             self._validate_candle(candle, previous_open_time, last_candle)
+            current_regime = (
+                None if regime_accumulator is None else regime_accumulator.update(candle)
+            )
             context_candles_seen += 1
             previous_open_time = candle.open_time
             last_candle = candle
@@ -228,6 +242,7 @@ class DeterministicBacktestEngine:
                     orders=orders,
                     last_fill=None,
                     risk_halt=False,
+                    market_regime=current_regime,
                 )
                 warmup_result = self._strategy_call(
                     cast(Callable[[StrategyContext, Candle], None], warmup_callback),
@@ -236,6 +251,7 @@ class DeterministicBacktestEngine:
                 )
                 if warmup_result is not None:
                     raise StrategyFailureError("on_warmup_candle não pode produzir intents")
+                last_closed_regime = current_regime
                 continue
 
             candle_index = candles_processed
@@ -325,6 +341,7 @@ class DeterministicBacktestEngine:
                     orders=orders,
                     last_fill=fill,
                     risk_halt=risk_halt,
+                    market_regime=last_closed_regime,
                 )
                 fill_intents = self._strategy_call(strategy.on_fill, fill_context, fill)
                 self._submit_intents(
@@ -366,6 +383,7 @@ class DeterministicBacktestEngine:
                 orders=orders,
                 last_fill=last_fill,
                 risk_halt=risk_halt,
+                market_regime=current_regime,
             )
             candle_intents = self._strategy_call(strategy.on_candle, candle_context, candle)
             self._submit_intents(
@@ -381,6 +399,9 @@ class DeterministicBacktestEngine:
                 risk_halt=risk_halt,
             )
             self._check_event_limit(config, orders, fills, ledger, equity)
+            if current_regime is not None:
+                market_regimes.append(current_regime)
+            last_closed_regime = current_regime
             candles_processed += 1
 
         if candles_processed == 0 or last_candle is None:
@@ -430,6 +451,7 @@ class DeterministicBacktestEngine:
             orders=orders,
             last_fill=last_fill,
             risk_halt=risk_halt,
+            market_regime=last_closed_regime,
         )
         self._strategy_call(strategy.on_end, end_context)
         self._check_event_limit(config, orders, fills, ledger, equity)
@@ -445,6 +467,7 @@ class DeterministicBacktestEngine:
             equity_curve=tuple(equity),
             final_portfolio=portfolio.snapshot(),
             risk_halt=risk_halt,
+            market_regimes=tuple(market_regimes),
         )
 
     @staticmethod
@@ -744,6 +767,7 @@ class DeterministicBacktestEngine:
         orders: list[SimulatedOrder],
         last_fill: Fill | None,
         risk_halt: bool,
+        market_regime: MarketRegimePoint | None,
     ) -> StrategyContext:
         return StrategyContext(
             snapshot=snapshot,
@@ -759,6 +783,7 @@ class DeterministicBacktestEngine:
             ),
             last_fill=last_fill,
             risk_halt=risk_halt,
+            market_regime=market_regime,
         )
 
     def _context_from_previous_history(
@@ -770,6 +795,7 @@ class DeterministicBacktestEngine:
         orders: list[SimulatedOrder],
         last_fill: Fill,
         risk_halt: bool,
+        market_regime: MarketRegimePoint | None,
     ) -> StrategyContext:
         if previous_history:
             return self._context(
@@ -781,6 +807,7 @@ class DeterministicBacktestEngine:
                 orders=orders,
                 last_fill=last_fill,
                 risk_halt=risk_halt,
+                market_regime=market_regime,
             )
         return self._context(
             snapshot=snapshot,
@@ -791,6 +818,7 @@ class DeterministicBacktestEngine:
             orders=orders,
             last_fill=last_fill,
             risk_halt=risk_halt,
+            market_regime=None,
         )
 
     @staticmethod

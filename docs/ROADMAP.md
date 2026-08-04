@@ -624,11 +624,34 @@ regime attribution, cross-asset portfolio accounting, strategy promotion,
 PostgreSQL/API persistence, dashboards, scheduling, notifications and live
 trading.
 
+### Phase 5-08: deterministic market regime detection ✅
+
+**Scope**: Classify every closed candle with a versioned, explainable and
+no-look-ahead heuristic shared by backtesting and bounded paper replay. The policy
+uses fast/slow EMA separation and normalized ATR, remains opt-in for compatibility,
+and exposes regime information without changing strategy decisions.
+
+**Delivered**:
+- [x] Immutable versioned policy with trend, range, volatile and warmup regimes
+- [x] Separate up/down/none trend direction and explainability metrics
+- [x] Batch and constant-memory incremental calculations with exact parity
+- [x] Closed-candle strategy context integration without fill-time future leakage
+- [x] Identity-bearing backtest configuration with legacy compatibility
+- [x] Optional authenticated `regimes.jsonl`, inspect, verification and paginated CLI
+- [x] Lossless Decimal serialization independent of ambient precision
+- [x] Schema-2 paper sessions with one bounded latest verified regime observation
+- [x] Backtest and paper CLI policy flags plus deterministic remote-free tests
+
+**Explicitly deferred after 5-08**: performance attribution by regime, learned or
+probabilistic classifiers, automatic strategy selection/promotion, calendar-period
+performance series, cross-asset portfolio accounting, dashboards, PostgreSQL/API
+persistence, notifications, exchange-account access and live trading.
+
 **Deliverables**:
 - [x] Position sizing engine
 - [x] Stop-loss enforcement
 - [x] Asset-level performance tracking
-- [ ] Market regime detection (trend/range/volatile)
+- [x] Market regime detection (trend/range/volatile)
 - [x] Paper trading engine (bounded local deterministic replay)
 - [ ] Live performance dashboard
 - [ ] Trade history & journal

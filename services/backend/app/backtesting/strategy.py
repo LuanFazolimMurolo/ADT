@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import copy
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Protocol
@@ -16,6 +17,11 @@ from app.backtesting.domain import (
     SimulatedOrder,
     StrategyDescriptor,
     TimeInForce,
+)
+from app.indicators.regime import (
+    MarketRegimeKind,
+    MarketRegimePoint,
+    TrendDirection,
 )
 from app.market_data.datasets import DatasetSnapshot
 from app.market_data.domain import Candle
@@ -33,6 +39,7 @@ class StrategyContext:
     open_orders: tuple[SimulatedOrder, ...]
     last_fill: Fill | None
     risk_halt: bool
+    market_regime: MarketRegimePoint | None = None
 
     def __post_init__(self) -> None:
         if self.candle_index < -1:
@@ -40,6 +47,8 @@ class StrategyContext:
         if self.current_candle is None:
             if self.candle_index != -1 or self.history:
                 raise ValueError("start context cannot expose candle history")
+            if self.market_regime is not None:
+                raise ValueError("start context cannot expose a market regime")
             return
         if self.candle_index < 0 or not self.history or self.history[-1] != self.current_candle:
             raise ValueError("strategy history must end at the current candle")
@@ -51,6 +60,22 @@ class StrategyContext:
             raise ValueError("strategy context contains a future candle")
         if any(order.status is not OrderStatus.OPEN for order in self.open_orders):
             raise ValueError("strategy open_orders must contain only OPEN orders")
+        if self.market_regime is not None:
+            if type(self.market_regime) is not MarketRegimePoint:
+                raise ValueError("strategy market_regime is invalid")
+            if not isinstance(self.market_regime.regime, MarketRegimeKind) or not isinstance(
+                self.market_regime.trend_direction, TrendDirection
+            ):
+                raise ValueError("strategy market_regime is invalid")
+            candidate = copy(self.market_regime)
+            try:
+                MarketRegimePoint.__post_init__(candidate)
+            except Exception:
+                raise ValueError("strategy market_regime is invalid") from None
+            if candidate != self.market_regime:
+                raise ValueError("strategy market_regime is not canonical")
+            if self.market_regime.event_time != self.current_candle.close_time:
+                raise ValueError("strategy market_regime must align to the current candle")
 
 
 class BacktestStrategy(Protocol):

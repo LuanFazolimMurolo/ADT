@@ -35,6 +35,12 @@ from app.backtesting.domain import (
     TimeInForce,
 )
 from app.backtesting.serialization import canonical_json_bytes, canonical_value, decimal_text
+from app.indicators.regime import (
+    MarketRegimeKind,
+    MarketRegimePoint,
+    MarketRegimePolicy,
+    TrendDirection,
+)
 from app.market_data.domain import DataRange, TradingPair, require_utc
 from app.market_data.timeframes import get_timeframe
 from app.paper_trading.domain import (
@@ -45,6 +51,7 @@ from app.paper_trading.domain import (
     paper_config_checksum,
     paper_config_payload,
     paper_session_id,
+    paper_state_document_payload,
     validate_paper_session_state,
     validate_paper_state_summary,
 )
@@ -196,7 +203,9 @@ def decode_paper_config(raw: bytes) -> PaperSessionConfig:
 
 def encode_paper_state(state: PaperSessionState) -> bytes:
     validate_paper_session_state(state)
-    encoded = canonical_json_bytes({"state": canonical_value(state), "checksum": state.checksum})
+    encoded = canonical_json_bytes(
+        {"state": paper_state_document_payload(state), "checksum": state.checksum}
+    )
     if len(encoded) > MAX_PAPER_DOCUMENT_BYTES:
         raise PaperSessionCorruptError()
     return encoded
@@ -276,7 +285,7 @@ def _load_json(raw: bytes) -> object:
 
 
 def _config_from_payload(payload: dict[str, object]) -> PaperSessionConfig:
-    expected = {
+    legacy = {
         "pair",
         "timeframe",
         "start_at",
@@ -294,10 +303,19 @@ def _config_from_payload(payload: dict[str, object]) -> PaperSessionConfig:
         "engine_version",
         "schema_version",
     }
-    if set(payload) != expected:
+    keys = frozenset(payload)
+    if keys not in {frozenset(legacy), frozenset(legacy | {"market_regime_policy"})}:
+        raise InvalidPaperSessionError()
+    schema_version = _int(payload["schema_version"])
+    if (schema_version == 1) != ("market_regime_policy" not in payload):
         raise InvalidPaperSessionError()
     pair_payload = _object(payload["pair"])
     _require_keys(pair_payload, _PAIR_KEYS)
+    policy = (
+        None
+        if "market_regime_policy" not in payload
+        else _market_regime_policy(_object(payload["market_regime_policy"]))
+    )
     return PaperSessionConfig(
         pair=TradingPair(_string(pair_payload["base"]), _string(pair_payload["quote"])),
         timeframe=get_timeframe(_string(payload["timeframe"])),
@@ -314,12 +332,13 @@ def _config_from_payload(payload: dict[str, object]) -> PaperSessionConfig:
         max_orders=_int(payload["max_orders"]),
         max_events=_int(payload["max_events"]),
         engine_version=_string(payload["engine_version"]),
-        schema_version=_int(payload["schema_version"]),
+        market_regime_policy=policy,
+        schema_version=schema_version,
     )
 
 
 def _state_from_payload(payload: dict[str, object]) -> PaperSessionState:
-    expected = {
+    legacy = {
         "session_id",
         "config_checksum",
         "dataset_version",
@@ -337,8 +356,15 @@ def _state_from_payload(payload: dict[str, object]) -> PaperSessionState:
         "checksum",
         "schema_version",
     }
+    schema_version = _int(payload.get("schema_version"))
+    expected = legacy if schema_version == 1 else legacy | {"latest_market_regime"}
     if set(payload) != expected:
         raise PaperSessionCorruptError()
+    latest = (
+        None
+        if schema_version == 1
+        else _market_regime_point(_object(payload["latest_market_regime"]))
+    )
     return PaperSessionState(
         session_id=_string(payload["session_id"]),
         config_checksum=_string(payload["config_checksum"]),
@@ -355,7 +381,8 @@ def _state_from_payload(payload: dict[str, object]) -> PaperSessionState:
         replayed_at=_datetime(payload["replayed_at"]),
         state_id=_string(payload["state_id"]),
         checksum=_string(payload["checksum"]),
-        schema_version=_int(payload["schema_version"]),
+        latest_market_regime=latest,
+        schema_version=schema_version,
     )
 
 
@@ -495,6 +522,48 @@ def _stop_loss(value: object) -> StopLossPolicy:
     return StopLossPolicy(
         kind=StopLossKind(_string(payload["kind"])),
         value=None if raw_value is None else _decimal(raw_value),
+    )
+
+
+def _market_regime_policy(payload: dict[str, object]) -> MarketRegimePolicy:
+    policy = MarketRegimePolicy(
+        schema_version=_int(payload.get("schema_version")),
+        fast_ema_period=_int(payload.get("fast_ema_period")),
+        slow_ema_period=_int(payload.get("slow_ema_period")),
+        atr_period=_int(payload.get("atr_period")),
+        volatile_atr_ratio=_decimal(payload.get("volatile_atr_ratio")),
+        trend_strength_threshold=_decimal(payload.get("trend_strength_threshold")),
+    )
+    if canonical_value(policy) != payload:
+        raise ValueError
+    return policy
+
+
+def _market_regime_point(payload: dict[str, object]) -> MarketRegimePoint:
+    _require_keys(
+        payload,
+        frozenset(
+            {
+                "event_time",
+                "regime",
+                "trend_direction",
+                "fast_ema",
+                "slow_ema",
+                "atr",
+                "atr_ratio",
+                "trend_strength",
+            }
+        ),
+    )
+    return MarketRegimePoint(
+        event_time=_datetime(payload["event_time"]),
+        regime=MarketRegimeKind(_string(payload["regime"])),
+        trend_direction=TrendDirection(_string(payload["trend_direction"])),
+        fast_ema=_optional_decimal(payload["fast_ema"]),
+        slow_ema=_optional_decimal(payload["slow_ema"]),
+        atr=_optional_decimal(payload["atr"]),
+        atr_ratio=_optional_decimal(payload["atr_ratio"]),
+        trend_strength=_optional_decimal(payload["trend_strength"]),
     )
 
 
