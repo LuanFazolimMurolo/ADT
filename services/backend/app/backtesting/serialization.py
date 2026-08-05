@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
@@ -28,13 +29,19 @@ def canonical_value(value: object) -> object:
         return decimal_text(value)
     if isinstance(value, datetime):
         return value.isoformat()
+    if isinstance(value, timedelta):
+        return {
+            "days": value.days,
+            "seconds": value.seconds,
+            "microseconds": value.microseconds,
+        }
     if isinstance(value, Enum):
         return value.value
     if isinstance(value, Path):
         return value.as_posix()
     if is_dataclass(value) and not isinstance(value, type):
         return {field.name: canonical_value(getattr(value, field.name)) for field in fields(value)}
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {
             str(key): canonical_value(item)
             for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
