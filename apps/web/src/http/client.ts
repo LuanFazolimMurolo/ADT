@@ -10,6 +10,8 @@ import type {
   MovementCreateRequest,
   MovementListResponse,
   PaperDashboardResponse,
+  PaperTradeJournalPageResponse,
+  PaperTradeStatus,
   PublicSimulationSummary,
   Setting,
   SettingPatchRequest,
@@ -47,6 +49,28 @@ export class ApiError extends Error {
     super(message)
     this.name = 'ApiError'
   }
+}
+
+export interface PaperTradeJournalFilters {
+  sessionId?: string
+  baseAsset?: string
+  quoteAsset?: string
+  timeframe?: string
+  strategyName?: string
+  strategyVersion?: string
+  status?: PaperTradeStatus
+  openedFrom?: string
+  openedBefore?: string
+  closedFrom?: string
+  closedBefore?: string
+}
+
+function appendQueryValue(
+  params: URLSearchParams,
+  key: string,
+  value: string | undefined,
+): void {
+  if (value) params.set(key, value)
 }
 
 export interface ApiClientOptions {
@@ -220,6 +244,32 @@ export class ApiClient {
   ): Promise<PaperDashboardResponse> {
     return this.request(
       `/api/v1/admin/paper-trading/dashboard?page=${page}&page_size=${pageSize}`,
+    )
+  }
+
+  getPaperTradeJournal(
+    filters: PaperTradeJournalFilters = {},
+    page = 1,
+    pageSize = 20,
+  ): Promise<PaperTradeJournalPageResponse> {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+    })
+    appendQueryValue(params, 'session_id', filters.sessionId)
+    appendQueryValue(params, 'base_asset', filters.baseAsset)
+    appendQueryValue(params, 'quote_asset', filters.quoteAsset)
+    appendQueryValue(params, 'timeframe', filters.timeframe)
+    appendQueryValue(params, 'strategy_name', filters.strategyName)
+    appendQueryValue(params, 'strategy_version', filters.strategyVersion)
+    appendQueryValue(params, 'status', filters.status)
+    appendQueryValue(params, 'opened_from', filters.openedFrom)
+    appendQueryValue(params, 'opened_before', filters.openedBefore)
+    appendQueryValue(params, 'closed_from', filters.closedFrom)
+    appendQueryValue(params, 'closed_before', filters.closedBefore)
+
+    return this.request(
+      `/api/v1/admin/paper-trading/journal?${params.toString()}`,
     )
   }
 

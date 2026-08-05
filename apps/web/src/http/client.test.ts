@@ -50,6 +50,39 @@ describe('ApiClient', () => {
     expect(headers.get('Authorization')).toBe('Bearer token')
   })
 
+  it('consulta o trade journal com filtros codificados e autenticação', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, {
+      filters: {},
+      items: [],
+      page: 2,
+      page_size: 20,
+      total: 0,
+      total_pages: 0,
+      totals: {},
+    }))
+    const client = new ApiClient({
+      baseUrl: 'http://api.test',
+      getAccessToken: async () => 'token',
+      fetchImplementation: fetchMock as typeof fetch,
+    })
+
+    await client.getPaperTradeJournal(
+      {
+        baseAsset: 'BTC',
+        strategyName: 'strategy with space',
+        status: 'OPEN',
+      },
+      2,
+      20,
+    )
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'http://api.test/api/v1/admin/paper-trading/journal?page=2&page_size=20&base_asset=BTC&strategy_name=strategy+with+space&status=OPEN',
+    )
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers
+    expect(headers.get('Authorization')).toBe('Bearer token')
+  })
+
   it('envia o token Bearer sem registrá-lo', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { user_id: 'id', is_admin: true }))
     const consoleSpy = vi.spyOn(console, 'log')

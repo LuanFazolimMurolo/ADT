@@ -52,6 +52,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/paper-trading/journal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Paper Trade Journal
+         * @description Return one bounded, newest-first, administrator-only journal page.
+         */
+        get: operations["get_paper_trade_journal_api_v1_admin_paper_trading_journal_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/paper-trading/journal/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Paper Trade Journal
+         * @description Download one bounded deterministic export through the verified read path.
+         */
+        get: operations["export_paper_trade_journal_api_v1_admin_paper_trading_journal_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/settings": {
         parameters: {
             query?: never;
@@ -751,6 +791,16 @@ export interface components {
         ErrorResponse: {
             error: components["schemas"]["ErrorPayload"];
         };
+        /**
+         * FillLiquidity
+         * @enum {string}
+         */
+        FillLiquidity: "MAKER" | "TAKER";
+        /**
+         * FillReason
+         * @enum {string}
+         */
+        FillReason: "MARKET_OPEN" | "LIMIT_TOUCHED" | "LIMIT_GAP" | "STOP_TRIGGERED" | "STOP_GAP" | "FORCE_CLOSE";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -805,6 +855,16 @@ export interface components {
             items: components["schemas"]["CapitalMovementResponse"][];
             pagination: components["schemas"]["PageMeta"];
         };
+        /**
+         * OrderSide
+         * @enum {string}
+         */
+        OrderSide: "BUY" | "SELL";
+        /**
+         * OrderType
+         * @enum {string}
+         */
+        OrderType: "MARKET" | "LIMIT" | "STOP_MARKET";
         /**
          * PageMeta
          * @description Metadata needed by clients to navigate a result set.
@@ -1266,6 +1326,213 @@ export interface components {
             /** Warmup Candles */
             warmup_candles: number;
         };
+        /** PaperTradeExecutionResponse */
+        PaperTradeExecutionResponse: {
+            /** Base Price */
+            base_price: string;
+            /** Candle Index */
+            candle_index: number;
+            /** Client Tag */
+            client_tag: string | null;
+            /**
+             * Event Time
+             * Format: date-time
+             */
+            event_time: string;
+            /** Execution Price */
+            execution_price: string;
+            /** Fee */
+            fee: string;
+            /** Fill Id */
+            fill_id: string;
+            fill_reason: components["schemas"]["FillReason"];
+            liquidity: components["schemas"]["FillLiquidity"];
+            /** Notional */
+            notional: string;
+            /** Order Id */
+            order_id: string;
+            /** Order Sequence */
+            order_sequence: number;
+            order_type: components["schemas"]["OrderType"];
+            /** Quantity */
+            quantity: string;
+            side: components["schemas"]["OrderSide"];
+            /** Slippage Cost */
+            slippage_cost: string;
+            time_in_force: components["schemas"]["TimeInForce"];
+        };
+        /**
+         * PaperTradeExportFormat
+         * @enum {string}
+         */
+        PaperTradeExportFormat: "jsonl" | "csv";
+        /** PaperTradeJournalFilterResponse */
+        PaperTradeJournalFilterResponse: {
+            /** Base Asset */
+            base_asset: string | null;
+            /** Closed Before */
+            closed_before: string | null;
+            /** Closed From */
+            closed_from: string | null;
+            /** Opened Before */
+            opened_before: string | null;
+            /** Opened From */
+            opened_from: string | null;
+            /** Quote Asset */
+            quote_asset: string | null;
+            /** Session Id */
+            session_id: string | null;
+            status: components["schemas"]["PaperTradeStatus"] | null;
+            /** Strategy Name */
+            strategy_name: string | null;
+            /** Strategy Version */
+            strategy_version: string | null;
+            /** Timeframe */
+            timeframe: string | null;
+        };
+        /** PaperTradeJournalPageResponse */
+        PaperTradeJournalPageResponse: {
+            filters: components["schemas"]["PaperTradeJournalFilterResponse"];
+            /** Items */
+            items: components["schemas"]["PaperTradeJournalRecordResponse"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+            /** Total Pages */
+            total_pages: number;
+            totals: components["schemas"]["PaperTradeJournalTotalsResponse"];
+        };
+        /** PaperTradeJournalRecordResponse */
+        PaperTradeJournalRecordResponse: {
+            /** Base Asset */
+            base_asset: string;
+            /** Config Checksum */
+            config_checksum: string;
+            /**
+             * Last Candle Open Time
+             * Format: date-time
+             */
+            last_candle_open_time: string;
+            /** Quote Asset */
+            quote_asset: string;
+            /**
+             * Replayed At
+             * Format: date-time
+             */
+            replayed_at: string;
+            /** Session Id */
+            session_id: string;
+            /** State Checksum */
+            state_checksum: string;
+            /** State Id */
+            state_id: string;
+            /** Strategy Name */
+            strategy_name: string;
+            strategy_parameters: components["schemas"]["JsonValue-Output"];
+            /** Strategy Version */
+            strategy_version: string;
+            /** Symbol */
+            symbol: string;
+            /** Timeframe */
+            timeframe: string;
+            trade: components["schemas"]["PaperTradeResponse"];
+        };
+        /** PaperTradeJournalTotalsResponse */
+        PaperTradeJournalTotalsResponse: {
+            /** Closed Trades Count */
+            closed_trades_count: number;
+            /** Open Trades Count */
+            open_trades_count: number;
+            /** Total Fees */
+            total_fees: string;
+            /** Total Net Pnl */
+            total_net_pnl: string;
+            /** Total Realized Pnl */
+            total_realized_pnl: string;
+            /** Total Slippage Cost */
+            total_slippage_cost: string;
+            /** Total Unrealized Pnl */
+            total_unrealized_pnl: string;
+            /** Trades Count */
+            trades_count: number;
+        };
+        /** PaperTradeResponse */
+        PaperTradeResponse: {
+            /** Average Entry Price */
+            average_entry_price: string;
+            /** Average Exit Price */
+            average_exit_price: string | null;
+            /** Closed At */
+            closed_at: string | null;
+            /** Closed Quantity */
+            closed_quantity: string;
+            /** Entry Cost Basis */
+            entry_cost_basis: string;
+            /** Entry Executions */
+            entry_executions: components["schemas"]["PaperTradeExecutionResponse"][];
+            /** Entry Fees */
+            entry_fees: string;
+            /** Entry Notional */
+            entry_notional: string;
+            /** Entry Slippage Cost */
+            entry_slippage_cost: string;
+            /** Exit Executions */
+            exit_executions: components["schemas"]["PaperTradeExecutionResponse"][];
+            /** Exit Fees */
+            exit_fees: string;
+            /** Exit Notional */
+            exit_notional: string;
+            /** Exit Slippage Cost */
+            exit_slippage_cost: string;
+            /** First Exit At */
+            first_exit_at: string | null;
+            /**
+             * Last Entry At
+             * Format: date-time
+             */
+            last_entry_at: string;
+            /** Mark Price */
+            mark_price: string | null;
+            /** Net Pnl */
+            net_pnl: string;
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            /** Opened Quantity */
+            opened_quantity: string;
+            /** Realized Pnl */
+            realized_pnl: string;
+            /** Released Cost Basis */
+            released_cost_basis: string;
+            /** Remaining Cost Basis */
+            remaining_cost_basis: string;
+            /** Remaining Quantity */
+            remaining_quantity: string;
+            /** Sequence */
+            sequence: number;
+            /** Session Id */
+            session_id: string;
+            status: components["schemas"]["PaperTradeStatus"];
+            /** Total Fees */
+            total_fees: string;
+            /** Total Slippage Cost */
+            total_slippage_cost: string;
+            /** Trade Id */
+            trade_id: string;
+            /** Unrealized Pnl */
+            unrealized_pnl: string;
+        };
+        /**
+         * PaperTradeStatus
+         * @description Lifecycle of one continuous long-only position cycle.
+         * @enum {string}
+         */
+        PaperTradeStatus: "OPEN" | "CLOSED";
         /**
          * PublicSimulationSummaryResponse
          * @description Active simulation summary without UUID or administrator identifiers.
@@ -1597,6 +1864,11 @@ export interface components {
             version: string;
         };
         /**
+         * TimeInForce
+         * @enum {string}
+         */
+        TimeInForce: "GTC" | "IOC" | "DAY";
+        /**
          * TrendDirection
          * @description Directional evidence emitted only for the trend regime.
          * @enum {string}
@@ -1766,6 +2038,280 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaperDashboardResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_paper_trade_journal_api_v1_admin_paper_trading_journal_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                session_id?: string | null;
+                base_asset?: string | null;
+                quote_asset?: string | null;
+                timeframe?: string | null;
+                strategy_name?: string | null;
+                strategy_version?: string | null;
+                status?: components["schemas"]["PaperTradeStatus"] | null;
+                opened_from?: string | null;
+                opened_before?: string | null;
+                closed_from?: string | null;
+                closed_before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperTradeJournalPageResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    export_paper_trade_journal_api_v1_admin_paper_trading_journal_export_get: {
+        parameters: {
+            query?: {
+                format?: components["schemas"]["PaperTradeExportFormat"];
+                session_id?: string | null;
+                base_asset?: string | null;
+                quote_asset?: string | null;
+                timeframe?: string | null;
+                strategy_name?: string | null;
+                strategy_version?: string | null;
+                status?: components["schemas"]["PaperTradeStatus"] | null;
+                opened_from?: string | null;
+                opened_before?: string | null;
+                closed_from?: string | null;
+                closed_before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deterministic journal export. */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    "X-ADT-Journal-Content-Checksum"?: string;
+                    "X-ADT-Journal-Query-Checksum"?: string;
+                    "X-ADT-Journal-Rows"?: number;
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/x-ndjson": string;
+                    "text/csv": string;
                 };
             };
             /** @description Malformed administrative request. */

@@ -15,6 +15,7 @@ from app.api.exceptions import setup_exception_handlers
 from app.api.routes import (
     admin,
     admin_paper_dashboard,
+    admin_paper_journal,
     admin_settings,
     admin_simulations,
     admin_strategies,
@@ -35,6 +36,8 @@ from app.market_data.http import PublicMarketHttpClient
 from app.middleware import RequestContextMiddleware
 from app.paper_trading.continuous import PaperRunnerStateStore
 from app.paper_trading.dashboard import PaperDashboardReadService
+from app.paper_trading.journal_export import PaperTradeJournalExportService
+from app.paper_trading.journal_query import PaperTradeJournalReadService
 from app.paper_trading.query import PaperTradingReadService
 from app.paper_trading.repository import PaperTradingRepository
 
@@ -132,6 +135,12 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
             application.state.paper_dashboard_read_service = PaperDashboardReadService(
                 paper_repository
             )
+            application.state.paper_trade_journal_read_service = PaperTradeJournalReadService(
+                paper_repository
+            )
+            application.state.paper_trade_journal_export_service = PaperTradeJournalExportService(
+                paper_repository
+            )
             application.state.paper_runner_state_store = PaperRunnerStateStore(
                 app_settings.data_dir
             )
@@ -165,7 +174,13 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
         allow_credentials=False,
         allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
         allow_headers=["Accept", "Authorization", "Content-Type", "X-Request-ID"],
-        expose_headers=["X-Request-ID"],
+        expose_headers=[
+            "Content-Disposition",
+            "X-ADT-Journal-Content-Checksum",
+            "X-ADT-Journal-Query-Checksum",
+            "X-ADT-Journal-Rows",
+            "X-Request-ID",
+        ],
         max_age=600,
     )
     application.add_middleware(
@@ -182,6 +197,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(paper_trading.router)
     application.include_router(admin.router)
     application.include_router(admin_paper_dashboard.router)
+    application.include_router(admin_paper_journal.router)
     application.include_router(admin_simulations.router)
     application.include_router(admin_settings.router)
     application.include_router(admin_strategies.router)

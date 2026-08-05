@@ -49,3 +49,10 @@ export type PaperDashboardTotals = ApiSchemas["PaperDashboardTotalsResponse"];
 export type PaperDashboardRunnerCycle =
   ApiSchemas["PaperDashboardRunnerCycleResponse"];
 export type PaperDashboardResponse = ApiSchemas["PaperDashboardResponse"];
+export type PaperTradeStatus = ApiSchemas["PaperTradeStatus"];
+export type PaperTradeJournalRecord =
+  ApiSchemas["PaperTradeJournalRecordResponse"];
+export type PaperTradeJournalTotals =
+  ApiSchemas["PaperTradeJournalTotalsResponse"];
+export type PaperTradeJournalPageResponse =
+  ApiSchemas["PaperTradeJournalPageResponse"];

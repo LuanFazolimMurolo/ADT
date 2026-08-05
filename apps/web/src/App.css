@@ -302,3 +302,177 @@ tbody tr:hover { background: rgba(103,242,138,.018); }
   .paper-session__header { flex-direction: column; }
   .paper-session__footer { flex-direction: column; gap: .3rem; }
 }
+
+/* Phase 5-10C deterministic trade journal */
+.journal-heading {
+  align-items: flex-end;
+}
+
+.journal-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.journal-filters label {
+  display: grid;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.journal-filters input,
+.journal-filters select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.75rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: var(--background);
+  color: var(--text);
+  font: inherit;
+  text-transform: none;
+}
+
+.journal-filter-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.journal-filter-actions small {
+  color: var(--muted);
+}
+
+.journal-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.journal-trade-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.journal-trade-card {
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.journal-trade-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.journal-trade-card__header h3 {
+  margin: 0.15rem 0;
+}
+
+.journal-trade-card__header small {
+  color: var(--muted);
+}
+
+.journal-trade-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.journal-trade-grid div {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.journal-trade-grid span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.journal-trade-grid strong {
+  overflow-wrap: anywhere;
+}
+
+.journal-trade-details {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.journal-trade-details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.journal-trade-details dl {
+  display: grid;
+  gap: 0.65rem;
+  margin: 1rem 0 0;
+}
+
+.journal-trade-details dl div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.25fr) 1fr;
+  gap: 1rem;
+}
+
+.journal-trade-details dt {
+  color: var(--muted);
+}
+
+.journal-trade-details dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+  .journal-filters,
+  .journal-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .journal-trade-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .journal-heading {
+    align-items: stretch;
+  }
+
+  .journal-filters,
+  .journal-totals,
+  .journal-trade-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .journal-trade-card__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .journal-trade-details dl div {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
+}

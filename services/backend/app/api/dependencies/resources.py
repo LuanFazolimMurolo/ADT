@@ -10,6 +10,8 @@ from app.market_data.asset_catalog import AssetMarketService
 from app.market_data.continuous import ContinuousCollectionStateStore
 from app.paper_trading.continuous import PaperRunnerStateStore
 from app.paper_trading.dashboard import PaperDashboardReadService
+from app.paper_trading.journal_export import PaperTradeJournalExportService
+from app.paper_trading.journal_query import PaperTradeJournalReadService
 from app.paper_trading.query import PaperTradingReadService
 from app.repositories import (
     AdminRepository,
@@ -57,6 +59,26 @@ def get_paper_trading_read_service(request: Request) -> PaperTradingReadService:
 def get_paper_dashboard_read_service(request: Request) -> PaperDashboardReadService:
     """Return the application-owned paper-trading dashboard read service."""
     return cast(PaperDashboardReadService, request.app.state.paper_dashboard_read_service)
+
+
+def get_paper_trade_journal_read_service(
+    request: Request,
+) -> PaperTradeJournalReadService:
+    """Return the application-owned deterministic journal read service."""
+    return cast(
+        PaperTradeJournalReadService,
+        request.app.state.paper_trade_journal_read_service,
+    )
+
+
+def get_paper_trade_journal_export_service(
+    request: Request,
+) -> PaperTradeJournalExportService:
+    """Return the application-owned deterministic journal export service."""
+    return cast(
+        PaperTradeJournalExportService,
+        request.app.state.paper_trade_journal_export_service,
+    )
 
 
 def get_paper_runner_state_store(request: Request) -> PaperRunnerStateStore:
