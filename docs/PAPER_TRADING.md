@@ -205,7 +205,7 @@ Phase 5-03 does not add:
 
 - a permanent paper-session scheduler;
 - automatic strategy selection or production promotion;
-- an HTTP mutation API or dashboard;
+- an HTTP mutation API;
 - PostgreSQL/Supabase session persistence;
 - cross-process event streaming;
 - incremental serialization of arbitrary strategy state;
@@ -260,6 +260,28 @@ The endpoints only decode and validate local canonical documents. They never
 create a session, advance a replay or contact Binance. Orders and fills are
 paginated, and every financial value is serialized as a JSON decimal string.
 
-Phase 5-04 still does not add dynamic subscriptions, mutation endpoints, a
-dashboard, PostgreSQL persistence, WebSocket streaming, notifications, strategy
-promotion or live orders.
+Phase 5-04 still does not add dynamic subscriptions, mutation endpoints,
+PostgreSQL persistence, WebSocket streaming, notifications, strategy promotion
+or live orders. The read-only dashboard is added separately by Phase 5-09.
+
+## Live performance dashboard (Phase 5-09)
+
+The authenticated administrative projection is available at:
+
+```text
+GET /api/v1/admin/paper-trading/dashboard?page=1&page_size=20
+```
+
+It joins canonical session configuration, the latest verified paper state and
+the latest runner cycle without executing a replay. Each page contains bounded
+session cards with configured capital, equity, realized/unrealized and total
+PnL, return, drawdown, fees, slippage, current Spot position, open-order count,
+risk halt, runner result and the latest closed-candle market regime. Aggregate
+totals are explicitly page-scoped. Nominal monetary totals are not assigned a
+shared currency because sessions may use different quote assets.
+
+The React route `/admin/paper-trading` polls at 30-second intervals, supports a
+manual refresh and compares at most two already-loaded sessions locally. The API
+requires backend administrator authorization and exposes only `GET`; neither the
+route nor the UI creates sessions, advances strategies, changes runner state,
+opens WebSockets or accesses an exchange account.

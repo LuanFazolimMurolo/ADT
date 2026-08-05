@@ -251,3 +251,13 @@ persist only the latest verified closed-candle observation in their bounded late
 state; legacy schema-1 sessions remain unchanged. Phase 5-08 is deterministic
 feature engineering, not the machine-learning regime classifier deferred to Phase 8,
 and it does not automatically select or promote a strategy.
+
+### Live paper-trading performance dashboard (Phase 5-09)
+
+Administrators can monitor the verified local paper runner at
+`/admin/paper-trading`. The page reads
+`GET /api/v1/admin/paper-trading/dashboard`, refreshes at a bounded 30-second
+cadence and exposes page-scoped capital, equity, PnL, drawdown, positions, open
+orders, runner outcomes and the latest deterministic market regime. Up to two
+sessions can be compared locally. The route is authenticated and read-only; it
+never advances a replay, modifies a session or contacts an exchange account.

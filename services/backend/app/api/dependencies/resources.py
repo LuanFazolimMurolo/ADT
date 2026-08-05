@@ -9,6 +9,7 @@ from app.database import Database
 from app.market_data.asset_catalog import AssetMarketService
 from app.market_data.continuous import ContinuousCollectionStateStore
 from app.paper_trading.continuous import PaperRunnerStateStore
+from app.paper_trading.dashboard import PaperDashboardReadService
 from app.paper_trading.query import PaperTradingReadService
 from app.repositories import (
     AdminRepository,
@@ -51,6 +52,11 @@ def get_continuous_collection_state_store(
 def get_paper_trading_read_service(request: Request) -> PaperTradingReadService:
     """Return the application-owned read-only paper-trading query service."""
     return cast(PaperTradingReadService, request.app.state.paper_trading_read_service)
+
+
+def get_paper_dashboard_read_service(request: Request) -> PaperDashboardReadService:
+    """Return the application-owned paper-trading dashboard read service."""
+    return cast(PaperDashboardReadService, request.app.state.paper_dashboard_read_service)
 
 
 def get_paper_runner_state_store(request: Request) -> PaperRunnerStateStore:

@@ -9,6 +9,7 @@ import type {
   HealthResponse,
   MovementCreateRequest,
   MovementListResponse,
+  PaperDashboardResponse,
   PublicSimulationSummary,
   Setting,
   SettingPatchRequest,
@@ -211,6 +212,15 @@ export class ApiClient {
 
   getAdminMe(): Promise<AdminMe> {
     return this.request('/api/v1/admin/me')
+  }
+
+  getPaperTradingDashboard(
+    page = 1,
+    pageSize = 20,
+  ): Promise<PaperDashboardResponse> {
+    return this.request(
+      `/api/v1/admin/paper-trading/dashboard?page=${page}&page_size=${pageSize}`,
+    )
   }
 
   listSimulations(page = 1, pageSize = 20): Promise<SimulationListResponse> {

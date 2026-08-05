@@ -2,6 +2,7 @@
 
 from app.api.routes import (
     admin,
+    admin_paper_dashboard,
     admin_settings,
     admin_simulations,
     admin_strategies,
@@ -14,6 +15,7 @@ from app.api.routes import (
 
 __all__ = [
     "admin",
+    "admin_paper_dashboard",
     "admin_settings",
     "admin_simulations",
     "admin_strategies",

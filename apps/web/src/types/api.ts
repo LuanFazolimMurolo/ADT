@@ -3,31 +3,49 @@
  *
  * Run `npm run generate:api` after changing a Pydantic request/response model.
  */
-import type { components } from './openapi.generated'
+import type { components } from "./openapi.generated";
 
-type ApiSchemas = components['schemas']
+type ApiSchemas = components["schemas"];
 
-export type JsonValue = ApiSchemas['JsonValue-Input']
-export type AdminMe = ApiSchemas['AdminMeResponse']
-export type HealthResponse = ApiSchemas['HealthResponse']
-export type PageMeta = ApiSchemas['PageMeta']
+export type JsonValue = ApiSchemas["JsonValue-Input"];
+export type AdminMe = ApiSchemas["AdminMeResponse"];
+export type HealthResponse = ApiSchemas["HealthResponse"];
+export type PageMeta = ApiSchemas["PageMeta"];
 
-export type SimulationStatus = ApiSchemas['SimulationStatus']
-export type SimulationListItem = ApiSchemas['SimulationListItem']
-export type SimulationDetail = ApiSchemas['SimulationDetailResponse']
-export type SimulationListResponse = ApiSchemas['SimulationListResponse']
-export type SimulationCreateRequest = ApiSchemas['SimulationCreateRequest']
+export type SimulationStatus = ApiSchemas["SimulationStatus"];
+export type SimulationListItem = ApiSchemas["SimulationListItem"];
+export type SimulationDetail = ApiSchemas["SimulationDetailResponse"];
+export type SimulationListResponse = ApiSchemas["SimulationListResponse"];
+export type SimulationCreateRequest = ApiSchemas["SimulationCreateRequest"];
 
-export type MovementCreateType = ApiSchemas['MovementCreateType']
-export type CapitalMovementType = ApiSchemas['CapitalMovementType']
-export type MovementCreateRequest = ApiSchemas['MovementCreateRequest']
-export type CapitalMovement = ApiSchemas['CapitalMovementResponse']
-export type MovementListResponse = ApiSchemas['MovementListResponse']
+export type MovementCreateType = ApiSchemas["MovementCreateType"];
+export type CapitalMovementType = ApiSchemas["CapitalMovementType"];
+export type MovementCreateRequest = ApiSchemas["MovementCreateRequest"];
+export type CapitalMovement = ApiSchemas["CapitalMovementResponse"];
+export type MovementListResponse = ApiSchemas["MovementListResponse"];
 
-export type SettingPatchRequest = ApiSchemas['SettingPatchRequest']
-export type Setting = ApiSchemas['SettingResponse']
-export type SettingsListResponse = ApiSchemas['SettingsListResponse']
+export type SettingPatchRequest = ApiSchemas["SettingPatchRequest"];
+export type Setting = ApiSchemas["SettingResponse"];
+export type SettingsListResponse = ApiSchemas["SettingsListResponse"];
 
 export type PublicSimulationSummary =
-  ApiSchemas['PublicSimulationSummaryResponse']
-export type ApiErrorEnvelope = ApiSchemas['ErrorResponse']
+  ApiSchemas["PublicSimulationSummaryResponse"];
+export type ApiErrorEnvelope = ApiSchemas["ErrorResponse"];
+
+export type PaperRunnerSessionStatus = ApiSchemas["PaperRunnerSessionStatus"];
+export type PaperRunnerCycleStatus = ApiSchemas["PaperRunnerCycleStatus"];
+export type PaperMarketRegime = ApiSchemas["MarketRegimeKind"];
+export type PaperTrendDirection = ApiSchemas["TrendDirection"];
+
+export type PaperDashboardMetrics = ApiSchemas["PaperDashboardMetricsResponse"];
+export type PaperDashboardPortfolio = ApiSchemas["PaperPortfolioResponse"];
+export type PaperDashboardPosition =
+  ApiSchemas["PaperDashboardPositionResponse"];
+export type PaperDashboardRegime = ApiSchemas["PaperDashboardRegimeResponse"];
+export type PaperDashboardRunnerResult =
+  ApiSchemas["PaperDashboardRunnerResultResponse"];
+export type PaperDashboardSession = ApiSchemas["PaperDashboardSessionResponse"];
+export type PaperDashboardTotals = ApiSchemas["PaperDashboardTotalsResponse"];
+export type PaperDashboardRunnerCycle =
+  ApiSchemas["PaperDashboardRunnerCycleResponse"];
+export type PaperDashboardResponse = ApiSchemas["PaperDashboardResponse"];

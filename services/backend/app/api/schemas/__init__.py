@@ -26,6 +26,16 @@ from app.api.schemas.movements import (
     MovementListResponse,
 )
 from app.api.schemas.pagination import PageMeta, PageParams, PaginatedResponse
+from app.api.schemas.paper_dashboard import (
+    PaperDashboardMetricsResponse,
+    PaperDashboardPositionResponse,
+    PaperDashboardRegimeResponse,
+    PaperDashboardResponse,
+    PaperDashboardRunnerCycleResponse,
+    PaperDashboardRunnerResultResponse,
+    PaperDashboardSessionResponse,
+    PaperDashboardTotalsResponse,
+)
 from app.api.schemas.paper_trading import (
     PaperFillListResponse,
     PaperFillResponse,
@@ -89,6 +99,14 @@ __all__ = [
     "PaginatedResponse",
     "PositiveFinancialDecimal",
     "PositiveFinancialDecimalStringInput",
+    "PaperDashboardMetricsResponse",
+    "PaperDashboardPositionResponse",
+    "PaperDashboardRegimeResponse",
+    "PaperDashboardResponse",
+    "PaperDashboardRunnerCycleResponse",
+    "PaperDashboardRunnerResultResponse",
+    "PaperDashboardSessionResponse",
+    "PaperDashboardTotalsResponse",
     "PaperFillListResponse",
     "PaperFillResponse",
     "PaperOrderListResponse",

@@ -25,6 +25,31 @@ describe('ApiClient', () => {
     }
   })
 
+  it('consulta o dashboard de paper trading com paginação autenticada', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, {
+      items: [],
+      totals: {},
+      page: 3,
+      page_size: 20,
+      total: 0,
+      total_pages: 0,
+      runner: null,
+    }))
+    const client = new ApiClient({
+      baseUrl: 'http://api.test',
+      getAccessToken: async () => 'token',
+      fetchImplementation: fetchMock as typeof fetch,
+    })
+
+    await client.getPaperTradingDashboard(3, 20)
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'http://api.test/api/v1/admin/paper-trading/dashboard?page=3&page_size=20',
+    )
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers
+    expect(headers.get('Authorization')).toBe('Bearer token')
+  })
+
   it('envia o token Bearer sem registrá-lo', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { user_id: 'id', is_admin: true }))
     const consoleSpy = vi.spyOn(console, 'log')

@@ -1,18 +1,15 @@
-import type {
-  BrowserContext,
-  Request,
-  Route,
-} from '@playwright/test'
+import type { BrowserContext, Request, Route } from "@playwright/test";
 import type {
   CapitalMovement,
   JsonValue,
   MovementCreateRequest,
+  PaperDashboardResponse,
   Setting,
   SimulationCreateRequest,
   SimulationDetail,
   SimulationListItem,
-} from '../../src/types/api'
-import type { SystemStatus } from '../../src/types/system'
+} from "../../src/types/api";
+import type { SystemStatus } from "../../src/types/system";
 import {
   ADMIN_EMAIL,
   ADMIN_ID,
@@ -22,7 +19,7 @@ import {
   SUPABASE_ORIGIN,
   USER_EMAIL,
   WEB_ORIGIN,
-} from './constants'
+} from "./constants";
 import {
   createInitialMovement,
   createSession,
@@ -30,49 +27,49 @@ import {
   createSimulation,
   createUser,
   type MockRole,
-} from './factories'
+} from "./factories";
 
-type BackendMode = 'online' | 'service-unavailable' | 'network-error'
+type BackendMode = "online" | "service-unavailable" | "network-error";
 
 interface RecordedRequest {
-  method: string
-  pathname: string
-  search: string
-  origin: string
-  authorization?: string
-  body?: unknown
+  method: string;
+  pathname: string;
+  search: string;
+  origin: string;
+  authorization?: string;
+  body?: unknown;
 }
 
 interface ErrorResponse {
   error: {
-    code: string
-    message: string
-    details?: JsonValue
-  }
+    code: string;
+    message: string;
+    details?: JsonValue;
+  };
 }
 
 const JSON_HEADERS = {
-  'Content-Type': 'application/json',
-  'X-Request-ID': REQUEST_ID,
-}
+  "Content-Type": "application/json",
+  "X-Request-ID": REQUEST_ID,
+};
 
 function decimalToBigInt(value: string): bigint {
-  const match = /^(-?)(\d+)(?:\.(\d{1,8}))?$/.exec(value)
-  if (!match) throw new Error(`Decimal E2E inválido: ${value}`)
-  const [, sign, integer, fraction = ''] = match
-  const scaled = BigInt(`${integer}${fraction.padEnd(8, '0')}`)
-  return sign === '-' ? -scaled : scaled
+  const match = /^(-?)(\d+)(?:\.(\d{1,8}))?$/.exec(value);
+  if (!match) throw new Error(`Decimal E2E inválido: ${value}`);
+  const [, sign, integer, fraction = ""] = match;
+  const scaled = BigInt(`${integer}${fraction.padEnd(8, "0")}`);
+  return sign === "-" ? -scaled : scaled;
 }
 
 function bigIntToDecimal(value: bigint): string {
-  const sign = value < 0n ? '-' : ''
-  const absolute = value < 0n ? -value : value
-  const raw = absolute.toString().padStart(9, '0')
-  return `${sign}${raw.slice(0, -8)}.${raw.slice(-8)}`
+  const sign = value < 0n ? "-" : "";
+  const absolute = value < 0n ? -value : value;
+  const raw = absolute.toString().padStart(9, "0");
+  return `${sign}${raw.slice(0, -8)}.${raw.slice(-8)}`;
 }
 
 function normalizeDecimal(value: string): string {
-  return bigIntToDecimal(decimalToBigInt(value))
+  return bigIntToDecimal(decimalToBigInt(value));
 }
 
 function asListItem(simulation: SimulationDetail): SimulationListItem {
@@ -88,78 +85,80 @@ function asListItem(simulation: SimulationDetail): SimulationListItem {
     ended_at: simulation.ended_at,
     created_at: simulation.created_at,
     updated_at: simulation.updated_at,
-  }
+  };
 }
 
 export class MockServices {
-  readonly requests: RecordedRequest[] = []
-  readonly unexpectedRequests: string[] = []
+  readonly requests: RecordedRequest[] = [];
+  readonly unexpectedRequests: string[] = [];
 
-  private backendMode: BackendMode = 'online'
-  private databaseAvailable = true
-  private pendingAdminUnauthorizedResponses = 0
-  private tokenSequence = 0
-  private movementSequence = 0
-  private readonly tokenRoles = new Map<string, MockRole>()
-  private readonly refreshRoles = new Map<string, MockRole>()
-  private simulations: SimulationDetail[] = []
-  private readonly movements = new Map<string, CapitalMovement[]>()
-  private settings: Setting[] = createSettings()
+  private backendMode: BackendMode = "online";
+  private databaseAvailable = true;
+  private pendingAdminUnauthorizedResponses = 0;
+  private tokenSequence = 0;
+  private movementSequence = 0;
+  private readonly tokenRoles = new Map<string, MockRole>();
+  private readonly refreshRoles = new Map<string, MockRole>();
+  private simulations: SimulationDetail[] = [];
+  private readonly movements = new Map<string, CapitalMovement[]>();
+  private settings: Setting[] = createSettings();
 
-  lastIssuedAccessToken: string | null = null
-  recoveredEmail: string | null = null
-  recoveryRedirectTo: string | null = null
-  updatedPassword: string | null = null
+  lastIssuedAccessToken: string | null = null;
+  recoveredEmail: string | null = null;
+  recoveryRedirectTo: string | null = null;
+  updatedPassword: string | null = null;
 
   constructor() {
-    this.tokenRoles.set('e2e-recovery-access', 'admin')
-    this.refreshRoles.set('e2e-recovery-refresh', 'admin')
+    this.tokenRoles.set("e2e-recovery-access", "admin");
+    this.refreshRoles.set("e2e-recovery-refresh", "admin");
   }
 
   async install(context: BrowserContext): Promise<void> {
-    await context.route('**/*', async (route) => {
-      const request = route.request()
-      const url = new URL(request.url())
+    await context.route("**/*", async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
 
       if (url.origin === WEB_ORIGIN) {
-        await route.continue()
-        return
+        await route.continue();
+        return;
       }
       if (url.origin === SUPABASE_ORIGIN) {
-        await this.handleSupabase(route, request, url)
-        return
+        await this.handleSupabase(route, request, url);
+        return;
       }
       if (url.origin === API_ORIGIN) {
-        await this.handleApi(route, request, url)
-        return
+        await this.handleApi(route, request, url);
+        return;
       }
 
-      this.unexpectedRequests.push(`${request.method()} ${url.origin}${url.pathname}`)
-      await route.abort('blockedbyclient')
-    })
+      this.unexpectedRequests.push(
+        `${request.method()} ${url.origin}${url.pathname}`,
+      );
+      await route.abort("blockedbyclient");
+    });
   }
 
   seedActiveSimulation(
     overrides: Partial<SimulationDetail> = {},
   ): SimulationDetail {
-    const simulation = createSimulation(overrides)
-    this.simulations = [simulation]
+    const simulation = createSimulation(overrides);
+    this.simulations = [simulation];
     this.movements.set(simulation.id, [
       createInitialMovement(simulation.id, simulation.initial_capital),
-    ])
-    return simulation
+    ]);
+    return simulation;
   }
 
   setBackendMode(mode: BackendMode): void {
-    this.backendMode = mode
+    this.backendMode = mode;
   }
 
   setDatabaseAvailable(available: boolean): void {
-    this.databaseAvailable = available
+    this.databaseAvailable = available;
   }
 
   rejectNextAdminRequestsWith401(count = 1): void {
-    this.pendingAdminUnauthorizedResponses = count
+    this.pendingAdminUnauthorizedResponses = count;
   }
 
   requestsFor(method: string, pathname: string): RecordedRequest[] {
@@ -167,24 +166,24 @@ export class MockServices {
       (request) =>
         request.method === method.toUpperCase() &&
         request.pathname === pathname,
-    )
+    );
   }
 
   recoveryCallbackUrl(expired = false): string {
     if (expired) {
-      return '/admin/reset-password#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired'
+      return "/admin/reset-password#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired";
     }
-    return '/admin/reset-password#access_token=e2e-recovery-access&refresh_token=e2e-recovery-refresh&expires_in=3600&token_type=bearer&type=recovery'
+    return "/admin/reset-password#access_token=e2e-recovery-access&refresh_token=e2e-recovery-refresh&expires_in=3600&token_type=bearer&type=recovery";
   }
 
   private record(request: Request, url: URL): void {
-    const rawBody = request.postData()
-    let body: unknown
+    const rawBody = request.postData();
+    let body: unknown;
     if (rawBody) {
       try {
-        body = JSON.parse(rawBody) as unknown
+        body = JSON.parse(rawBody) as unknown;
       } catch {
-        body = rawBody
+        body = rawBody;
       }
     }
     this.requests.push({
@@ -194,15 +193,15 @@ export class MockServices {
       origin: url.origin,
       authorization: request.headers().authorization,
       body,
-    })
+    });
   }
 
   private corsHeaders(): Record<string, string> {
     return {
-      'Access-Control-Allow-Origin': WEB_ORIGIN,
-      'Access-Control-Expose-Headers': 'x-request-id',
-      Vary: 'Origin',
-    }
+      "Access-Control-Allow-Origin": WEB_ORIGIN,
+      "Access-Control-Expose-Headers": "x-request-id",
+      Vary: "Origin",
+    };
   }
 
   private async preflight(
@@ -211,30 +210,29 @@ export class MockServices {
     allowedMethods: readonly string[],
     allowedHeaders: readonly string[],
   ): Promise<void> {
+    const headers = request.headers();
     const requestedMethod =
-      request.headers()['access-control-request-method']?.toUpperCase()
-    const requestedHeaders = (
-      request.headers()['access-control-request-headers'] ?? ''
-    )
-      .split(',')
+      headers["access-control-request-method"]?.toUpperCase();
+    const requestedHeaders = (headers["access-control-request-headers"] ?? "")
+      .split(",")
       .map((header) => header.trim().toLowerCase())
-      .filter(Boolean)
+      .filter(Boolean);
     const normalizedAllowedHeaders = new Set(
       allowedHeaders.map((header) => header.toLowerCase()),
-    )
+    );
     const permitted =
       requestedMethod !== undefined &&
       allowedMethods.includes(requestedMethod) &&
-      requestedHeaders.every((header) => normalizedAllowedHeaders.has(header))
+      requestedHeaders.every((header) => normalizedAllowedHeaders.has(header));
 
     await route.fulfill({
       status: permitted ? 204 : 400,
       headers: {
         ...this.corsHeaders(),
-        'Access-Control-Allow-Methods': allowedMethods.join(', '),
-        'Access-Control-Allow-Headers': allowedHeaders.join(', '),
+        "Access-Control-Allow-Methods": allowedMethods.join(", "),
+        "Access-Control-Allow-Headers": allowedHeaders.join(", "),
       },
-    })
+    });
   }
 
   private async json(
@@ -251,7 +249,7 @@ export class MockServices {
         ...JSON_HEADERS,
         ...headers,
       },
-    })
+    });
   }
 
   private async apiError(
@@ -267,30 +265,31 @@ export class MockServices {
         message,
         ...(details === undefined ? {} : { details }),
       },
-    }
-    await this.json(route, status, body)
+    };
+    await this.json(route, status, body);
   }
 
   private issueSession(role: MockRole) {
-    this.tokenSequence += 1
-    const accessToken = `e2e-${role}-access-${this.tokenSequence}`
-    const refreshToken = `e2e-${role}-refresh-${this.tokenSequence}`
-    this.tokenRoles.set(accessToken, role)
-    this.refreshRoles.set(refreshToken, role)
-    this.lastIssuedAccessToken = accessToken
-    return createSession(role, accessToken, refreshToken)
+    this.tokenSequence += 1;
+    const accessToken = `e2e-${role}-access-${this.tokenSequence}`;
+    const refreshToken = `e2e-${role}-refresh-${this.tokenSequence}`;
+    this.tokenRoles.set(accessToken, role);
+    this.refreshRoles.set(refreshToken, role);
+    this.lastIssuedAccessToken = accessToken;
+    return createSession(role, accessToken, refreshToken);
   }
 
   private requestBody<T>(request: Request): T {
-    const body = request.postData()
-    if (!body) throw new Error(`Corpo ausente em ${request.method()} ${request.url()}`)
-    return JSON.parse(body) as T
+    const body = request.postData();
+    if (!body)
+      throw new Error(`Corpo ausente em ${request.method()} ${request.url()}`);
+    return JSON.parse(body) as T;
   }
 
   private roleForRequest(request: Request): MockRole | null {
-    const authorization = request.headers().authorization
-    if (!authorization?.startsWith('Bearer ')) return null
-    return this.tokenRoles.get(authorization.slice('Bearer '.length)) ?? null
+    const authorization = request.headers().authorization;
+    if (!authorization?.startsWith("Bearer ")) return null;
+    return this.tokenRoles.get(authorization.slice("Bearer ".length)) ?? null;
   }
 
   private async handleSupabase(
@@ -298,150 +297,143 @@ export class MockServices {
     request: Request,
     url: URL,
   ): Promise<void> {
-    this.record(request, url)
-    if (request.method() === 'OPTIONS') {
+    this.record(request, url);
+    if (request.method() === "OPTIONS") {
       await this.preflight(
         route,
         request,
-        ['GET', 'POST', 'PUT', 'OPTIONS'],
-        [
-          'accept',
-          'apikey',
-          'authorization',
-          'content-type',
-          'x-client-info',
-        ],
-      )
-      return
+        ["GET", "POST", "PUT", "OPTIONS"],
+        ["accept", "apikey", "authorization", "content-type", "x-client-info"],
+      );
+      return;
     }
 
     if (
-      request.method() === 'POST' &&
-      url.pathname === '/auth/v1/token' &&
-      url.searchParams.get('grant_type') === 'password'
+      request.method() === "POST" &&
+      url.pathname === "/auth/v1/token" &&
+      url.searchParams.get("grant_type") === "password"
     ) {
       const credentials = this.requestBody<{
-        email?: string
-        password?: string
-      }>(request)
+        email?: string;
+        password?: string;
+      }>(request);
       const role =
         credentials.email === ADMIN_EMAIL
-          ? 'admin'
+          ? "admin"
           : credentials.email === USER_EMAIL
-            ? 'user'
-            : null
+            ? "user"
+            : null;
       if (!role || credentials.password !== E2E_PASSWORD) {
         await this.json(
           route,
           400,
           {
-            code: 'invalid_credentials',
-            msg: 'Invalid login credentials',
+            code: "invalid_credentials",
+            msg: "Invalid login credentials",
           },
-          { 'X-Supabase-Api-Version': '2024-01-01' },
-        )
-        return
+          { "X-Supabase-Api-Version": "2024-01-01" },
+        );
+        return;
       }
-      await this.json(route, 200, this.issueSession(role))
-      return
+      await this.json(route, 200, this.issueSession(role));
+      return;
     }
 
     if (
-      request.method() === 'POST' &&
-      url.pathname === '/auth/v1/token' &&
-      url.searchParams.get('grant_type') === 'refresh_token'
+      request.method() === "POST" &&
+      url.pathname === "/auth/v1/token" &&
+      url.searchParams.get("grant_type") === "refresh_token"
     ) {
-      const body = this.requestBody<{ refresh_token?: string }>(request)
+      const body = this.requestBody<{ refresh_token?: string }>(request);
       const role = body.refresh_token
         ? this.refreshRoles.get(body.refresh_token)
-        : undefined
+        : undefined;
       if (!role) {
         await this.json(route, 400, {
-          code: 'refresh_token_not_found',
-          msg: 'Invalid refresh token',
-        })
-        return
+          code: "refresh_token_not_found",
+          msg: "Invalid refresh token",
+        });
+        return;
       }
-      await this.json(route, 200, this.issueSession(role))
-      return
+      await this.json(route, 200, this.issueSession(role));
+      return;
     }
 
-    if (request.method() === 'POST' && url.pathname === '/auth/v1/logout') {
+    if (request.method() === "POST" && url.pathname === "/auth/v1/logout") {
       await route.fulfill({
         status: 204,
         headers: this.corsHeaders(),
-      })
-      return
+      });
+      return;
     }
 
-    if (request.method() === 'POST' && url.pathname === '/auth/v1/recover') {
-      const body = this.requestBody<{ email?: string }>(request)
-      this.recoveredEmail = body.email ?? null
-      this.recoveryRedirectTo = url.searchParams.get('redirect_to')
-      await this.json(route, 200, {})
-      return
+    if (request.method() === "POST" && url.pathname === "/auth/v1/recover") {
+      const body = this.requestBody<{ email?: string }>(request);
+      this.recoveredEmail = body.email ?? null;
+      this.recoveryRedirectTo = url.searchParams.get("redirect_to");
+      await this.json(route, 200, {});
+      return;
     }
 
-    if (request.method() === 'GET' && url.pathname === '/auth/v1/user') {
-      const role = this.roleForRequest(request)
+    if (request.method() === "GET" && url.pathname === "/auth/v1/user") {
+      const role = this.roleForRequest(request);
       if (!role) {
         await this.json(route, 401, {
-          code: 'bad_jwt',
-          msg: 'Invalid JWT',
-        })
-        return
+          code: "bad_jwt",
+          msg: "Invalid JWT",
+        });
+        return;
       }
-      await this.json(route, 200, createUser(role))
-      return
+      await this.json(route, 200, createUser(role));
+      return;
     }
 
-    if (request.method() === 'PUT' && url.pathname === '/auth/v1/user') {
-      const role = this.roleForRequest(request)
+    if (request.method() === "PUT" && url.pathname === "/auth/v1/user") {
+      const role = this.roleForRequest(request);
       if (!role) {
         await this.json(route, 401, {
-          code: 'bad_jwt',
-          msg: 'Invalid JWT',
-        })
-        return
+          code: "bad_jwt",
+          msg: "Invalid JWT",
+        });
+        return;
       }
-      const body = this.requestBody<{ password?: string }>(request)
-      this.updatedPassword = body.password ?? null
-      await this.json(route, 200, createUser(role))
-      return
+      const body = this.requestBody<{ password?: string }>(request);
+      this.updatedPassword = body.password ?? null;
+      await this.json(route, 200, createUser(role));
+      return;
     }
 
-    this.unexpectedRequests.push(`${request.method()} ${url.origin}${url.pathname}${url.search}`)
+    this.unexpectedRequests.push(
+      `${request.method()} ${url.origin}${url.pathname}${url.search}`,
+    );
     await route.fulfill({
       status: 501,
-      json: { message: 'Endpoint Supabase não mockado.' },
+      json: { message: "Endpoint Supabase não mockado." },
       headers: this.corsHeaders(),
-    })
+    });
   }
 
-  private async requireAdmin(
-    route: Route,
-    request: Request,
-  ): Promise<boolean> {
-    const role = this.roleForRequest(request)
+  private async requireAdmin(route: Route, request: Request): Promise<boolean> {
+    const role = this.roleForRequest(request);
     if (!role) {
       await this.apiError(
         route,
         401,
-        'authentication_required',
-        'Autenticação válida é obrigatória.',
-      )
-      return false
+        "authentication_required",
+        "Autenticação válida é obrigatória.",
+      );
+      return false;
     }
-    if (role !== 'admin') {
+    if (role !== "admin") {
       await this.apiError(
         route,
         403,
-        'administrator_required',
-        'Acesso administrativo negado.',
-      )
-      return false
+        "administrator_required",
+        "Acesso administrativo negado.",
+      );
+      return false;
     }
-    return true
+    return true;
   }
 
   private async handleApi(
@@ -449,85 +441,85 @@ export class MockServices {
     request: Request,
     url: URL,
   ): Promise<void> {
-    this.record(request, url)
-    if (request.method() === 'OPTIONS') {
+    this.record(request, url);
+    if (request.method() === "OPTIONS") {
       await this.preflight(
         route,
         request,
-        ['GET', 'POST', 'PATCH', 'OPTIONS'],
-        ['accept', 'authorization', 'content-type', 'x-request-id'],
-      )
-      return
+        ["GET", "POST", "PATCH", "OPTIONS"],
+        ["accept", "authorization", "content-type", "x-request-id"],
+      );
+      return;
     }
-    if (this.backendMode === 'network-error') {
-      await route.abort('connectionfailed')
-      return
+    if (this.backendMode === "network-error") {
+      await route.abort("connectionfailed");
+      return;
     }
-    if (this.backendMode === 'service-unavailable') {
+    if (this.backendMode === "service-unavailable") {
       await this.apiError(
         route,
         503,
-        'service_unavailable',
-        'O serviço está temporariamente indisponível.',
-      )
-      return
+        "service_unavailable",
+        "O serviço está temporariamente indisponível.",
+      );
+      return;
     }
 
     if (
-      request.method() === 'GET' &&
-      url.pathname === '/api/v1/system/status'
+      request.method() === "GET" &&
+      url.pathname === "/api/v1/system/status"
     ) {
       const systemStatus = {
-        status: 'operational',
-        version: '0.1.0',
-        environment: 'test',
-        timestamp: '2026-07-29T15:00:00.000Z',
-      } satisfies SystemStatus
-      await this.json(route, 200, systemStatus)
-      return
+        status: "operational",
+        version: "0.1.0",
+        environment: "test",
+        timestamp: "2026-07-29T15:00:00.000Z",
+      } satisfies SystemStatus;
+      await this.json(route, 200, systemStatus);
+      return;
     }
 
-    if (request.method() === 'GET' && url.pathname === '/health') {
-      await this.json(route, 200, { status: 'healthy' })
-      return
+    if (request.method() === "GET" && url.pathname === "/health") {
+      await this.json(route, 200, { status: "healthy" });
+      return;
     }
 
     if (
-      request.method() === 'GET' &&
-      (url.pathname === '/health/database' ||
-        url.pathname === '/health/readiness')
+      request.method() === "GET" &&
+      (url.pathname === "/health/database" ||
+        url.pathname === "/health/readiness")
     ) {
       if (!this.databaseAvailable) {
         await this.apiError(
           route,
           503,
-          'database_unavailable',
-          'O banco de dados está temporariamente indisponível.',
-        )
-        return
+          "database_unavailable",
+          "O banco de dados está temporariamente indisponível.",
+        );
+        return;
       }
       await this.json(route, 200, {
-        status: url.pathname.endsWith('readiness') ? 'ready' : 'healthy',
-      })
-      return
+        status: url.pathname.endsWith("readiness") ? "ready" : "healthy",
+      });
+      return;
     }
 
     if (
-      request.method() === 'GET' &&
-      url.pathname === '/api/v1/public/simulation'
+      request.method() === "GET" &&
+      url.pathname === "/api/v1/public/simulation"
     ) {
       if (!this.databaseAvailable) {
         await this.apiError(
           route,
           503,
-          'database_unavailable',
-          'O banco de dados está temporariamente indisponível.',
-        )
-        return
+          "database_unavailable",
+          "O banco de dados está temporariamente indisponível.",
+        );
+        return;
       }
       const active = this.simulations.find(
-        (simulation) => simulation.status === 'ACTIVE',
-      )
+        (simulation) => simulation.status === "ACTIVE",
+      );
       await this.json(
         route,
         200,
@@ -542,128 +534,251 @@ export class MockServices {
               status: active.status,
             }
           : null,
-      )
-      return
+      );
+      return;
     }
 
-    if (url.pathname.startsWith('/api/v1/admin/')) {
+    if (url.pathname.startsWith("/api/v1/admin/")) {
       if (!this.databaseAvailable) {
         await this.apiError(
           route,
           503,
-          'database_unavailable',
-          'O banco de dados está temporariamente indisponível.',
-        )
-        return
+          "database_unavailable",
+          "O banco de dados está temporariamente indisponível.",
+        );
+        return;
       }
       if (this.pendingAdminUnauthorizedResponses > 0) {
-        this.pendingAdminUnauthorizedResponses -= 1
-        await this.apiError(
-          route,
-          401,
-          'token_expired',
-          'A sessão expirou.',
-        )
-        return
+        this.pendingAdminUnauthorizedResponses -= 1;
+        await this.apiError(route, 401, "token_expired", "A sessão expirou.");
+        return;
       }
-      if (!(await this.requireAdmin(route, request))) return
+      if (!(await this.requireAdmin(route, request))) return;
     }
 
-    if (
-      request.method() === 'GET' &&
-      url.pathname === '/api/v1/admin/me'
-    ) {
+    if (request.method() === "GET" && url.pathname === "/api/v1/admin/me") {
       await this.json(route, 200, {
         user_id: ADMIN_ID,
         is_admin: true,
-      })
-      return
+      });
+      return;
     }
 
     if (
-      request.method() === 'GET' &&
-      url.pathname === '/api/v1/admin/simulations'
+      request.method() === "GET" &&
+      url.pathname === "/api/v1/admin/paper-trading/dashboard"
     ) {
-      const page = Number(url.searchParams.get('page') ?? '1')
-      const pageSize = Number(url.searchParams.get('page_size') ?? '20')
-      const start = (page - 1) * pageSize
-      const total = this.simulations.length
+      const page = Number(url.searchParams.get("page") ?? "1");
+      const pageSize = Number(url.searchParams.get("page_size") ?? "20");
+      const response: PaperDashboardResponse = {
+        items: [
+          {
+            session_id:
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            symbol: "BTC/USDT",
+            base_asset: "BTC",
+            quote_asset: "USDT",
+            timeframe: "1m",
+            strategy_name: "no-op",
+            strategy_version: "2",
+            initial_capital: "1000",
+            state_available: true,
+            candles_processed: 120,
+            last_candle_open_time: "2026-08-04T20:59:00Z",
+            replayed_at: "2026-08-04T21:00:02Z",
+            orders_count: 4,
+            fills_count: 2,
+            open_orders_count: 1,
+            risk_halt: false,
+            metrics: {
+              initial_capital: "1000",
+              equity: "1125.5",
+              total_pnl: "125.5",
+              return_pct: "12.55",
+              realized_pnl: "90",
+              unrealized_pnl: "35.5",
+              drawdown: "8",
+              drawdown_pct: "0.71",
+              total_fees: "1.25",
+              total_slippage_cost: "0.4",
+            },
+            portfolio: {
+              quote_cash: "625.5",
+              base_quantity: "0.005",
+              average_entry_price: "100000",
+              realized_pnl: "90",
+              unrealized_pnl: "35.5",
+              total_fees: "1.25",
+              total_slippage_cost: "0.4",
+              equity: "1125.5",
+              peak_equity: "1133.5",
+              drawdown: "8",
+              drawdown_pct: "0.71",
+              cost_basis: "500",
+            },
+            position: {
+              is_open: true,
+              base_quantity: "0.005",
+              average_entry_price: "100000",
+              cost_basis: "500",
+              market_value: "535.5",
+            },
+            latest_market_regime: {
+              event_time: "2026-08-04T20:59:59.999Z",
+              regime: "trend",
+              trend_direction: "up",
+              fast_ema: "106500",
+              slow_ema: "104000",
+              atr: "1200",
+              atr_ratio: "0.0112",
+              trend_strength: "2.0833",
+            },
+            runner: {
+              status: "UPDATED",
+              started_at: "2026-08-04T21:00:00Z",
+              finished_at: "2026-08-04T21:00:02Z",
+              state_id:
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              candles_processed: 120,
+              last_candle_open_time: "2026-08-04T20:59:00Z",
+              error_code: null,
+              matches_current_state: true,
+            },
+          },
+          {
+            session_id:
+              "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            symbol: "ETH/USDT",
+            base_asset: "ETH",
+            quote_asset: "USDT",
+            timeframe: "5m",
+            strategy_name: "no-op",
+            strategy_version: "2",
+            initial_capital: "2000",
+            state_available: false,
+            candles_processed: null,
+            last_candle_open_time: null,
+            replayed_at: null,
+            orders_count: 0,
+            fills_count: 0,
+            open_orders_count: 0,
+            risk_halt: null,
+            metrics: null,
+            portfolio: null,
+            position: null,
+            latest_market_regime: null,
+            runner: null,
+          },
+        ],
+        totals: {
+          scope: "page",
+          sessions_count: 2,
+          initialized_count: 1,
+          pending_count: 1,
+          runner_failed_count: 0,
+          risk_halted_count: 0,
+          open_positions_count: 1,
+          open_orders_count: 1,
+          configured_capital: "3000",
+          initialized_capital: "1000",
+          equity: "1125.5",
+          total_pnl: "125.5",
+          return_pct: "12.55",
+          maximum_drawdown_pct: "0.71",
+        },
+        page,
+        page_size: pageSize,
+        total: 2,
+        total_pages: 1,
+        runner: {
+          cycle_index: 9,
+          status: "COMPLETED",
+          finished_at: "2026-08-04T21:00:02Z",
+          next_cycle_at: "2026-08-04T21:00:32Z",
+        },
+      };
+      await this.json(route, 200, response);
+      return;
+    }
+
+    if (
+      request.method() === "GET" &&
+      url.pathname === "/api/v1/admin/simulations"
+    ) {
+      const page = Number(url.searchParams.get("page") ?? "1");
+      const pageSize = Number(url.searchParams.get("page_size") ?? "20");
+      const start = (page - 1) * pageSize;
+      const total = this.simulations.length;
       await this.json(route, 200, {
-        items: this.simulations
-          .slice(start, start + pageSize)
-          .map(asListItem),
+        items: this.simulations.slice(start, start + pageSize).map(asListItem),
         pagination: {
           page,
           page_size: pageSize,
           total,
           total_pages: total === 0 ? 0 : Math.ceil(total / pageSize),
         },
-      })
-      return
+      });
+      return;
     }
 
     if (
-      request.method() === 'POST' &&
-      url.pathname === '/api/v1/admin/simulations'
+      request.method() === "POST" &&
+      url.pathname === "/api/v1/admin/simulations"
     ) {
       if (
-        this.simulations.some(
-          (simulation) => simulation.status === 'ACTIVE',
-        )
+        this.simulations.some((simulation) => simulation.status === "ACTIVE")
       ) {
         await this.apiError(
           route,
           409,
-          'active_simulation_exists',
-          'Já existe uma simulação ativa.',
-        )
-        return
+          "active_simulation_exists",
+          "Já existe uma simulação ativa.",
+        );
+        return;
       }
-      const body = this.requestBody<SimulationCreateRequest>(request)
+      const body = this.requestBody<SimulationCreateRequest>(request);
       const simulation = createSimulation({
         name: body.name,
         currency: body.currency,
         initial_capital: normalizeDecimal(body.initial_capital),
         current_balance: normalizeDecimal(body.initial_capital),
-      })
-      this.simulations = [simulation, ...this.simulations]
+      });
+      this.simulations = [simulation, ...this.simulations];
       this.movements.set(simulation.id, [
         createInitialMovement(simulation.id, simulation.initial_capital),
-      ])
-      await this.json(route, 201, simulation)
-      return
+      ]);
+      await this.json(route, 201, simulation);
+      return;
     }
 
     const detailMatch = /^\/api\/v1\/admin\/simulations\/([^/]+)$/.exec(
       url.pathname,
-    )
-    if (request.method() === 'GET' && detailMatch) {
+    );
+    if (request.method() === "GET" && detailMatch) {
       const simulation = this.simulations.find(
         (item) => item.id === decodeURIComponent(detailMatch[1]),
-      )
+      );
       if (!simulation) {
         await this.apiError(
           route,
           404,
-          'simulation_not_found',
-          'Simulação não encontrada.',
-        )
-        return
+          "simulation_not_found",
+          "Simulação não encontrada.",
+        );
+        return;
       }
-      await this.json(route, 200, simulation)
-      return
+      await this.json(route, 200, simulation);
+      return;
     }
 
     const movementMatch =
-      /^\/api\/v1\/admin\/simulations\/([^/]+)\/movements$/.exec(
-        url.pathname,
-      )
-    if (request.method() === 'GET' && movementMatch) {
-      const simulationId = decodeURIComponent(movementMatch[1])
-      const items = this.movements.get(simulationId) ?? []
-      const page = Number(url.searchParams.get('page') ?? '1')
-      const pageSize = Number(url.searchParams.get('page_size') ?? '20')
-      const start = (page - 1) * pageSize
+      /^\/api\/v1\/admin\/simulations\/([^/]+)\/movements$/.exec(url.pathname);
+    if (request.method() === "GET" && movementMatch) {
+      const simulationId = decodeURIComponent(movementMatch[1]);
+      const items = this.movements.get(simulationId) ?? [];
+      const page = Number(url.searchParams.get("page") ?? "1");
+      const pageSize = Number(url.searchParams.get("page_size") ?? "20");
+      const start = (page - 1) * pageSize;
       await this.json(route, 200, {
         items: items.slice(start, start + pageSize),
         pagination: {
@@ -673,129 +788,131 @@ export class MockServices {
           total_pages:
             items.length === 0 ? 0 : Math.ceil(items.length / pageSize),
         },
-      })
-      return
+      });
+      return;
     }
 
-    if (request.method() === 'POST' && movementMatch) {
-      const simulationId = decodeURIComponent(movementMatch[1])
+    if (request.method() === "POST" && movementMatch) {
+      const simulationId = decodeURIComponent(movementMatch[1]);
       const simulation = this.simulations.find(
         (item) => item.id === simulationId,
-      )
+      );
       if (!simulation) {
         await this.apiError(
           route,
           404,
-          'simulation_not_found',
-          'Simulação não encontrada.',
-        )
-        return
+          "simulation_not_found",
+          "Simulação não encontrada.",
+        );
+        return;
       }
-      const body = this.requestBody<MovementCreateRequest>(request)
+      const body = this.requestBody<MovementCreateRequest>(request);
       const nextBalance =
         decimalToBigInt(simulation.current_balance) +
-        decimalToBigInt(body.amount)
+        decimalToBigInt(body.amount);
       if (nextBalance < 0n) {
         await this.apiError(
           route,
           409,
-          'insufficient_balance',
-          'Saldo insuficiente.',
-        )
-        return
+          "insufficient_balance",
+          "Saldo insuficiente.",
+        );
+        return;
       }
-      this.movementSequence += 1
+      this.movementSequence += 1;
       const ledgerTypes = {
-        DEPOSIT: 'ADMIN_DEPOSIT',
-        WITHDRAWAL: 'ADMIN_WITHDRAWAL',
-        ADJUSTMENT: 'ADJUSTMENT',
-      } as const
+        DEPOSIT: "ADMIN_DEPOSIT",
+        WITHDRAWAL: "ADMIN_WITHDRAWAL",
+        ADJUSTMENT: "ADJUSTMENT",
+      } as const;
       const movement: CapitalMovement = {
         id: `55555555-5555-4555-8555-${this.movementSequence
           .toString()
-          .padStart(12, '0')}`,
+          .padStart(12, "0")}`,
         simulation_id: simulationId,
         type: ledgerTypes[body.type],
         amount: normalizeDecimal(body.amount),
         reason: body.reason,
         reference_id: null,
         created_by: ADMIN_ID,
-        created_at: '2026-07-29T15:05:00.000Z',
+        created_at: "2026-07-29T15:05:00.000Z",
         metadata: body.metadata ?? null,
-      }
+      };
       this.movements.set(simulationId, [
         movement,
         ...(this.movements.get(simulationId) ?? []),
-      ])
-      simulation.current_balance = bigIntToDecimal(nextBalance)
-      simulation.updated_at = movement.created_at
-      await this.json(route, 201, movement)
-      return
+      ]);
+      simulation.current_balance = bigIntToDecimal(nextBalance);
+      simulation.updated_at = movement.created_at;
+      await this.json(route, 201, movement);
+      return;
     }
 
     const transitionMatch =
       /^\/api\/v1\/admin\/simulations\/([^/]+)\/(complete|cancel)$/.exec(
         url.pathname,
-      )
-    if (request.method() === 'POST' && transitionMatch) {
+      );
+    if (request.method() === "POST" && transitionMatch) {
       const simulation = this.simulations.find(
         (item) => item.id === decodeURIComponent(transitionMatch[1]),
-      )
+      );
       if (!simulation) {
         await this.apiError(
           route,
           404,
-          'simulation_not_found',
-          'Simulação não encontrada.',
-        )
-        return
+          "simulation_not_found",
+          "Simulação não encontrada.",
+        );
+        return;
       }
       simulation.status =
-        transitionMatch[2] === 'complete' ? 'COMPLETED' : 'CANCELLED'
-      simulation.ended_at = '2026-07-29T16:00:00.000Z'
-      simulation.updated_at = simulation.ended_at
-      await this.json(route, 200, simulation)
-      return
+        transitionMatch[2] === "complete" ? "COMPLETED" : "CANCELLED";
+      simulation.ended_at = "2026-07-29T16:00:00.000Z";
+      simulation.updated_at = simulation.ended_at;
+      await this.json(route, 200, simulation);
+      return;
     }
 
     if (
-      request.method() === 'GET' &&
-      url.pathname === '/api/v1/admin/settings'
+      request.method() === "GET" &&
+      url.pathname === "/api/v1/admin/settings"
     ) {
-      await this.json(route, 200, { items: this.settings })
-      return
+      await this.json(route, 200, { items: this.settings });
+      return;
     }
 
     const settingMatch = /^\/api\/v1\/admin\/settings\/([^/]+)$/.exec(
       url.pathname,
-    )
-    if (request.method() === 'PATCH' && settingMatch) {
-      const key = decodeURIComponent(settingMatch[1])
-      const body = this.requestBody<{ value: JsonValue }>(request)
-      const setting = this.settings.find((item) => item.key === key)
+    );
+    if (request.method() === "PATCH" && settingMatch) {
+      const key = decodeURIComponent(settingMatch[1]);
+      const body = this.requestBody<{ value: JsonValue }>(request);
+      const setting = this.settings.find((item) => item.key === key);
       if (!setting) {
         await this.apiError(
           route,
           404,
-          'setting_not_found',
-          'Configuração não encontrada.',
-        )
-        return
+          "setting_not_found",
+          "Configuração não encontrada.",
+        );
+        return;
       }
-      setting.value = body.value
-      setting.updated_by = ADMIN_ID
-      setting.updated_at = '2026-07-29T15:10:00.000Z'
-      this.settings = [...this.settings]
-      await this.json(route, 200, setting)
-      return
+      setting.value = body.value;
+      setting.updated_by = ADMIN_ID;
+      setting.updated_at = "2026-07-29T15:10:00.000Z";
+      this.settings = [...this.settings];
+      await this.json(route, 200, setting);
+      return;
     }
 
-    this.unexpectedRequests.push(`${request.method()} ${url.origin}${url.pathname}${url.search}`)
+    this.unexpectedRequests.push(
+      `${request.method()} ${url.origin}${url.pathname}${url.search}`,
+    );
     await this.apiError(
       route,
       501,
-      'endpoint_not_mocked',
-      'Endpoint FastAPI não mockado.',
-    )
+      "endpoint_not_mocked",
+      "Endpoint FastAPI não mockado.",
+    );
   }
 }

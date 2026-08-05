@@ -7,6 +7,12 @@ from app.paper_trading.continuous import (
     PaperTradingContinuousRunner,
     PaperTradingContinuousService,
 )
+from app.paper_trading.dashboard import (
+    PaperDashboardPage,
+    PaperDashboardReadService,
+    PaperDashboardSession,
+    PaperPerformanceMetrics,
+)
 from app.paper_trading.domain import (
     PaperRunAction,
     PaperRunResult,
@@ -17,6 +23,10 @@ from app.paper_trading.domain import (
 from app.paper_trading.service import PaperTradingService
 
 __all__ = [
+    "PaperPerformanceMetrics",
+    "PaperDashboardSession",
+    "PaperDashboardReadService",
+    "PaperDashboardPage",
     "PaperRunnerPolicy",
     "PaperRunnerState",
     "PaperRunnerStateStore",

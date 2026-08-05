@@ -1097,3 +1097,27 @@ impersonating engine-owned protection.
 The feature remains local and deterministic: no scheduling change, HTTP mutation,
 exchange account, API key, network order placement, leverage or short selling is
 introduced.
+
+## Phase 5-09 live performance dashboard boundary
+
+Phase 5-09 adds one read projection over the existing paper-trading documents:
+
+```text
+canonical paper config/state + latest runner state
+    → deterministic dashboard read model
+    → administrator-only bounded GET endpoint
+    → generated OpenAPI TypeScript contract
+    → React polling view and local two-session comparison
+```
+
+The read model validates every decoded configuration, state, portfolio, regime
+and runner result before deriving performance metrics. Totals cover only the
+requested page and monetary sums remain nominal across quote assets. FastAPI
+provides no dashboard mutation route and never invokes `run_once`; filesystem
+reads are kept behind the paper repository and runner state store. The frontend
+uses the generated OpenAPI response types, polls every 30 seconds, performs no
+financial recomputation beyond formatting/comparison and sends the verified
+Supabase Bearer token through the existing client.
+
+This boundary introduces no PostgreSQL migration, WebSocket, exchange account,
+API key, live order, strategy promotion or automatic session subscription.

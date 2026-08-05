@@ -14,6 +14,7 @@ from fastapi.openapi.utils import get_openapi
 from app.api.exceptions import setup_exception_handlers
 from app.api.routes import (
     admin,
+    admin_paper_dashboard,
     admin_settings,
     admin_simulations,
     admin_strategies,
@@ -33,6 +34,7 @@ from app.market_data.continuous import ContinuousCollectionStateStore
 from app.market_data.http import PublicMarketHttpClient
 from app.middleware import RequestContextMiddleware
 from app.paper_trading.continuous import PaperRunnerStateStore
+from app.paper_trading.dashboard import PaperDashboardReadService
 from app.paper_trading.query import PaperTradingReadService
 from app.paper_trading.repository import PaperTradingRepository
 
@@ -127,6 +129,9 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
                 lock_stale_after_seconds=app_settings.market_job_stale_after,
             )
             application.state.paper_trading_read_service = PaperTradingReadService(paper_repository)
+            application.state.paper_dashboard_read_service = PaperDashboardReadService(
+                paper_repository
+            )
             application.state.paper_runner_state_store = PaperRunnerStateStore(
                 app_settings.data_dir
             )
@@ -176,6 +181,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(public.router)
     application.include_router(paper_trading.router)
     application.include_router(admin.router)
+    application.include_router(admin_paper_dashboard.router)
     application.include_router(admin_simulations.router)
     application.include_router(admin_settings.router)
     application.include_router(admin_strategies.router)

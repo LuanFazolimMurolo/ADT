@@ -644,8 +644,29 @@ and exposes regime information without changing strategy decisions.
 
 **Explicitly deferred after 5-08**: performance attribution by regime, learned or
 probabilistic classifiers, automatic strategy selection/promotion, calendar-period
-performance series, cross-asset portfolio accounting, dashboards, PostgreSQL/API
-persistence, notifications, exchange-account access and live trading.
+performance series, cross-asset portfolio accounting, PostgreSQL persistence,
+notifications, exchange-account access and live trading.
+
+### Phase 5-09: live performance dashboard ✅
+
+**Scope**: Provide an administrator-only projection over canonical paper-session
+and runner documents without adding an execution or mutation path. The backend
+owns all validation and metrics; the frontend polls a bounded page and compares
+at most two loaded sessions locally.
+
+**Delivered**:
+- [x] Deterministic page-scoped dashboard read model and nominal aggregate totals
+- [x] Authenticated bounded `GET /api/v1/admin/paper-trading/dashboard`
+- [x] Equity, PnL, drawdown, position, orders, runner and latest-regime cards
+- [x] Generated OpenAPI TypeScript aliases with domain enum fidelity
+- [x] Responsive `/admin/paper-trading` route with 30-second polling
+- [x] Manual refresh and local comparison of up to two sessions
+- [x] Backend, frontend and Playwright read-only contract regressions
+
+**Explicitly deferred after 5-09**: trade journal, calendar-period performance
+series, performance attribution by regime, cross-asset currency conversion,
+WebSocket streaming, notifications, PostgreSQL paper-session persistence,
+exchange-account access and live trading.
 
 **Deliverables**:
 - [x] Position sizing engine
@@ -653,7 +674,7 @@ persistence, notifications, exchange-account access and live trading.
 - [x] Asset-level performance tracking
 - [x] Market regime detection (trend/range/volatile)
 - [x] Paper trading engine (bounded local deterministic replay)
-- [ ] Live performance dashboard
+- [x] Live performance dashboard
 - [ ] Trade history & journal
 - [ ] Performance metrics (daily, weekly, monthly)
 - [x] Risk limits & veto system (reused from Phase 3)

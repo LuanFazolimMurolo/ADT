@@ -168,3 +168,17 @@ gateway/reverse proxy, não em memória dentro de uma única réplica.
 
 O checklist completo está em
 [`docs/PHASE1_HOMOLOGATION.md`](../../docs/PHASE1_HOMOLOGATION.md).
+
+## Dashboard de performance do paper trading
+
+Após o login administrativo, abra
+`http://localhost:5173/admin/paper-trading`. A página usa exclusivamente
+`GET /api/v1/admin/paper-trading/dashboard?page=1&page_size=20`, atualiza a
+cada 30 segundos e permite uma atualização manual. Os totais pertencem apenas à
+página carregada e são exibidos como valores nominais porque sessões diferentes
+podem usar ativos de cotação diferentes.
+
+O frontend não cria sessões, não executa estratégias e não altera o runner. A
+comparação de até duas sessões ocorre somente no navegador sobre a resposta já
+autorizada pelo backend. Depois de qualquer mudança nos schemas Pydantic, execute
+`npm run generate:api` e mantenha `npm run check:api` no gate.
