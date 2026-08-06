@@ -469,14 +469,14 @@ any unbounded or random search. Real-time paper trading begins only in Phase 5.
 
 ---
 
-## Phase 5: Risk Management & Paper Trading 🟡 CLOSURE CANDIDATE
+## Phase 5: Risk Management & Paper Trading ✅ COMPLETE
 
 **Goal**: Simulate live trading with realistic constraints.
 
-**Status**: All scoped Phase 5 implementation deliverables are complete and
-validated by focused local gates. Formal Phase 5 closure remains pending the
-full repository gate, staged-diff and secret audit, merge to `main`, and the
-final Phase 5 version tag.
+**Status**: Complete. All scoped Phase 5 implementation deliverables passed the
+full repository gate, staged-diff and secret audit, and were merged to `main`.
+The release is versioned by the annotated `phase-5` tag. Phase 6 remains a
+separate future phase and is not started by this closure.
 
 ### Phase 5-01: live asset catalog and public market API ✅
 
