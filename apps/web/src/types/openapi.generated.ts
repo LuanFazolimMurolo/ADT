@@ -92,6 +92,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/paper-trading/period-metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Paper Period Metrics
+         * @description Return one bounded deterministic UTC calendar-period series.
+         */
+        get: operations["get_paper_period_metrics_api_v1_admin_paper_trading_period_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/settings": {
         parameters: {
             query?: never;
@@ -1168,6 +1188,162 @@ export interface components {
             status: string;
             /** Terminal At */
             terminal_at: string | null;
+        };
+        /**
+         * PaperPeriodGranularity
+         * @description Supported UTC calendar buckets.
+         * @enum {string}
+         */
+        PaperPeriodGranularity: "DAILY" | "WEEKLY" | "MONTHLY";
+        /** PaperPeriodMetricsBucketResponse */
+        PaperPeriodMetricsBucketResponse: {
+            /** Breakeven Realizations Count */
+            breakeven_realizations_count: number;
+            /** Exit Notional */
+            exit_notional: string;
+            /** Gross Loss */
+            gross_loss: string;
+            /** Gross Profit */
+            gross_profit: string;
+            /** Losing Realizations Count */
+            losing_realizations_count: number;
+            /**
+             * Period End
+             * Format: date-time
+             */
+            period_end: string;
+            /**
+             * Period Start
+             * Format: date-time
+             */
+            period_start: string;
+            /** Profit Factor */
+            profit_factor: string | null;
+            /** Quote Asset */
+            quote_asset: string;
+            /** Realizations Count */
+            realizations_count: number;
+            /** Realized Fees */
+            realized_fees: string;
+            /** Realized Pnl */
+            realized_pnl: string;
+            /** Realized Slippage Cost */
+            realized_slippage_cost: string;
+            /** Released Cost Basis */
+            released_cost_basis: string;
+            /** Sessions Count */
+            sessions_count: number;
+            /** Symbols Count */
+            symbols_count: number;
+            /** Win Rate Pct */
+            win_rate_pct: string | null;
+            /** Winning Realizations Count */
+            winning_realizations_count: number;
+        };
+        /** PaperPeriodMetricsFilterResponse */
+        PaperPeriodMetricsFilterResponse: {
+            /** Base Asset */
+            base_asset: string | null;
+            /**
+             * Period Before
+             * Format: date-time
+             */
+            period_before: string;
+            /**
+             * Period From
+             * Format: date-time
+             */
+            period_from: string;
+            /** Quote Asset */
+            quote_asset: string;
+            /** Session Id */
+            session_id: string | null;
+            /** Strategy Name */
+            strategy_name: string | null;
+            /** Strategy Version */
+            strategy_version: string | null;
+            /** Timeframe */
+            timeframe: string | null;
+        };
+        /** PaperPeriodMetricsSeriesResponse */
+        PaperPeriodMetricsSeriesResponse: {
+            /** Content Checksum */
+            content_checksum: string;
+            filters: components["schemas"]["PaperPeriodMetricsFilterResponse"];
+            granularity: components["schemas"]["PaperPeriodGranularity"];
+            /** Items */
+            items: components["schemas"]["PaperPeriodMetricsBucketResponse"][];
+            /** Query Checksum */
+            query_checksum: string;
+            /** Schema Version */
+            schema_version: number;
+            /** Source States */
+            source_states: components["schemas"]["PaperPeriodSourceStateResponse"][];
+            totals: components["schemas"]["PaperPeriodMetricsTotalsResponse"];
+        };
+        /** PaperPeriodMetricsTotalsResponse */
+        PaperPeriodMetricsTotalsResponse: {
+            /** Active Periods Count */
+            active_periods_count: number;
+            /** Breakeven Realizations Count */
+            breakeven_realizations_count: number;
+            /** Exit Notional */
+            exit_notional: string;
+            /** Gross Loss */
+            gross_loss: string;
+            /** Gross Profit */
+            gross_profit: string;
+            /** Losing Realizations Count */
+            losing_realizations_count: number;
+            /** Periods Count */
+            periods_count: number;
+            /** Profit Factor */
+            profit_factor: string | null;
+            /** Quote Asset */
+            quote_asset: string;
+            /** Realizations Count */
+            realizations_count: number;
+            /** Realized Fees */
+            realized_fees: string;
+            /** Realized Pnl */
+            realized_pnl: string;
+            /** Realized Slippage Cost */
+            realized_slippage_cost: string;
+            /** Released Cost Basis */
+            released_cost_basis: string;
+            /** Sessions Count */
+            sessions_count: number;
+            /** Symbols Count */
+            symbols_count: number;
+            /** Win Rate Pct */
+            win_rate_pct: string | null;
+            /** Winning Realizations Count */
+            winning_realizations_count: number;
+        };
+        /** PaperPeriodSourceStateResponse */
+        PaperPeriodSourceStateResponse: {
+            /** Base Asset */
+            base_asset: string;
+            /** Config Checksum */
+            config_checksum: string;
+            /**
+             * Last Candle Open Time
+             * Format: date-time
+             */
+            last_candle_open_time: string;
+            /** Quote Asset */
+            quote_asset: string;
+            /**
+             * Replayed At
+             * Format: date-time
+             */
+            replayed_at: string;
+            /** Session Id */
+            session_id: string;
+            /** State Checksum */
+            state_checksum: string;
+            /** State Id */
+            state_id: string;
         };
         /** PaperPortfolioResponse */
         PaperPortfolioResponse: {
@@ -2312,6 +2488,139 @@ export interface operations {
                 content: {
                     "application/x-ndjson": string;
                     "text/csv": string;
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_paper_period_metrics_api_v1_admin_paper_trading_period_metrics_get: {
+        parameters: {
+            query: {
+                granularity?: components["schemas"]["PaperPeriodGranularity"];
+                quote_asset: string;
+                period_from: string;
+                period_before: string;
+                session_id?: string | null;
+                base_asset?: string | null;
+                timeframe?: string | null;
+                strategy_name?: string | null;
+                strategy_version?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deterministic UTC calendar-period performance series. */
+            200: {
+                headers: {
+                    "X-ADT-Period-Metrics-Content-Checksum"?: string;
+                    "X-ADT-Period-Metrics-Query-Checksum"?: string;
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperPeriodMetricsSeriesResponse"];
                 };
             };
             /** @description Malformed administrative request. */

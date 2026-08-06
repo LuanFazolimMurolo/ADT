@@ -12,6 +12,7 @@ from app.paper_trading.continuous import PaperRunnerStateStore
 from app.paper_trading.dashboard import PaperDashboardReadService
 from app.paper_trading.journal_export import PaperTradeJournalExportService
 from app.paper_trading.journal_query import PaperTradeJournalReadService
+from app.paper_trading.period_metrics import PaperPeriodMetricsService
 from app.paper_trading.query import PaperTradingReadService
 from app.repositories import (
     AdminRepository,
@@ -78,6 +79,16 @@ def get_paper_trade_journal_export_service(
     return cast(
         PaperTradeJournalExportService,
         request.app.state.paper_trade_journal_export_service,
+    )
+
+
+def get_paper_period_metrics_service(
+    request: Request,
+) -> PaperPeriodMetricsService:
+    """Return the application-owned deterministic period-metrics service."""
+    return cast(
+        PaperPeriodMetricsService,
+        request.app.state.paper_period_metrics_service,
     )
 
 

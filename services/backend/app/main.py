@@ -16,6 +16,7 @@ from app.api.routes import (
     admin,
     admin_paper_dashboard,
     admin_paper_journal,
+    admin_paper_period_metrics,
     admin_settings,
     admin_simulations,
     admin_strategies,
@@ -38,6 +39,7 @@ from app.paper_trading.continuous import PaperRunnerStateStore
 from app.paper_trading.dashboard import PaperDashboardReadService
 from app.paper_trading.journal_export import PaperTradeJournalExportService
 from app.paper_trading.journal_query import PaperTradeJournalReadService
+from app.paper_trading.period_metrics import PaperPeriodMetricsService
 from app.paper_trading.query import PaperTradingReadService
 from app.paper_trading.repository import PaperTradingRepository
 
@@ -141,6 +143,9 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
             application.state.paper_trade_journal_export_service = PaperTradeJournalExportService(
                 paper_repository
             )
+            application.state.paper_period_metrics_service = PaperPeriodMetricsService(
+                paper_repository
+            )
             application.state.paper_runner_state_store = PaperRunnerStateStore(
                 app_settings.data_dir
             )
@@ -179,6 +184,8 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
             "X-ADT-Journal-Content-Checksum",
             "X-ADT-Journal-Query-Checksum",
             "X-ADT-Journal-Rows",
+            "X-ADT-Period-Metrics-Content-Checksum",
+            "X-ADT-Period-Metrics-Query-Checksum",
             "X-Request-ID",
         ],
         max_age=600,
@@ -198,6 +205,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(admin.router)
     application.include_router(admin_paper_dashboard.router)
     application.include_router(admin_paper_journal.router)
+    application.include_router(admin_paper_period_metrics.router)
     application.include_router(admin_simulations.router)
     application.include_router(admin_settings.router)
     application.include_router(admin_strategies.router)

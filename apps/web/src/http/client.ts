@@ -10,6 +10,8 @@ import type {
   MovementCreateRequest,
   MovementListResponse,
   PaperDashboardResponse,
+  PaperPeriodGranularity,
+  PaperPeriodMetricsSeriesResponse,
   PaperTradeJournalPageResponse,
   PaperTradeStatus,
   PublicSimulationSummary,
@@ -63,6 +65,17 @@ export interface PaperTradeJournalFilters {
   openedBefore?: string
   closedFrom?: string
   closedBefore?: string
+}
+
+export interface PaperPeriodMetricsFilters {
+  quoteAsset: string
+  periodFrom: string
+  periodBefore: string
+  sessionId?: string
+  baseAsset?: string
+  timeframe?: string
+  strategyName?: string
+  strategyVersion?: string
 }
 
 function appendQueryValue(
@@ -270,6 +283,27 @@ export class ApiClient {
 
     return this.request(
       `/api/v1/admin/paper-trading/journal?${params.toString()}`,
+    )
+  }
+
+  getPaperPeriodMetrics(
+    filters: PaperPeriodMetricsFilters,
+    granularity: PaperPeriodGranularity = 'DAILY',
+  ): Promise<PaperPeriodMetricsSeriesResponse> {
+    const params = new URLSearchParams({
+      quote_asset: filters.quoteAsset,
+      period_from: filters.periodFrom,
+      period_before: filters.periodBefore,
+      granularity,
+    })
+    appendQueryValue(params, 'session_id', filters.sessionId)
+    appendQueryValue(params, 'base_asset', filters.baseAsset)
+    appendQueryValue(params, 'timeframe', filters.timeframe)
+    appendQueryValue(params, 'strategy_name', filters.strategyName)
+    appendQueryValue(params, 'strategy_version', filters.strategyVersion)
+
+    return this.request(
+      `/api/v1/admin/paper-trading/period-metrics?${params.toString()}`,
     )
   }
 

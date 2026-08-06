@@ -7,6 +7,7 @@ const navigation = [
   { to: '/admin', label: 'Visão geral', icon: '⌁', end: true },
   { to: '/admin/paper-trading', label: 'Paper trading', icon: '◫', end: true },
   { to: '/admin/paper-trading/journal', label: 'Trade journal', icon: '≋', end: false },
+  { to: '/admin/paper-trading/period-metrics', label: 'Performance por período', icon: '▦', end: false },
   { to: '/admin/simulations', label: 'Simulações', icon: '▤', end: false },
   { to: '/admin/settings', label: 'Configurações', icon: '⚙', end: false },
 ]

@@ -6,6 +6,7 @@ import { PublicConfigError, validatePublicConfig } from './config/env'
 import { AdminLayout } from './layouts/AdminLayout'
 import { PublicHome } from './pages/PublicHome'
 import { DashboardPage } from './pages/admin/DashboardPage'
+import { PaperPeriodMetricsPage } from './pages/admin/PaperPeriodMetricsPage'
 import { PaperTradeJournalPage } from './pages/admin/PaperTradeJournalPage'
 import { PaperTradingDashboardPage } from './pages/admin/PaperTradingDashboardPage'
 import { SettingsPage } from './pages/admin/SettingsPage'
@@ -51,6 +52,7 @@ function App() {
                 <Route index element={<DashboardPage />} />
                 <Route path="paper-trading" element={<PaperTradingDashboardPage />} />
                 <Route path="paper-trading/journal" element={<PaperTradeJournalPage />} />
+                <Route path="paper-trading/period-metrics" element={<PaperPeriodMetricsPage />} />
                 <Route path="simulations" element={<SimulationsPage />} />
                 <Route path="simulations/:simulationId" element={<SimulationDetailPage />} />
                 <Route path="settings" element={<SettingsPage />} />

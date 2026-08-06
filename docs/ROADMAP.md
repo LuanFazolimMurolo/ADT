@@ -469,9 +469,14 @@ any unbounded or random search. Real-time paper trading begins only in Phase 5.
 
 ---
 
-## Phase 5: Risk Management & Paper Trading 🚧
+## Phase 5: Risk Management & Paper Trading 🟡 CLOSURE CANDIDATE
 
 **Goal**: Simulate live trading with realistic constraints.
+
+**Status**: All scoped Phase 5 implementation deliverables are complete and
+validated by focused local gates. Formal Phase 5 closure remains pending the
+full repository gate, staged-diff and secret audit, merge to `main`, and the
+final Phase 5 version tag.
 
 ### Phase 5-01: live asset catalog and public market API ✅
 
@@ -668,6 +673,49 @@ series, performance attribution by regime, cross-asset currency conversion,
 WebSocket streaming, notifications, PostgreSQL paper-session persistence,
 exchange-account access and live trading.
 
+### Phase 5-10: deterministic trade journal ✅
+
+**Scope**: Reconstruct position lifecycles from canonical verified paper-session
+orders and fills, expose bounded read-only administrator queries, and provide
+deterministic CSV/JSONL exports without introducing an execution path.
+
+**Delivered**:
+- [x] Verified deterministic journal reconstruction with partial exits
+- [x] Open and closed trade accounting with exact Decimal values
+- [x] Bounded filters, pagination and newest-first read model
+- [x] Content-addressed query and export checksums
+- [x] Authenticated GET-only administrator API and deterministic exports
+- [x] Responsive protected trade-journal page and frontend regressions
+
+**Explicitly deferred after 5-10**: calendar-period performance series,
+performance attribution by regime, cross-asset currency conversion,
+notifications, PostgreSQL paper-session persistence, exchange-account access
+and live trading.
+
+### Calendar-period performance metrics ✅
+
+**Scope**: Project verified paper-trading exit realizations into continuous UTC
+daily, ISO-weekly and Gregorian-monthly buckets for exactly one quote asset.
+Partial exits are attributed at each SELL event and the service does not invent
+historical mark-to-market state that is absent from persisted paper snapshots.
+
+**Delivered**:
+- [x] Exact average-cost realization allocation for every exit execution
+- [x] UTC half-open daily, weekly and monthly calendar buckets
+- [x] Continuous bounded series including empty periods
+- [x] Realized PnL, fees, slippage, win rate and profit factor
+- [x] Quote-asset isolation and deterministic source/query/content checksums
+- [x] Authenticated GET-only administrator API and protected frontend page
+- [x] Explicit nonclaims for historical equity, unrealized PnL and drawdown
+
+**Operational contract**:
+[`docs/PAPER_TRADING_PERIOD_METRICS.md`](./PAPER_TRADING_PERIOD_METRICS.md)
+
+**Explicitly deferred after the Phase 5 implementation**: performance
+attribution by regime, cross-asset currency conversion, historical
+mark-to-market snapshots, WebSocket streaming, notifications, PostgreSQL
+paper-session persistence, exchange-account access and live trading.
+
 **Deliverables**:
 - [x] Position sizing engine
 - [x] Stop-loss enforcement
@@ -675,8 +723,8 @@ exchange-account access and live trading.
 - [x] Market regime detection (trend/range/volatile)
 - [x] Paper trading engine (bounded local deterministic replay)
 - [x] Live performance dashboard
-- [ ] Trade history & journal
-- [ ] Performance metrics (daily, weekly, monthly)
+- [x] Trade history & journal
+- [x] Performance metrics (daily, weekly, monthly)
 - [x] Risk limits & veto system (reused from Phase 3)
 
 **Dependencies**: Phase 4 complete  

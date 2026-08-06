@@ -476,3 +476,36 @@ tbody tr:hover { background: rgba(103,242,138,.018); }
     gap: 0.2rem;
   }
 }
+
+/* Paper period metrics */
+.period-metrics-heading { align-items: center; }
+.period-metrics-note {
+  display: grid; grid-template-columns: minmax(140px, .35fr) 1fr; gap: 1rem;
+  margin-bottom: 1.5rem; padding: 1rem 1.2rem;
+  border: 1px solid rgba(245,184,75,.3); background: rgba(245,184,75,.05);
+}
+.period-metrics-note strong { color: var(--amber); }
+.period-metrics-note span { color: var(--muted); font-size: .84rem; line-height: 1.55; }
+.period-metrics-filters .form-actions { margin-top: 1rem; }
+.period-metrics-totals { margin: 2rem 0; }
+.period-metrics-series { margin-top: 2rem; }
+.period-metrics-table td:first-child { min-width: 190px; }
+.period-metrics-table td { white-space: nowrap; }
+.period-metrics-zero { opacity: .58; }
+.period-metrics-provenance { margin-top: 2rem; }
+.period-metrics-provenance summary {
+  cursor: pointer; color: var(--green); font-weight: 750;
+}
+.period-metrics-provenance dl { display: grid; gap: .8rem; margin: 1rem 0 0; }
+.period-metrics-provenance dl > div {
+  display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 1rem;
+}
+.period-metrics-provenance dt { color: var(--muted); font-size: .75rem; }
+.period-metrics-provenance dd { min-width: 0; margin: 0; }
+.period-metrics-provenance code {
+  display: block; overflow-wrap: anywhere; color: #aebbb1; font-size: .7rem;
+}
+@media (max-width: 720px) {
+  .period-metrics-note { grid-template-columns: 1fr; }
+  .period-metrics-provenance dl > div { grid-template-columns: 1fr; gap: .3rem; }
+}

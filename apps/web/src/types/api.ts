@@ -56,3 +56,10 @@ export type PaperTradeJournalTotals =
   ApiSchemas["PaperTradeJournalTotalsResponse"];
 export type PaperTradeJournalPageResponse =
   ApiSchemas["PaperTradeJournalPageResponse"];
+export type PaperPeriodGranularity = ApiSchemas["PaperPeriodGranularity"];
+export type PaperPeriodMetricsBucket =
+  ApiSchemas["PaperPeriodMetricsBucketResponse"];
+export type PaperPeriodMetricsTotals =
+  ApiSchemas["PaperPeriodMetricsTotalsResponse"];
+export type PaperPeriodMetricsSeriesResponse =
+  ApiSchemas["PaperPeriodMetricsSeriesResponse"];
