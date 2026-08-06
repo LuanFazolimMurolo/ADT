@@ -740,27 +740,27 @@ accessible and bounded visual analysis environment without weakening the
 deterministic market-data, paper-trading and audit contracts delivered through
 Phase 5.
 
-**Status**: Approved scope. Phase 6-01 starts with architecture and contract
-documentation only. No chart dependency, API mutation, database migration or
-financial-engine change is introduced by the first delivery.
+**Status**: Phase 6-01 and Phase 6-02 are complete. The approved architecture
+and the bounded administrator-only local RAW candle API are integrated. Phase
+6-03 is the next delivery.
 
-### Phase 6-01: visual architecture and chart-data contracts 🚧
+### Phase 6-01: visual architecture and chart-data contracts ✅
 
-- [ ] Record the revised post-Phase-5 roadmap
-- [ ] Inventory existing and missing historical series
-- [ ] Define UTC, Decimal, pagination and point-limit contracts
-- [ ] Select the financial-chart rendering library and attribution requirements
-- [ ] Define administrator, authenticated-user and public presentation boundaries
-- [ ] Document performance, accessibility, testing and security requirements
+- [x] Record the revised post-Phase-5 roadmap
+- [x] Inventory existing and missing historical series
+- [x] Define UTC, Decimal, pagination and point-limit contracts
+- [x] Select the financial-chart rendering library and attribution requirements
+- [x] Define administrator, authenticated-user and public presentation boundaries
+- [x] Document performance, accessibility, testing and security requirements
 
-### Phase 6-02: bounded read-only candle API
+### Phase 6-02: bounded read-only candle API ✅
 
-- [ ] Serve only persisted, closed and validated RAW candles
-- [ ] Filter by canonical instrument, timeframe and half-open UTC interval
-- [ ] Use stable bounded pagination suitable for backward chart navigation
-- [ ] Preserve Decimal values as strings at the HTTP boundary
-- [ ] Reject oversized requests instead of silently truncating or downsampling
-- [ ] Execute no Binance fetch, resampling or long-running work inside HTTP
+- [x] Serve only persisted, closed and validated RAW candles
+- [x] Filter by canonical instrument, timeframe and half-open UTC interval
+- [x] Use stable bounded pagination suitable for backward chart navigation
+- [x] Preserve Decimal values as strings at the HTTP boundary
+- [x] Reject oversized requests instead of silently truncating or downsampling
+- [x] Execute no Binance fetch, resampling or long-running work inside HTTP
 
 ### Phase 6-03: instrument and paper-session chart
 
@@ -819,9 +819,12 @@ financial-engine change is introduced by the first delivery.
 **Architecture document**:
 [`docs/PHASE6_FRONTEND_AND_CHARTS_ARCHITECTURE.md`](./PHASE6_FRONTEND_AND_CHARTS_ARCHITECTURE.md)
 
+**Candle API contract**:
+[`docs/MARKET_CANDLE_CHART_API.md`](./MARKET_CANDLE_CHART_API.md)
+
 **Dependencies**: Phase 5 complete
 **Estimated Duration**: 4 weeks
-**Blockers**: None for Phase 6-01
+**Blockers**: None for Phase 6-03
 
 ---
 

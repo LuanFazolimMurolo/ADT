@@ -12,6 +12,26 @@ export type OpenApiJsonValue =
     | { [key: string]: OpenApiJsonValue };
 
 export interface paths {
+    "/api/v1/admin/market-data/candles/{base_asset}/{quote_asset}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Market Candles
+         * @description Return persisted closed candles with stable backward pagination.
+         */
+        get: operations["get_market_candles_api_v1_admin_market_data_candles__base_asset___quote_asset__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/me": {
         parameters: {
             query?: never;
@@ -839,6 +859,100 @@ export interface components {
         };
         "JsonValue-Input": OpenApiJsonValue;
         "JsonValue-Output": OpenApiJsonValue;
+        /**
+         * MarketCandlePageResponse
+         * @description One bounded backward page from a verified local RAW dataset.
+         */
+        MarketCandlePageResponse: {
+            /**
+             * Available End
+             * Format: date-time
+             */
+            available_end: string;
+            /**
+             * Available Start
+             * Format: date-time
+             */
+            available_start: string;
+            /** Base Asset */
+            base_asset: string;
+            /** Content Checksum */
+            content_checksum: string;
+            /** Count */
+            count: number;
+            /** Dataset Candle Count */
+            dataset_candle_count: number;
+            /** Dataset Version */
+            dataset_version: string;
+            /** Dataset Version Algorithm */
+            dataset_version_algorithm: string;
+            /** Exchange */
+            exchange: string;
+            /** Has More Before */
+            has_more_before: boolean;
+            /** Items */
+            items: components["schemas"]["MarketCandleResponse"][];
+            /** Limit */
+            limit: number;
+            /** Market Type */
+            market_type: string;
+            /** Next Before */
+            next_before: string | null;
+            /** Quote Asset */
+            quote_asset: string;
+            /**
+             * Range End
+             * Format: date-time
+             */
+            range_end: string;
+            /**
+             * Range Start
+             * Format: date-time
+             */
+            range_start: string;
+            /** Requested Before */
+            requested_before: string | null;
+            /** Schema Version */
+            schema_version: number;
+            /** Symbol */
+            symbol: string;
+            /** Timeframe */
+            timeframe: string;
+        };
+        /**
+         * MarketCandleResponse
+         * @description One canonical closed OHLCV candle.
+         */
+        MarketCandleResponse: {
+            /** Close */
+            close: string;
+            /**
+             * Close Time
+             * Format: date-time
+             */
+            close_time: string;
+            /** High */
+            high: string;
+            /** Is Closed */
+            is_closed: boolean;
+            /** Low */
+            low: string;
+            /** Open */
+            open: string;
+            /**
+             * Open Time
+             * Format: date-time
+             */
+            open_time: string;
+            /** Quote Volume */
+            quote_volume: string | null;
+            /** Source */
+            source: string;
+            /** Trade Count */
+            trade_count: number | null;
+            /** Volume */
+            volume: string;
+        };
         /**
          * MarketRegimeKind
          * @description Mutually exclusive deterministic regime classes.
@@ -2072,6 +2186,137 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_market_candles_api_v1_admin_market_data_candles__base_asset___quote_asset__get: {
+        parameters: {
+            query: {
+                timeframe: string;
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                base_asset: string;
+                quote_asset: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded verified local RAW candle page. */
+            200: {
+                headers: {
+                    "X-ADT-Candle-Content-Checksum"?: string;
+                    "X-ADT-Candle-Dataset-Version"?: string;
+                    "X-ADT-Candle-Rows"?: number;
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketCandlePageResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     get_admin_me_api_v1_admin_me_get: {
         parameters: {
             query?: never;

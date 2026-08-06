@@ -4,7 +4,7 @@
 
 - **Phase**: 6
 - **Delivery**: 6-01
-- **Status**: architecture candidate for review
+- **Status**: approved and integrated in Phase 6-01
 - **Base release**: annotated tag `phase-5`
 - **Base commit**: `f50d8f087375158112f8d3f43dd25e45a5f83b05`
 - **Scope authority**: this document and the Phase 6 section of `docs/ROADMAP.md`
@@ -140,8 +140,8 @@ target is:
 - clients request a coarser timeframe or an older page when more history is
   required.
 
-The exact OpenAPI schema is implementation work and is not frozen by this
-architecture document.
+The implemented operational contract is documented in
+[`MARKET_CANDLE_CHART_API.md`](./MARKET_CANDLE_CHART_API.md).
 
 ### 7.3 Session annotations
 

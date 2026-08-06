@@ -14,6 +14,7 @@ from fastapi.openapi.utils import get_openapi
 from app.api.exceptions import setup_exception_handlers
 from app.api.routes import (
     admin,
+    admin_market_candles,
     admin_paper_dashboard,
     admin_paper_journal,
     admin_paper_period_metrics,
@@ -32,6 +33,7 @@ from app.core.logging import setup_logging
 from app.database import Database
 from app.market_data.asset_catalog import AssetMarketService
 from app.market_data.binance import BINANCE_MARKET_DATA_BASE_URL, BinanceSpotAdapter
+from app.market_data.candle_query import LocalMarketCandleReadService
 from app.market_data.continuous import ContinuousCollectionStateStore
 from app.market_data.http import PublicMarketHttpClient
 from app.middleware import RequestContextMiddleware
@@ -128,6 +130,11 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
             application.state.continuous_collection_state_store = ContinuousCollectionStateStore(
                 app_settings.data_dir
             )
+            application.state.market_candle_read_service = LocalMarketCandleReadService(
+                app_settings.data_dir,
+                lock_timeout_seconds=app_settings.market_job_lock_timeout,
+                lock_stale_after_seconds=app_settings.market_job_stale_after,
+            )
             paper_repository = PaperTradingRepository(
                 app_settings.data_dir,
                 lock_timeout_seconds=app_settings.market_job_lock_timeout,
@@ -184,6 +191,9 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
             "X-ADT-Journal-Content-Checksum",
             "X-ADT-Journal-Query-Checksum",
             "X-ADT-Journal-Rows",
+            "X-ADT-Candle-Content-Checksum",
+            "X-ADT-Candle-Dataset-Version",
+            "X-ADT-Candle-Rows",
             "X-ADT-Period-Metrics-Content-Checksum",
             "X-ADT-Period-Metrics-Query-Checksum",
             "X-Request-ID",
@@ -203,6 +213,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(public.router)
     application.include_router(paper_trading.router)
     application.include_router(admin.router)
+    application.include_router(admin_market_candles.router)
     application.include_router(admin_paper_dashboard.router)
     application.include_router(admin_paper_journal.router)
     application.include_router(admin_paper_period_metrics.router)

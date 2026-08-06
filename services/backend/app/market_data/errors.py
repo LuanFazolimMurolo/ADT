@@ -109,6 +109,14 @@ class ContinuousCollectionStateNotFoundError(MarketDataError):
     status_code = 404
 
 
+class MarketCandleDatasetNotFoundError(MarketDataError):
+    """No transactionally cataloged local RAW dataset matches the query."""
+
+    code = "market_candle_dataset_not_found"
+    default_message = "O dataset local de candles solicitado não foi encontrado."
+    status_code = 404
+
+
 class MarketJobNotFoundError(MarketDataError):
     code = "market_job_not_found"
     default_message = "O job de dados de mercado não foi encontrado."

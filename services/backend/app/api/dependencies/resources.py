@@ -7,6 +7,7 @@ from fastapi import Depends, Request
 from app.auth import SupabaseJWTVerifier
 from app.database import Database
 from app.market_data.asset_catalog import AssetMarketService
+from app.market_data.candle_query import LocalMarketCandleReadService
 from app.market_data.continuous import ContinuousCollectionStateStore
 from app.paper_trading.continuous import PaperRunnerStateStore
 from app.paper_trading.dashboard import PaperDashboardReadService
@@ -40,6 +41,14 @@ def get_database(request: Request) -> Database:
 def get_asset_market_service(request: Request) -> AssetMarketService:
     """Return the application-owned public asset market service."""
     return cast(AssetMarketService, request.app.state.asset_market_service)
+
+
+def get_market_candle_read_service(request: Request) -> LocalMarketCandleReadService:
+    """Return the application-owned bounded local candle read service."""
+    return cast(
+        LocalMarketCandleReadService,
+        request.app.state.market_candle_read_service,
+    )
 
 
 def get_continuous_collection_state_store(
