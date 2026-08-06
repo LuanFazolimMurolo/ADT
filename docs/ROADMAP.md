@@ -19,7 +19,7 @@ Project phases from foundation to full deployment.
 - [x] Documentation (spec, architecture)
 
 **Status**: Complete
-**Estimated Duration**: 1 week  
+**Estimated Duration**: 1 week
 **Blockers**: None
 
 ---
@@ -67,8 +67,8 @@ first administrator.
 **Explicitly deferred**: Admin login/dashboard, strategy CRUD, market data,
 backtesting, Telegram, machine learning, and completion of Phase 1.
 
-**Dependencies**: Phase 0 complete  
-**Estimated Duration**: 2 weeks  
+**Dependencies**: Phase 0 complete
+**Estimated Duration**: 2 weeks
 **Blockers**: Supabase account setup
 
 ### Phase 1B: Backend persistence and administrative authentication 🚧
@@ -339,8 +339,8 @@ durability and dataset contracts established in Phases 2A–2C.
 - [x] Data validation foundations
 - [ ] Admin interface to trigger sync (Phase 2D)
 
-**Dependencies**: Phase 1 complete  
-**Estimated Duration**: 2 weeks  
+**Dependencies**: Phase 1 complete
+**Estimated Duration**: 2 weeks
 **Blockers**: Market data API access
 
 ---
@@ -727,124 +727,237 @@ paper-session persistence, exchange-account access and live trading.
 - [x] Performance metrics (daily, weekly, monthly)
 - [x] Risk limits & veto system (reused from Phase 3)
 
-**Dependencies**: Phase 4 complete  
-**Estimated Duration**: 3 weeks  
+**Dependencies**: Phase 4 complete
+**Estimated Duration**: 3 weeks
 **Blockers**: None
 
 ---
 
-## Phase 6: Telegram Integration
+## Phase 6: Advanced Frontend and Financial Charts 🚧 PLANNED
 
-**Goal**: Send notifications and control via Telegram bot.
+**Goal**: Turn the existing read-only administrative surfaces into a precise,
+accessible and bounded visual analysis environment without weakening the
+deterministic market-data, paper-trading and audit contracts delivered through
+Phase 5.
 
-**Deliverables**:
-- [ ] Telegram bot setup
-- [ ] Trade notifications
-- [ ] Daily summary report
-- [ ] Error/alert messages
-- [ ] Admin commands (/status, /performance, etc.)
-- [ ] Configuration via Telegram
-- [ ] Secure token handling
+**Status**: Approved scope. Phase 6-01 starts with architecture and contract
+documentation only. No chart dependency, API mutation, database migration or
+financial-engine change is introduced by the first delivery.
 
-**Dependencies**: Phase 5 complete  
-**Estimated Duration**: 1 week  
-**Blockers**: Telegram bot token
+### Phase 6-01: visual architecture and chart-data contracts 🚧
+
+- [ ] Record the revised post-Phase-5 roadmap
+- [ ] Inventory existing and missing historical series
+- [ ] Define UTC, Decimal, pagination and point-limit contracts
+- [ ] Select the financial-chart rendering library and attribution requirements
+- [ ] Define administrator, authenticated-user and public presentation boundaries
+- [ ] Document performance, accessibility, testing and security requirements
+
+### Phase 6-02: bounded read-only candle API
+
+- [ ] Serve only persisted, closed and validated RAW candles
+- [ ] Filter by canonical instrument, timeframe and half-open UTC interval
+- [ ] Use stable bounded pagination suitable for backward chart navigation
+- [ ] Preserve Decimal values as strings at the HTTP boundary
+- [ ] Reject oversized requests instead of silently truncating or downsampling
+- [ ] Execute no Binance fetch, resampling or long-running work inside HTTP
+
+### Phase 6-03: instrument and paper-session chart
+
+- [ ] Candlestick rendering with responsive resize and keyboard-accessible controls
+- [ ] EMA and other explicitly supported indicator overlays
+- [ ] Verified order, fill, entry, exit and protective-stop annotations
+- [ ] Journal-to-chart and chart-to-journal navigation
+- [ ] Explicit UTC display and closed-candle freshness state
+- [ ] Bounded polling with deterministic replacement of chart data
+
+### Phase 6-04: deterministic portfolio time series
+
+- [ ] Produce a content-addressed portfolio timeline from verified replay events
+- [ ] Record quote cash, base quantity, mark price and cost basis per observation
+- [ ] Record realized PnL, unrealized PnL, equity, peak equity and drawdown
+- [ ] Bind every point to session identity, candle boundary and source checksum
+- [ ] Verify exact reconstruction and reject tampered or incompatible artifacts
+- [ ] Preserve existing latest-state and legacy session identities
+
+### Phase 6-05: performance visualizations
+
+- [ ] Equity and drawdown curves
+- [ ] Cumulative realized PnL, fees and slippage
+- [ ] Daily, weekly and monthly realized-performance charts
+- [ ] Win/loss, profit-factor and trade-distribution views
+- [ ] Bounded heatmaps and session comparisons
+- [ ] Explicit labels for metrics that do not represent historical mark-to-market
+
+### Phase 6-06: public and authenticated-user surfaces
+
+- [ ] Improve the public landing page without exposing administrative data
+- [ ] Establish an authenticated `/app` boundary separate from `/admin`
+- [ ] Define read-only user views for charts, signals and authorized performance
+- [ ] Keep user registration disabled unless separately reviewed and approved
+- [ ] Preserve backend authorization as the source of access control
+- [ ] Add route, authorization, accessibility and responsive-layout tests
+
+### Phase 6-07: integration and closure gate
+
+- [ ] Backend, frontend, OpenAPI and generated-contract gates
+- [ ] Determinism and tamper-verification tests for historical series
+- [ ] Browser integration and accessibility validation
+- [ ] Response-size, latency and memory-budget validation
+- [ ] Authentication, authorization and secret audit
+- [ ] Documentation, staged-diff audit, merge and annotated Phase 6 tag
+
+**Explicitly out of scope**:
+
+- creating, starting, pausing or deleting collectors and paper sessions through HTTP;
+- machine-learning training or automatic strategy recommendation;
+- Telegram notifications;
+- production cloud deployment;
+- exchange-account access or real-capital order execution;
+- silent chart downsampling that changes candle or financial semantics.
+
+**Architecture document**:
+[`docs/PHASE6_FRONTEND_AND_CHARTS_ARCHITECTURE.md`](./PHASE6_FRONTEND_AND_CHARTS_ARCHITECTURE.md)
+
+**Dependencies**: Phase 5 complete
+**Estimated Duration**: 4 weeks
+**Blockers**: None for Phase 6-01
 
 ---
 
-## Phase 7: Admin Dashboard (Advanced)
+## Phase 7: Operational Control Plane
 
-**Goal**: Comprehensive monitoring and control interface.
+**Goal**: Create, validate and operate market-data and paper-trading workflows
+through an authenticated control plane without executing long-running work in
+HTTP requests.
 
 **Deliverables**:
-- [ ] Strategy performance comparison
-- [ ] Backtest results viewer (advanced charts)
-- [ ] Live paper trading monitor
-- [ ] Trade history with filters
-- [ ] Performance heatmaps
-- [ ] Risk metrics display
-- [ ] Settings management
-- [ ] User activity log (Phase 1+)
-- [ ] System health dashboard
+- [ ] Create and validate paper-session configurations through the frontend
+- [ ] Select assets, timeframes, strategies, sizing, fees and risk policies
+- [ ] Submit and monitor bounded market-data synchronization operations
+- [ ] Start, pause, resume and stop durable collectors and paper runners
+- [ ] Reconcile abandoned work after restart
+- [ ] Integrate the administrative capital ledger with operational sessions
+- [ ] Show worker health, leases, progress, errors and audit events
+- [ ] Preserve CLI workflows and explicit operator confirmation
+- [ ] Complete the previously approved Phase 2D operational administration scope
 
-**Dependencies**: Phase 6 complete  
-**Estimated Duration**: 3 weeks  
-**Blockers**: None
+**Dependencies**: Phase 6 complete
+**Estimated Duration**: 4 weeks
+**Blockers**: Reviewed PostgreSQL operational migrations and persistent worker host
 
 ---
 
-## Phase 8: Machine Learning
+## Phase 8: Machine Learning and Recommendation
 
-**Goal**: Optimize strategies and detect market regimes.
+**Goal**: Add versioned, explainable and rigorously evaluated models that assist
+strategy and parameter selection without silently promoting a model to live use.
 
 **Deliverables**:
-- [ ] Strategy parameter optimization
-- [ ] Hyperparameter tuning
-- [ ] Regime classification (ML model)
-- [ ] Performance prediction
+- [ ] Dataset and feature contracts with no look-ahead leakage
+- [ ] Model-training and evaluation pipelines
+- [ ] ML-based regime classification
+- [ ] Performance and degradation prediction
 - [ ] Anomaly detection
-- [ ] Strategy recommendation
-- [ ] Model versioning & tracking
+- [ ] Strategy and parameter recommendations
+- [ ] Model registry, versioning, lineage and reproducibility
+- [ ] Walk-forward and holdout integration with the Phase 4 evidence
+- [ ] Human approval before any recommendation becomes an active paper session
 
-**Dependencies**: Phase 7 complete  
-**Estimated Duration**: 4 weeks  
-**Blockers**: ML expertise, data science library choice
+**Dependencies**: Phase 7 complete
+**Estimated Duration**: 4+ weeks
+**Blockers**: Model scope, evaluation policy and data-volume assessment
 
 ---
 
 ## Phase 9: Production Deployment
 
-**Goal**: Deploy to cloud infrastructure with reliability.
+**Goal**: Deploy the validated system to persistent infrastructure with
+reliable process supervision, backups, monitoring and secure delivery.
 
 **Deliverables**:
-- [ ] Docker image optimization
-- [ ] Kubernetes manifest (if scaling)
-- [ ] CI/CD pipeline (GitHub Actions)
-- [ ] Production environment setup
-- [ ] Database backups
-- [ ] Monitoring & alerting
-- [ ] Error tracking (Sentry)
-- [ ] Performance profiling
-- [ ] Cost optimization
-- [ ] SSL/TLS certificates
+- [ ] Production container and environment design
+- [ ] CI/CD pipeline with protected deployment gates
+- [ ] Persistent backend, worker and `ADT_DATA_DIR` topology
+- [ ] Supabase production configuration and reviewed migrations
+- [ ] Database and artifact backups with restore testing
+- [ ] Process supervision, health checks and automatic restart
+- [ ] Monitoring, alerting and error tracking
+- [ ] TLS, CORS, CSP, rate limits and secret management
+- [ ] Performance and cost profiling
+- [ ] Kubernetes only if measured scale requires it
 
-**Dependencies**: Phase 8 complete  
-**Estimated Duration**: 2 weeks  
-**Blockers**: Cloud infrastructure decision
+**Dependencies**: Phase 8 complete
+**Estimated Duration**: 2+ weeks
+**Blockers**: Hosting and persistent-storage decision
 
 ---
 
-## Phase 10: Validation & Iteration
+## Phase 10: Telegram-Assisted Manual Execution
 
-**Goal**: Extended live paper trading and refinement.
+**Goal**: Deliver audited trading signals through Telegram so the operator can
+decide and execute manually, without granting the bot exchange-account or
+capital-movement authority.
 
 **Deliverables**:
-- [ ] Live paper trading (3+ months)
-- [ ] Performance analysis
-- [ ] User feedback collection
-- [ ] Bug fixes & optimizations
-- [ ] Documentation updates
-- [ ] Strategy library expansion
-- [ ] Market coverage expansion
-- [ ] Readiness assessment for Phase 11 (optional: live trading)
+- [ ] Secure Telegram bot and authorized-recipient configuration
+- [ ] Entry, exit, stop, invalidation and expiry notifications
+- [ ] Observed price, strategy, timeframe, rationale and risk context
+- [ ] Estimated targets or horizons only when backed by an explicit model
+- [ ] Signal acknowledgement and optional manual-execution recording
+- [ ] Follow-up exit notifications and daily summaries
+- [ ] Error, stale-data and runner-health alerts
+- [ ] Idempotent delivery, retry, deduplication and audit history
+- [ ] No exchange API key and no automatic real order execution
 
-**Dependencies**: Phase 9 complete  
-**Estimated Duration**: 12+ weeks  
-**Blockers**: Market conditions, strategy performance
+**Dependencies**: Phase 9 complete
+**Estimated Duration**: 1–2 weeks
+**Blockers**: Telegram bot token and approved signal contract
 
 ---
 
-## Beyond Phase 10 (Optional)
+## Phase 11: Extended Validation and Iteration
 
-### Phase 11: Live Trading (Not Planned)
+**Goal**: Run the deployed system for at least three months with paper trading
+and optional manually executed Telegram signals before any real-automation
+assessment.
 
-- ⚠️ Advanced risk protocols
-- ⚠️ Capital allocation
-- ⚠️ Regulatory compliance
-- ⚠️ Insurance & audit trails
-- ⚠️ Professional monitoring
+**Deliverables**:
+- [ ] Continuous paper trading for 3+ months
+- [ ] Signal-delivery and operator-response analysis
+- [ ] Simulated-versus-manual execution comparison
+- [ ] Strategy stability and regime analysis
+- [ ] Failure, restart, stale-data and alert reliability review
+- [ ] Bug fixes, performance improvements and documentation updates
+- [ ] Strategy-library and market-coverage expansion
+- [ ] Formal readiness assessment for optional Phase 12
 
-(This phase requires extensive testing, legal review, and capital constraints. Not planned for initial release.)
+**Dependencies**: Phase 10 complete
+**Estimated Duration**: 12+ weeks
+**Blockers**: Observation time, market conditions and operational evidence
+
+---
+
+## Beyond Phase 11 (Optional)
+
+### Phase 12: Automated Real-Capital Trading (Not Planned)
+
+This phase is not part of the initial ADT release and must not begin merely
+because Phase 11 completes.
+
+Potential prerequisites include:
+
+- ⚠️ legal and regulatory review;
+- ⚠️ exchange-account and API-key isolation;
+- ⚠️ strict capital allocation and loss limits;
+- ⚠️ independent order and balance reconciliation;
+- ⚠️ duplicate-order and restart protection;
+- ⚠️ emergency shutdown and human override;
+- ⚠️ professional monitoring and incident response;
+- ⚠️ extended audited evidence from manual-assisted operation.
+
+The project may remain permanently in Telegram-assisted manual execution without
+ever implementing automated real-capital trading.
 
 ---
 
