@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -42,6 +42,7 @@ function page(
   openTime: string,
   nextBefore: string | null,
   hasMoreBefore: boolean,
+  datasetVersion = "a".repeat(64),
 ): MarketCandlePageResponse {
   const closeTime = new Date(Date.parse(openTime) + 60_000).toISOString();
   return {
@@ -60,7 +61,7 @@ function page(
     limit: 1000,
     count: 1,
     dataset_candle_count: 2,
-    dataset_version: "a".repeat(64),
+    dataset_version: datasetVersion,
     dataset_version_algorithm: "sha256",
     content_checksum: "b".repeat(64),
     has_more_before: hasMoreBefore,
@@ -218,18 +219,103 @@ describe("InstrumentChartPage", () => {
       limit: 1000,
     });
 
-    await userEvent.click(
-      screen.getByRole("button", {
-        name: "Carregar histórico anterior",
-      }),
-    );
+    await act(async () => {
+      await userEvent.click(
+        screen.getByRole("button", {
+          name: "Carregar histórico anterior",
+        }),
+      );
+    });
 
     await waitFor(() => expect(screen.getByText(/Candles: 2/)).toBeDefined());
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(mocks.getMarketCandles).toHaveBeenLastCalledWith("BTC", "USDT", {
       timeframe: "1m",
       before: "2026-01-01T00:01:00.000Z",
       limit: 1000,
     });
+  });
+
+  it("recarrega annotations quando a versão do dataset muda", async () => {
+    const secondVersion = "c".repeat(64);
+    const refreshedPage = page(
+      "2026-01-01T00:00:00.000Z",
+      null,
+      false,
+      secondVersion,
+    );
+    const refreshedAnnotations: PaperChartAnnotationPageResponse = {
+      ...annotations,
+      dataset_version: secondVersion,
+      ema_fast_period: 8,
+      ema_slow_period: 13,
+      count: 0,
+      fills_count: 0,
+      fills: [],
+      content_checksum: "8".repeat(64),
+    };
+
+    let resolveRefresh!: (value: MarketCandlePageResponse) => void;
+    const refreshPromise = new Promise<MarketCandlePageResponse>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    let resolveAnnotations!: (
+      value: PaperChartAnnotationPageResponse,
+    ) => void;
+    const refreshedAnnotationsPromise =
+      new Promise<PaperChartAnnotationPageResponse>((resolve) => {
+        resolveAnnotations = resolve;
+      });
+
+    mocks.getPaperTradingDashboard.mockImplementation(
+      () => new Promise(() => {}),
+    );
+    mocks.getMarketCandles
+      .mockResolvedValueOnce(
+        page("2026-01-01T00:00:00.000Z", null, false),
+      )
+      .mockReturnValueOnce(refreshPromise);
+    mocks.getPaperChartAnnotations
+      .mockResolvedValueOnce(annotations)
+      .mockReturnValueOnce(refreshedAnnotationsPromise);
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          `/admin/paper-trading/chart?session_id=${"1".repeat(64)}&base=BTC&quote=USDT&timeframe=1m`,
+        ]}
+      >
+        <InstrumentChartPage />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByText(/Candles: 1 · EMA: 3\/5 · Eventos: 1/),
+    ).toBeDefined();
+
+    const user = userEvent.setup();
+    await act(async () => {
+      await user.click(screen.getByRole("button", { name: "Atualizar" }));
+      resolveRefresh(refreshedPage);
+      await refreshPromise;
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(mocks.getPaperChartAnnotations).toHaveBeenCalledTimes(2),
+    );
+
+    await act(async () => {
+      resolveAnnotations(refreshedAnnotations);
+      await refreshedAnnotationsPromise;
+      await Promise.resolve();
+    });
+
+    expect(
+      await screen.findByText(/Candles: 1 · EMA: 8\/13 · Eventos: 0/),
+    ).toBeDefined();
   });
 
   it("carrega eventos e períodos EMA da sessão selecionada", async () => {

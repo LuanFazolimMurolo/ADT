@@ -1284,7 +1284,7 @@ tbody tr:hover {
   padding: 0.75rem 0.8rem;
   border: 1px solid var(--border);
   border-radius: 0.65rem;
-  background: var(--background);
+  background: var(--bg);
   color: var(--text);
   font: inherit;
   text-transform: none;
@@ -1550,7 +1550,7 @@ tbody tr:hover {
   padding: 0.75rem 0.8rem;
   border: 1px solid var(--border);
   border-radius: 0.65rem;
-  background: var(--background);
+  background: var(--bg);
   color: var(--text);
   font: inherit;
   text-transform: none;
@@ -1781,7 +1781,7 @@ tbody tr:hover {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.8rem 1rem;
-  background: var(--background);
+  background: var(--bg);
 }
 
 .instrument-chart-annotation--selected {

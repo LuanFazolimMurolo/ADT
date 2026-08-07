@@ -253,10 +253,11 @@ export function InstrumentChartPage() {
     data && data.items.length > 0
       ? data.items[data.items.length - 1].close_time
       : null;
+  const datasetVersion = data?.datasetVersion ?? null;
 
   useEffect(() => {
     const sessionId = selection.sessionId;
-    if (!sessionId || !rangeStart || !rangeEnd) {
+    if (!sessionId || !rangeStart || !rangeEnd || !datasetVersion) {
       setAnnotations(null);
       setAnnotationError(null);
       setLoadingAnnotations(false);
@@ -283,6 +284,11 @@ export function InstrumentChartPage() {
             "A sessão selecionada pertence a outro instrumento ou timeframe.",
           );
         }
+        if (result.dataset_version !== datasetVersion) {
+          throw new Error(
+            "As anotações pertencem a outra versão do dataset. Atualize o gráfico.",
+          );
+        }
         setAnnotations(result);
         setAnnotationError(null);
       })
@@ -306,6 +312,7 @@ export function InstrumentChartPage() {
       annotationSequence.current += 1;
     };
   }, [
+    datasetVersion,
     rangeEnd,
     rangeStart,
     selection.baseAsset,
