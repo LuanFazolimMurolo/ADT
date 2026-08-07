@@ -9,6 +9,7 @@ from app.database import Database
 from app.market_data.asset_catalog import AssetMarketService
 from app.market_data.candle_query import LocalMarketCandleReadService
 from app.market_data.continuous import ContinuousCollectionStateStore
+from app.paper_trading.chart_annotations import PaperChartAnnotationReadService
 from app.paper_trading.continuous import PaperRunnerStateStore
 from app.paper_trading.dashboard import PaperDashboardReadService
 from app.paper_trading.journal_export import PaperTradeJournalExportService
@@ -64,6 +65,16 @@ def get_continuous_collection_state_store(
 def get_paper_trading_read_service(request: Request) -> PaperTradingReadService:
     """Return the application-owned read-only paper-trading query service."""
     return cast(PaperTradingReadService, request.app.state.paper_trading_read_service)
+
+
+def get_paper_chart_annotation_read_service(
+    request: Request,
+) -> PaperChartAnnotationReadService:
+    """Return the application-owned bounded paper chart annotation service."""
+    return cast(
+        PaperChartAnnotationReadService,
+        request.app.state.paper_chart_annotation_read_service,
+    )
 
 
 def get_paper_dashboard_read_service(request: Request) -> PaperDashboardReadService:

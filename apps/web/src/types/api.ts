@@ -63,3 +63,13 @@ export type PaperPeriodMetricsTotals =
   ApiSchemas["PaperPeriodMetricsTotalsResponse"];
 export type PaperPeriodMetricsSeriesResponse =
   ApiSchemas["PaperPeriodMetricsSeriesResponse"];
+
+export type MarketCandle = ApiSchemas["MarketCandleResponse"];
+export type MarketCandlePageResponse = ApiSchemas["MarketCandlePageResponse"];
+export type PaperChartAnnotationPageResponse =
+  ApiSchemas["PaperChartAnnotationPageResponse"];
+export type PaperChartOrderAnnotation =
+  ApiSchemas["PaperChartOrderAnnotationResponse"];
+export type PaperChartFillAnnotation =
+  ApiSchemas["PaperChartFillAnnotationResponse"];
+export type PaperChartFillRole = ApiSchemas["PaperChartFillRole"];

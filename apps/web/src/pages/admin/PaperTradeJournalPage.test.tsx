@@ -128,6 +128,29 @@ describe("PaperTradeJournalPage", () => {
     expect(within(operations).getAllByText("USDT 4,93")).toHaveLength(2);
     expect(screen.getByText(/Valores podem usar ativos/)).toBeDefined();
     expect(mocks.getPaperTradeJournal).toHaveBeenCalledWith({}, 1, 20);
+    expect(
+      screen.getByRole("link", { name: "Abrir no gráfico" }),
+    ).toBeDefined();
+  });
+
+  it("inicializa o filtro de sessão pela URL", async () => {
+    render(
+      <MemoryRouter
+        initialEntries={[
+          `/admin/paper-trading/journal?session_id=${"a".repeat(64)}&trade_id=${"e".repeat(64)}`,
+        ]}
+      >
+        <PaperTradeJournalPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("BTC/USDT");
+    expect(mocks.getPaperTradeJournal).toHaveBeenCalledWith(
+      { sessionId: "a".repeat(64) },
+      1,
+      20,
+    );
+    expect(screen.getByDisplayValue("a".repeat(64))).toBeDefined();
   });
 
   it("aplica filtros somente após submissão", async () => {

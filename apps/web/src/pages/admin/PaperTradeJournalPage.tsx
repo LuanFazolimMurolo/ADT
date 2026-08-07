@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { EmptyState, InlineError, LoadingState } from "../../components/States";
 import { Pagination } from "../../components/Pagination";
 import { apiClient, type PaperTradeJournalFilters } from "../../http/client";
@@ -102,11 +103,31 @@ function executionTags(record: PaperTradeJournalRecord): string {
   return tags.length ? tags.join(" · ") : "Sem client tags";
 }
 
-function TradeCard({ record }: { record: PaperTradeJournalRecord }) {
+function TradeCard({
+  record,
+  selectedTradeId,
+}: {
+  record: PaperTradeJournalRecord;
+  selectedTradeId: string | null;
+}) {
   const trade = record.trade;
+  const selected = trade.trade_id === selectedTradeId;
+  const chartParams = new URLSearchParams({
+    session_id: record.session_id,
+    base: record.base_asset,
+    quote: record.quote_asset,
+    timeframe: record.timeframe,
+    trade_id: trade.trade_id,
+  });
 
   return (
-    <article className="journal-trade-card">
+    <article
+      className={
+        selected
+          ? "journal-trade-card journal-trade-card--selected"
+          : "journal-trade-card"
+      }
+    >
       <header className="journal-trade-card__header">
         <div>
           <p className="eyebrow">
@@ -185,6 +206,15 @@ function TradeCard({ record }: { record: PaperTradeJournalRecord }) {
         </div>
       </div>
 
+      <div className="journal-trade-actions">
+        <Link
+          className="button button--ghost"
+          to={`/admin/paper-trading/chart?${chartParams.toString()}`}
+        >
+          Abrir no gráfico
+        </Link>
+      </div>
+
       <details className="journal-trade-details">
         <summary>Execuções e auditoria</summary>
         <dl>
@@ -219,9 +249,18 @@ function TradeCard({ record }: { record: PaperTradeJournalRecord }) {
 }
 
 export function PaperTradeJournalPage() {
+  const [searchParams] = useSearchParams();
+  const initialSessionId = searchParams.get("session_id")?.trim() ?? "";
+  const selectedTradeId = searchParams.get("trade_id")?.trim() || null;
+  const initialForm = {
+    ...emptyFilters,
+    sessionId: initialSessionId,
+  };
   const [draftFilters, setDraftFilters] =
-    useState<JournalFilterForm>(emptyFilters);
-  const [filters, setFilters] = useState<PaperTradeJournalFilters>({});
+    useState<JournalFilterForm>(initialForm);
+  const [filters, setFilters] = useState<PaperTradeJournalFilters>(
+    initialSessionId ? { sessionId: initialSessionId } : {},
+  );
   const [page, setPage] = useState(1);
   const [journal, setJournal] = useState<PaperTradeJournalPageResponse | null>(
     null,
@@ -526,7 +565,11 @@ export function PaperTradeJournalPage() {
           {journal.items.length ? (
             <section className="journal-trade-list" aria-label="Operações">
               {journal.items.map((record) => (
-                <TradeCard key={record.trade.trade_id} record={record} />
+                <TradeCard
+                  key={record.trade.trade_id}
+                  record={record}
+                  selectedTradeId={selectedTradeId}
+                />
               ))}
             </section>
           ) : (

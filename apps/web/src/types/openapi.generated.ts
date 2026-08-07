@@ -132,6 +132,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/paper-trading/sessions/{session_id}/chart-annotations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Paper Chart Annotations
+         * @description Return verified order and fill annotations in ``[start, before)``.
+         */
+        get: operations["get_paper_chart_annotations_api_v1_admin_paper_trading_sessions__session_id__chart_annotations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/settings": {
         parameters: {
             query?: never;
@@ -995,6 +1015,11 @@ export interface components {
          */
         OrderSide: "BUY" | "SELL";
         /**
+         * OrderStatus
+         * @enum {string}
+         */
+        OrderStatus: "CREATED" | "OPEN" | "FILLED" | "CANCELLED" | "REJECTED" | "EXPIRED";
+        /**
          * OrderType
          * @enum {string}
          */
@@ -1012,6 +1037,148 @@ export interface components {
             total: number;
             /** Total Pages */
             total_pages: number;
+        };
+        /** PaperChartAnnotationPageResponse */
+        PaperChartAnnotationPageResponse: {
+            /** Base Asset */
+            base_asset: string;
+            /** Config Checksum */
+            config_checksum: string;
+            /** Content Checksum */
+            content_checksum: string;
+            /** Count */
+            count: number;
+            /** Dataset Version */
+            dataset_version: string | null;
+            /** Ema Fast Period */
+            ema_fast_period: number | null;
+            /** Ema Slow Period */
+            ema_slow_period: number | null;
+            /** Fills */
+            fills: components["schemas"]["PaperChartFillAnnotationResponse"][];
+            /** Fills Count */
+            fills_count: number;
+            /** Last Candle Open Time */
+            last_candle_open_time: string | null;
+            /** Limit */
+            limit: number;
+            /** Orders */
+            orders: components["schemas"]["PaperChartOrderAnnotationResponse"][];
+            /** Orders Count */
+            orders_count: number;
+            /** Quote Asset */
+            quote_asset: string;
+            /**
+             * Range End
+             * Format: date-time
+             */
+            range_end: string;
+            /**
+             * Range Start
+             * Format: date-time
+             */
+            range_start: string;
+            /** Replayed At */
+            replayed_at: string | null;
+            /** Schema Version */
+            schema_version: number;
+            /** Session Id */
+            session_id: string;
+            /** Source Checksum */
+            source_checksum: string | null;
+            /** State Available */
+            state_available: boolean;
+            /** State Checksum */
+            state_checksum: string | null;
+            /** State Id */
+            state_id: string | null;
+            /** Strategy Name */
+            strategy_name: string;
+            strategy_parameters: components["schemas"]["JsonValue-Output"];
+            /** Strategy Version */
+            strategy_version: string;
+            /** Symbol */
+            symbol: string;
+            /** Timeframe */
+            timeframe: string;
+        };
+        /** PaperChartFillAnnotationResponse */
+        PaperChartFillAnnotationResponse: {
+            /** Base Price */
+            base_price: string;
+            /** Candle Index */
+            candle_index: number;
+            /** Client Tag */
+            client_tag: string | null;
+            /**
+             * Event Time
+             * Format: date-time
+             */
+            event_time: string;
+            /** Execution Price */
+            execution_price: string;
+            /** Fee */
+            fee: string;
+            /** Fill Id */
+            fill_id: string;
+            fill_reason: components["schemas"]["FillReason"];
+            /** Is Engine Protective Stop */
+            is_engine_protective_stop: boolean;
+            liquidity: components["schemas"]["FillLiquidity"];
+            /** Notional */
+            notional: string;
+            /** Order Id */
+            order_id: string;
+            order_type: components["schemas"]["OrderType"];
+            /** Quantity */
+            quantity: string;
+            role: components["schemas"]["PaperChartFillRole"];
+            side: components["schemas"]["OrderSide"];
+            /** Slippage Cost */
+            slippage_cost: string;
+            time_in_force: components["schemas"]["TimeInForce"];
+            /** Trade Id */
+            trade_id: string;
+            /** Trade Sequence */
+            trade_sequence: number;
+        };
+        /**
+         * PaperChartFillRole
+         * @description Verified economic role of one journal execution.
+         * @enum {string}
+         */
+        PaperChartFillRole: "ENTRY" | "EXIT";
+        /** PaperChartOrderAnnotationResponse */
+        PaperChartOrderAnnotationResponse: {
+            /** Client Tag */
+            client_tag: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created Sequence */
+            created_sequence: number;
+            /** Is Engine Protective Stop */
+            is_engine_protective_stop: boolean;
+            /** Limit Price */
+            limit_price: string | null;
+            /** Opened At */
+            opened_at: string | null;
+            /** Order Id */
+            order_id: string;
+            order_type: components["schemas"]["OrderType"];
+            /** Quantity */
+            quantity: string;
+            /** Rejection Code */
+            rejection_code: string | null;
+            side: components["schemas"]["OrderSide"];
+            status: components["schemas"]["OrderStatus"];
+            /** Stop Price */
+            stop_price: string | null;
+            /** Terminal At */
+            terminal_at: string | null;
+            time_in_force: components["schemas"]["TimeInForce"];
         };
         /** PaperDashboardMetricsResponse */
         PaperDashboardMetricsResponse: {
@@ -2866,6 +3033,136 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaperPeriodMetricsSeriesResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_paper_chart_annotations_api_v1_admin_paper_trading_sessions__session_id__chart_annotations_get: {
+        parameters: {
+            query: {
+                start: string;
+                before: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded verified paper-session chart annotations. */
+            200: {
+                headers: {
+                    "X-ADT-Paper-Chart-Content-Checksum"?: string;
+                    "X-ADT-Paper-Chart-Rows"?: number;
+                    "X-ADT-Paper-State-Checksum"?: string;
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperChartAnnotationPageResponse"];
                 };
             };
             /** @description Malformed administrative request. */
