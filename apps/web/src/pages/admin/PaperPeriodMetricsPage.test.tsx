@@ -9,6 +9,18 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../http/client", () => ({ apiClient: mocks }));
 
+vi.mock("../../components/PeriodPerformanceCharts", () => ({
+  PeriodPerformanceCharts: ({
+    series,
+  }: {
+    series: PaperPeriodMetricsSeriesResponse;
+  }) => (
+    <div data-testid="period-performance-charts">
+      {series.granularity} · {series.items.length} períodos
+    </div>
+  ),
+}));
+
 const series: PaperPeriodMetricsSeriesResponse = {
   schema_version: 1,
   granularity: "DAILY",
@@ -146,8 +158,13 @@ describe("PaperPeriodMetricsPage", () => {
     expect(screen.getAllByText("USDT 15,50")).toHaveLength(2);
     expect(screen.getByText("Performance por período")).toBeDefined();
     expect(
-      screen.getByText(/PnL não realizado histórico, equity e drawdown/),
+      screen.getByText(
+        /não representa equity, PnL não realizado ou drawdown histórico/,
+      ),
     ).toBeDefined();
+    expect(
+      (await screen.findByTestId("period-performance-charts")).textContent,
+    ).toContain("DAILY · 2 períodos");
     expect(mocks.getPaperPeriodMetrics).toHaveBeenCalledWith(
       expect.objectContaining({ quoteAsset: "USDT" }),
       "DAILY",

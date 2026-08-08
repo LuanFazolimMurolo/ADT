@@ -22,7 +22,10 @@ from app.backtesting.serialization import (
 from app.market_data.domain import DataRange
 from app.market_data.filesystem import ensure_safe_path, fsync_directory, market_root
 from app.market_data.locks import DatasetLockManager
-from app.paper_trading.errors import PaperSessionCorruptError
+from app.paper_trading.errors import (
+    PaperPortfolioTimelineNotFoundError,
+    PaperSessionCorruptError,
+)
 from app.paper_trading.portfolio_timeline import (
     PaperPortfolioObservation,
     PaperPortfolioTimeline,
@@ -33,7 +36,23 @@ _MANIFEST_NAME = "manifest.json"
 _OBSERVATIONS_NAME = "observations.parquet"
 _MANIFEST_VERSION = 1
 _MAX_MANIFEST_BYTES = 64 * 1024
+_REFERENCE_DIRECTORY = "portfolio-timeline-refs"
+_REFERENCE_VERSION = 1
+_MAX_REFERENCE_BYTES = 16 * 1024
 
+_REFERENCE_KEYS = frozenset(
+    {
+        "reference_version",
+        "session_id",
+        "config_checksum",
+        "state_id",
+        "state_checksum",
+        "dataset_version",
+        "source_checksum",
+        "timeline_id",
+        "timeline_content_checksum",
+    }
+)
 _MANIFEST_KEYS = frozenset(
     {
         "manifest_version",
@@ -97,37 +116,43 @@ class PaperPortfolioTimelineArtifactStore:
                 persisted = self.load(timeline.session_id, timeline.timeline_id)
                 if persisted != timeline:
                     raise PaperSessionCorruptError()
-                return persisted
-
-            staging = ensure_safe_path(
-                self._market,
-                root / f".{timeline.timeline_id}.tmp-{os.getpid()}-{uuid4().hex}",
-            )
-            try:
-                staging.mkdir(parents=False, exist_ok=False)
-                observations_path = ensure_safe_path(self._market, staging / _OBSERVATIONS_NAME)
-                _write_observations(observations_path, timeline.observations)
-                _fsync_file(observations_path)
-
-                manifest = _manifest_payload(
-                    timeline,
-                    observations_checksum=file_checksum(observations_path),
-                    observations_size=observations_path.stat().st_size,
+            else:
+                staging = ensure_safe_path(
+                    self._market,
+                    root / f".{timeline.timeline_id}.tmp-{os.getpid()}-{uuid4().hex}",
                 )
-                manifest_path = ensure_safe_path(self._market, staging / _MANIFEST_NAME)
-                manifest_path.write_bytes(_manifest_document(manifest))
-                _fsync_file(manifest_path)
-                fsync_directory(staging)
+                try:
+                    staging.mkdir(parents=False, exist_ok=False)
+                    observations_path = ensure_safe_path(
+                        self._market,
+                        staging / _OBSERVATIONS_NAME,
+                    )
+                    _write_observations(observations_path, timeline.observations)
+                    _fsync_file(observations_path)
 
-                os.replace(staging, target)
-                fsync_directory(root)
-            except Exception:
-                _remove_tree(staging)
-                raise
+                    manifest = _manifest_payload(
+                        timeline,
+                        observations_checksum=file_checksum(observations_path),
+                        observations_size=observations_path.stat().st_size,
+                    )
+                    manifest_path = ensure_safe_path(
+                        self._market,
+                        staging / _MANIFEST_NAME,
+                    )
+                    manifest_path.write_bytes(_manifest_document(manifest))
+                    _fsync_file(manifest_path)
+                    fsync_directory(staging)
+
+                    os.replace(staging, target)
+                    fsync_directory(root)
+                except Exception:
+                    _remove_tree(staging)
+                    raise
 
         persisted = self.load(timeline.session_id, timeline.timeline_id)
         if persisted != timeline:
             raise PaperSessionCorruptError()
+        self._publish_reference(persisted)
         return persisted
 
     def load(self, session_id: str, timeline_id: str) -> PaperPortfolioTimeline:
@@ -186,12 +211,166 @@ class PaperPortfolioTimelineArtifactStore:
         except Exception:
             raise PaperSessionCorruptError() from None
 
+    def load_for_state(
+        self,
+        session_id: str,
+        state_id: str,
+        state_checksum: str,
+    ) -> PaperPortfolioTimeline:
+        """Resolve one exact persisted state through its immutable sidecar reference."""
+        _sha256(session_id)
+        _sha256(state_id)
+        _sha256(state_checksum)
+        reference_path = self._reference_path(session_id, state_checksum)
+        if not reference_path.is_file():
+            raise PaperPortfolioTimelineNotFoundError()
+
+        reference = _read_reference(reference_path)
+        if (
+            reference["session_id"] != session_id
+            or reference["state_id"] != state_id
+            or reference["state_checksum"] != state_checksum
+        ):
+            raise PaperSessionCorruptError()
+
+        timeline = self.load(
+            session_id,
+            _string(reference["timeline_id"]),
+        )
+        if (
+            timeline.session_id != session_id
+            or timeline.config_checksum != reference["config_checksum"]
+            or timeline.state_id != state_id
+            or timeline.state_checksum != state_checksum
+            or timeline.dataset_version != reference["dataset_version"]
+            or timeline.source_checksum != reference["source_checksum"]
+            or timeline.timeline_id != reference["timeline_id"]
+            or timeline.content_checksum != reference["timeline_content_checksum"]
+        ):
+            raise PaperSessionCorruptError()
+        return timeline
+
+    def _publish_reference(self, timeline: PaperPortfolioTimeline) -> None:
+        payload = _reference_payload(timeline)
+        root = self._reference_root(timeline.session_id)
+        root.mkdir(parents=True, exist_ok=True)
+        fsync_directory(root.parent)
+        target = self._reference_path(timeline.session_id, timeline.state_checksum)
+
+        with self._locks.acquire(
+            f"paper-timeline-ref:{timeline.session_id}:{timeline.state_checksum}"
+        ):
+            if target.exists():
+                if _read_reference(target) != payload:
+                    raise PaperSessionCorruptError()
+                return
+
+            staging = ensure_safe_path(
+                self._market,
+                root / (f".{timeline.state_checksum}.tmp-{os.getpid()}-{uuid4().hex}.json"),
+            )
+            try:
+                staging.write_bytes(_reference_document(payload))
+                _fsync_file(staging)
+                os.replace(staging, target)
+                fsync_directory(root)
+            except Exception:
+                _remove_file(staging)
+                raise
+
     def _timeline_root(self, session_id: str) -> Path:
         _sha256(session_id)
         return ensure_safe_path(
             self._market,
             self._paper_root / session_id / "portfolio-timelines",
         )
+
+    def _reference_root(self, session_id: str) -> Path:
+        _sha256(session_id)
+        return ensure_safe_path(
+            self._market,
+            self._paper_root / session_id / _REFERENCE_DIRECTORY,
+        )
+
+    def _reference_path(self, session_id: str, state_checksum: str) -> Path:
+        _sha256(state_checksum)
+        return ensure_safe_path(
+            self._market,
+            self._reference_root(session_id) / f"{state_checksum}.json",
+        )
+
+
+def _reference_payload(
+    timeline: PaperPortfolioTimeline,
+) -> dict[str, object]:
+    validate_paper_portfolio_timeline(timeline)
+    return {
+        "reference_version": _REFERENCE_VERSION,
+        "session_id": timeline.session_id,
+        "config_checksum": timeline.config_checksum,
+        "state_id": timeline.state_id,
+        "state_checksum": timeline.state_checksum,
+        "dataset_version": timeline.dataset_version,
+        "source_checksum": timeline.source_checksum,
+        "timeline_id": timeline.timeline_id,
+        "timeline_content_checksum": timeline.content_checksum,
+    }
+
+
+def _reference_document(payload: dict[str, object]) -> bytes:
+    checksum = hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
+    return canonical_json_bytes({"reference": payload, "checksum": checksum})
+
+
+def _read_reference(path: Path) -> dict[str, object]:
+    try:
+        raw = path.read_bytes()
+        if len(raw) > _MAX_REFERENCE_BYTES:
+            raise ValueError
+
+        def reject_duplicates(
+            pairs: list[tuple[str, object]],
+        ) -> dict[str, object]:
+            result: dict[str, object] = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError
+                result[key] = value
+            return result
+
+        document = json.loads(raw, object_pairs_hook=reject_duplicates)
+        if not isinstance(document, dict) or set(document) != {
+            "reference",
+            "checksum",
+        }:
+            raise ValueError
+        payload = document["reference"]
+        checksum = document["checksum"]
+        if (
+            not isinstance(payload, dict)
+            or frozenset(payload) != _REFERENCE_KEYS
+            or not isinstance(checksum, str)
+            or hashlib.sha256(canonical_json_bytes(payload)).hexdigest() != checksum
+            or _int(payload["reference_version"]) != _REFERENCE_VERSION
+        ):
+            raise ValueError
+
+        for key in (
+            "session_id",
+            "config_checksum",
+            "state_id",
+            "state_checksum",
+            "dataset_version",
+            "source_checksum",
+            "timeline_id",
+            "timeline_content_checksum",
+        ):
+            _sha256(_string(payload[key]))
+        return payload
+    except PaperSessionCorruptError:
+        raise
+    except Exception:
+        raise PaperSessionCorruptError() from None
 
 
 def _write_observations(
@@ -453,6 +632,13 @@ def _fsync_file(path: Path) -> None:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
+
+
+def _remove_file(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        raise PaperSessionCorruptError() from None
 
 
 def _remove_tree(path: Path) -> None:

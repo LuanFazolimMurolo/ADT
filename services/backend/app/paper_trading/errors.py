@@ -43,6 +43,11 @@ class PaperSessionVerificationError(PersistenceError):
     default_message = "A sessão de paper trading não pôde ser verificada."
 
 
+class PaperPortfolioTimelineNotFoundError(ResourceNotFoundError):
+    code = "paper_portfolio_timeline_not_found"
+    default_message = "A timeline de portfólio do estado atual ainda não foi publicada."
+
+
 class PaperRunnerStateNotFoundError(ResourceNotFoundError):
     code = "paper_runner_state_not_found"
     default_message = "O runner de paper trading ainda não publicou um ciclo."

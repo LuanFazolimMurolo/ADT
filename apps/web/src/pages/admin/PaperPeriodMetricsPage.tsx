@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { PeriodPerformanceCharts } from "../../components/PeriodPerformanceCharts";
 import { EmptyState, InlineError, LoadingState } from "../../components/States";
 import { apiClient, type PaperPeriodMetricsFilters } from "../../http/client";
 import type {
@@ -241,11 +242,12 @@ export function PaperPeriodMetricsPage() {
       </div>
 
       <aside className="period-metrics-note">
-        <strong>Escopo contábil</strong>
+        <strong>Escopo contábil realized-only</strong>
         <span>
-          A série atribui PnL realizado, taxas e slippage ao instante de cada
-          saída. PnL não realizado histórico, equity e drawdown por período não
-          são calculados sem snapshots históricos.
+          Esta superfície atribui PnL realizado, taxas e slippage ao instante de
+          cada saída no calendário UTC. Ela não representa equity, PnL não
+          realizado ou drawdown histórico; essas séries mark-to-market pertencem
+          à página de Performance histórica da sessão.
         </span>
       </aside>
 
@@ -422,83 +424,92 @@ export function PaperPeriodMetricsPage() {
           </section>
 
           {series.items.length ? (
-            <section
-              className="period-metrics-series"
-              aria-labelledby="period-metrics-series-title"
-            >
-              <div className="section-heading">
-                <div>
-                  <p className="eyebrow">
-                    {granularityLabels[series.granularity]}
-                  </p>
-                  <h2 id="period-metrics-series-title">Série contínua</h2>
+            <>
+              <PeriodPerformanceCharts series={series} />
+              <section
+                className="period-metrics-series"
+                aria-labelledby="period-metrics-series-title"
+              >
+                <div className="section-heading">
+                  <div>
+                    <p className="eyebrow">
+                      {granularityLabels[series.granularity]}
+                    </p>
+                    <h2 id="period-metrics-series-title">Série contínua</h2>
+                  </div>
+                  <span>
+                    {activeItems.length} períodos com realizações ·{" "}
+                    {series.filters.quote_asset}
+                  </span>
                 </div>
-                <span>
-                  {activeItems.length} períodos com realizações ·{" "}
-                  {series.filters.quote_asset}
-                </span>
-              </div>
 
-              <div className="table-wrap">
-                <table className="period-metrics-table">
-                  <thead>
-                    <tr>
-                      <th>Período UTC</th>
-                      <th>Saídas</th>
-                      <th>Vitórias / derrotas</th>
-                      <th>PnL realizado</th>
-                      <th>Taxas</th>
-                      <th>Lucro bruto</th>
-                      <th>Prejuízo bruto</th>
-                      <th>Profit factor</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {series.items.map((bucket) => (
-                      <tr
-                        key={bucket.period_start}
-                        className={
-                          bucket.realizations_count === 0
-                            ? "period-metrics-zero"
-                            : undefined
-                        }
-                      >
-                        <td>
-                          <strong>{periodLabel(bucket)}</strong>
-                        </td>
-                        <td>{bucket.realizations_count}</td>
-                        <td>
-                          {bucket.winning_realizations_count} /{" "}
-                          {bucket.losing_realizations_count}
-                        </td>
-                        <td
+                <div className="table-wrap">
+                  <table className="period-metrics-table">
+                    <thead>
+                      <tr>
+                        <th>Período UTC</th>
+                        <th>Saídas</th>
+                        <th>Vitórias / derrotas</th>
+                        <th>PnL realizado</th>
+                        <th>Taxas</th>
+                        <th>Lucro bruto</th>
+                        <th>Prejuízo bruto</th>
+                        <th>Profit factor</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {series.items.map((bucket) => (
+                        <tr
+                          key={bucket.period_start}
                           className={
-                            isNegative(bucket.realized_pnl)
-                              ? "value-negative"
-                              : "value-positive"
+                            bucket.realizations_count === 0
+                              ? "period-metrics-zero"
+                              : undefined
                           }
                         >
-                          {formatMoney(bucket.realized_pnl, bucket.quote_asset)}
-                        </td>
-                        <td>
-                          {formatMoney(
-                            bucket.realized_fees,
-                            bucket.quote_asset,
-                          )}
-                        </td>
-                        <td>
-                          {formatMoney(bucket.gross_profit, bucket.quote_asset)}
-                        </td>
-                        <td>
-                          {formatMoney(bucket.gross_loss, bucket.quote_asset)}
-                        </td>
-                        <td>{formatRatio(bucket.profit_factor)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+                          <td>
+                            <strong>{periodLabel(bucket)}</strong>
+                          </td>
+                          <td>{bucket.realizations_count}</td>
+                          <td>
+                            {bucket.winning_realizations_count} /{" "}
+                            {bucket.losing_realizations_count}
+                          </td>
+                          <td
+                            className={
+                              isNegative(bucket.realized_pnl)
+                                ? "value-negative"
+                                : "value-positive"
+                            }
+                          >
+                            {formatMoney(
+                              bucket.realized_pnl,
+                              bucket.quote_asset,
+                            )}
+                          </td>
+                          <td>
+                            {formatMoney(
+                              bucket.realized_fees,
+                              bucket.quote_asset,
+                            )}
+                          </td>
+                          <td>
+                            {formatMoney(
+                              bucket.gross_profit,
+                              bucket.quote_asset,
+                            )}
+                          </td>
+                          <td>
+                            {formatMoney(bucket.gross_loss, bucket.quote_asset)}
+                          </td>
+                          <td>{formatRatio(bucket.profit_factor)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </>
           ) : (
             <EmptyState
               title="Nenhum período disponível"

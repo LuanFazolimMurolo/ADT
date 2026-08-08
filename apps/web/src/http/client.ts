@@ -14,6 +14,7 @@ import type {
   PaperDashboardResponse,
   PaperPeriodGranularity,
   PaperPeriodMetricsSeriesResponse,
+  PaperPortfolioTimelinePageResponse,
   PaperTradeJournalPageResponse,
   PaperTradeStatus,
   PublicSimulationSummary,
@@ -91,6 +92,11 @@ export interface MarketCandleQuery {
 export interface PaperChartAnnotationQuery {
   start: string;
   before: string;
+  limit?: number;
+}
+
+export interface PaperPortfolioTimelineQuery {
+  before?: string;
   limit?: number;
 }
 
@@ -291,6 +297,19 @@ export class ApiClient {
     if (query.limit !== undefined) params.set("limit", String(query.limit));
     return this.request(
       `/api/v1/admin/paper-trading/sessions/${encodeURIComponent(sessionId)}/chart-annotations?${params.toString()}`,
+    );
+  }
+
+  getPaperPortfolioTimeline(
+    sessionId: string,
+    query: PaperPortfolioTimelineQuery = {},
+  ): Promise<PaperPortfolioTimelinePageResponse> {
+    const params = new URLSearchParams();
+    appendQueryValue(params, "before", query.before);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
+    return this.request(
+      `/api/v1/admin/paper-trading/sessions/${encodeURIComponent(sessionId)}/portfolio-timeline${suffix}`,
     );
   }
 

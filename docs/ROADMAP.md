@@ -740,10 +740,11 @@ accessible and bounded visual analysis environment without weakening the
 deterministic market-data, paper-trading and audit contracts delivered through
 Phase 5.
 
-**Status**: Phase 6-01 through Phase 6-04 are complete in the current Phase 6
+**Status**: Phase 6-01 through Phase 6-05 are complete in the current Phase 6
 feature sequence. The visual architecture, bounded local RAW candle API,
-instrument/paper-session chart, and deterministic portfolio timeline are
-implemented. Phase 6-05 performance visualizations are the next delivery.
+instrument/paper-session chart, deterministic portfolio timeline and bounded
+performance visualizations are implemented. Phase 6-06 public and
+authenticated-user surfaces are the next delivery.
 
 ### Phase 6-01: visual architecture and chart-data contracts ✅
 
@@ -784,14 +785,17 @@ implemented. Phase 6-05 performance visualizations are the next delivery.
 **Operational contract**:
 [`docs/PAPER_TRADING_PORTFOLIO_TIMELINE.md`](./PAPER_TRADING_PORTFOLIO_TIMELINE.md)
 
-### Phase 6-05: performance visualizations
+### Phase 6-05: performance visualizations ✅
 
-- [ ] Equity and drawdown curves
-- [ ] Cumulative realized PnL, fees and slippage
-- [ ] Daily, weekly and monthly realized-performance charts
-- [ ] Win/loss, profit-factor and trade-distribution views
-- [ ] Bounded heatmaps and session comparisons
-- [ ] Explicit labels for metrics that do not represent historical mark-to-market
+- [x] Equity and drawdown curves
+- [x] Cumulative realized PnL, fees and slippage
+- [x] Daily, weekly and monthly realized-performance charts
+- [x] Win/loss, profit-factor and trade-distribution views
+- [x] Bounded heatmaps and session comparisons
+- [x] Explicit labels for metrics that do not represent historical mark-to-market
+
+**Operational contract**:
+[`docs/PAPER_TRADING_PERFORMANCE_VISUALIZATIONS.md`](./PAPER_TRADING_PERFORMANCE_VISUALIZATIONS.md)
 
 ### Phase 6-06: public and authenticated-user surfaces
 
@@ -828,7 +832,7 @@ implemented. Phase 6-05 performance visualizations are the next delivery.
 
 **Dependencies**: Phase 5 complete
 **Estimated Duration**: 4 weeks
-**Blockers**: None for Phase 6-05
+**Blockers**: None for Phase 6-06
 
 ---
 

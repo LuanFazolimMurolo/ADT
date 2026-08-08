@@ -8,6 +8,7 @@ import { PublicHome } from "./pages/PublicHome";
 import { DashboardPage } from "./pages/admin/DashboardPage";
 import { InstrumentChartPage } from "./pages/admin/InstrumentChartPage";
 import { PaperPeriodMetricsPage } from "./pages/admin/PaperPeriodMetricsPage";
+import { PaperPortfolioPerformancePage } from "./pages/admin/PaperPortfolioPerformancePage";
 import { PaperTradeJournalPage } from "./pages/admin/PaperTradeJournalPage";
 import { PaperTradingDashboardPage } from "./pages/admin/PaperTradingDashboardPage";
 import { SettingsPage } from "./pages/admin/SettingsPage";
@@ -70,6 +71,10 @@ function App() {
                 <Route
                   path="paper-trading/chart"
                   element={<InstrumentChartPage />}
+                />
+                <Route
+                  path="paper-trading/performance"
+                  element={<PaperPortfolioPerformancePage />}
                 />
                 <Route
                   path="paper-trading/journal"

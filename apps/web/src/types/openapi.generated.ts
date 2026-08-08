@@ -152,6 +152,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/paper-trading/sessions/{session_id}/portfolio-timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Paper Portfolio Timeline
+         * @description Return one backward page from the immutable timeline of the current state.
+         */
+        get: operations["get_paper_portfolio_timeline_api_v1_admin_paper_trading_sessions__session_id__portfolio_timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/settings": {
         parameters: {
             query?: never;
@@ -1626,6 +1646,49 @@ export interface components {
             /** State Id */
             state_id: string;
         };
+        /** PaperPortfolioObservationResponse */
+        PaperPortfolioObservationResponse: {
+            /** Average Entry Price */
+            average_entry_price: string;
+            /** Base Quantity */
+            base_quantity: string;
+            /**
+             * Candle Close Time
+             * Format: date-time
+             */
+            candle_close_time: string;
+            /** Candle Index */
+            candle_index: number;
+            /**
+             * Candle Open Time
+             * Format: date-time
+             */
+            candle_open_time: string;
+            /** Cost Basis */
+            cost_basis: string;
+            /** Drawdown */
+            drawdown: string;
+            /** Drawdown Pct */
+            drawdown_pct: string;
+            /** Equity */
+            equity: string;
+            /** Mark Price */
+            mark_price: string;
+            /** Peak Equity */
+            peak_equity: string;
+            /** Quote Cash */
+            quote_cash: string;
+            /** Realized Pnl */
+            realized_pnl: string;
+            /** Risk Halt */
+            risk_halt: boolean;
+            /** Total Fees */
+            total_fees: string;
+            /** Total Slippage Cost */
+            total_slippage_cost: string;
+            /** Unrealized Pnl */
+            unrealized_pnl: string;
+        };
         /** PaperPortfolioResponse */
         PaperPortfolioResponse: {
             /** Average Entry Price */
@@ -1652,6 +1715,78 @@ export interface components {
             total_slippage_cost: string;
             /** Unrealized Pnl */
             unrealized_pnl: string;
+        };
+        /** PaperPortfolioTimelinePageResponse */
+        PaperPortfolioTimelinePageResponse: {
+            /**
+             * Available End
+             * Format: date-time
+             */
+            available_end: string;
+            /**
+             * Available Start
+             * Format: date-time
+             */
+            available_start: string;
+            /** Base Asset */
+            base_asset: string;
+            /** Config Checksum */
+            config_checksum: string;
+            /** Content Checksum */
+            content_checksum: string;
+            /** Count */
+            count: number;
+            /** Dataset Version */
+            dataset_version: string;
+            /** Has More Before */
+            has_more_before: boolean;
+            /** Initial Capital */
+            initial_capital: string;
+            /** Items */
+            items: components["schemas"]["PaperPortfolioObservationResponse"][];
+            /** Limit */
+            limit: number;
+            /** Next Before */
+            next_before: string | null;
+            /** Quote Asset */
+            quote_asset: string;
+            /**
+             * Range End
+             * Format: date-time
+             */
+            range_end: string;
+            /**
+             * Range Start
+             * Format: date-time
+             */
+            range_start: string;
+            /** Requested Before */
+            requested_before: string | null;
+            /** Schema Version */
+            schema_version: number;
+            /** Session Id */
+            session_id: string;
+            /** Source Checksum */
+            source_checksum: string;
+            /** State Checksum */
+            state_checksum: string;
+            /** State Id */
+            state_id: string;
+            /**
+             * State Replayed At
+             * Format: date-time
+             */
+            state_replayed_at: string;
+            /** Symbol */
+            symbol: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Timeline Content Checksum */
+            timeline_content_checksum: string;
+            /** Timeline Id */
+            timeline_id: string;
+            /** Total Observations */
+            total_observations: number;
         };
         /**
          * PaperRunnerCycleStatus
@@ -3163,6 +3298,136 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaperChartAnnotationPageResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_paper_portfolio_timeline_api_v1_admin_paper_trading_sessions__session_id__portfolio_timeline_get: {
+        parameters: {
+            query?: {
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded verified persisted paper portfolio timeline page. */
+            200: {
+                headers: {
+                    "X-ADT-Paper-Timeline-Content-Checksum"?: string;
+                    "X-ADT-Paper-Timeline-ID"?: string;
+                    "X-ADT-Paper-Timeline-Rows"?: number;
+                    "X-ADT-Paper-Timeline-State-Checksum"?: string;
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperPortfolioTimelinePageResponse"];
                 };
             };
             /** @description Malformed administrative request. */

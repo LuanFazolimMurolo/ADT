@@ -13,6 +13,12 @@ const navigation = [
     end: false,
   },
   {
+    to: "/admin/paper-trading/performance",
+    label: "Performance histórica",
+    icon: "⌁",
+    end: false,
+  },
+  {
     to: "/admin/paper-trading/journal",
     label: "Trade journal",
     icon: "≋",

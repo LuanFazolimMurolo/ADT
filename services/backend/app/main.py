@@ -19,6 +19,7 @@ from app.api.routes import (
     admin_paper_dashboard,
     admin_paper_journal,
     admin_paper_period_metrics,
+    admin_paper_portfolio_timeline,
     admin_settings,
     admin_simulations,
     admin_strategies,
@@ -44,6 +45,12 @@ from app.paper_trading.dashboard import PaperDashboardReadService
 from app.paper_trading.journal_export import PaperTradeJournalExportService
 from app.paper_trading.journal_query import PaperTradeJournalReadService
 from app.paper_trading.period_metrics import PaperPeriodMetricsService
+from app.paper_trading.portfolio_timeline_artifacts import (
+    PaperPortfolioTimelineArtifactStore,
+)
+from app.paper_trading.portfolio_timeline_query import (
+    PaperPortfolioTimelineReadService,
+)
 from app.paper_trading.query import PaperTradingReadService
 from app.paper_trading.repository import PaperTradingRepository
 
@@ -158,6 +165,17 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
             application.state.paper_period_metrics_service = PaperPeriodMetricsService(
                 paper_repository
             )
+            paper_timeline_store = PaperPortfolioTimelineArtifactStore(
+                app_settings.data_dir,
+                lock_timeout_seconds=app_settings.market_job_lock_timeout,
+                lock_stale_after_seconds=app_settings.market_job_stale_after,
+            )
+            application.state.paper_portfolio_timeline_read_service = (
+                PaperPortfolioTimelineReadService(
+                    paper_repository,
+                    paper_timeline_store,
+                )
+            )
             application.state.paper_runner_state_store = PaperRunnerStateStore(
                 app_settings.data_dir
             )
@@ -204,6 +222,10 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
             "X-ADT-Paper-State-Checksum",
             "X-ADT-Period-Metrics-Content-Checksum",
             "X-ADT-Period-Metrics-Query-Checksum",
+            "X-ADT-Paper-Timeline-ID",
+            "X-ADT-Paper-Timeline-State-Checksum",
+            "X-ADT-Paper-Timeline-Content-Checksum",
+            "X-ADT-Paper-Timeline-Rows",
             "X-Request-ID",
         ],
         max_age=600,
@@ -226,6 +248,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(admin_paper_dashboard.router)
     application.include_router(admin_paper_journal.router)
     application.include_router(admin_paper_period_metrics.router)
+    application.include_router(admin_paper_portfolio_timeline.router)
     application.include_router(admin_simulations.router)
     application.include_router(admin_settings.router)
     application.include_router(admin_strategies.router)
