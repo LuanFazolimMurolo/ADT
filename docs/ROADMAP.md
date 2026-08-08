@@ -740,9 +740,10 @@ accessible and bounded visual analysis environment without weakening the
 deterministic market-data, paper-trading and audit contracts delivered through
 Phase 5.
 
-**Status**: Phase 6-01 and Phase 6-02 are complete. The approved architecture
-and the bounded administrator-only local RAW candle API are integrated. Phase
-6-03 is the next delivery.
+**Status**: Phase 6-01 through Phase 6-04 are complete in the current Phase 6
+feature sequence. The visual architecture, bounded local RAW candle API,
+instrument/paper-session chart, and deterministic portfolio timeline are
+implemented. Phase 6-05 performance visualizations are the next delivery.
 
 ### Phase 6-01: visual architecture and chart-data contracts ✅
 
@@ -762,23 +763,26 @@ and the bounded administrator-only local RAW candle API are integrated. Phase
 - [x] Reject oversized requests instead of silently truncating or downsampling
 - [x] Execute no Binance fetch, resampling or long-running work inside HTTP
 
-### Phase 6-03: instrument and paper-session chart
+### Phase 6-03: instrument and paper-session chart ✅
 
-- [ ] Candlestick rendering with responsive resize and keyboard-accessible controls
-- [ ] EMA and other explicitly supported indicator overlays
-- [ ] Verified order, fill, entry, exit and protective-stop annotations
-- [ ] Journal-to-chart and chart-to-journal navigation
-- [ ] Explicit UTC display and closed-candle freshness state
-- [ ] Bounded polling with deterministic replacement of chart data
+- [x] Candlestick rendering with responsive resize and keyboard-accessible controls
+- [x] EMA and other explicitly supported indicator overlays
+- [x] Verified order, fill, entry, exit and protective-stop annotations
+- [x] Journal-to-chart and chart-to-journal navigation
+- [x] Explicit UTC display and closed-candle freshness state
+- [x] Bounded polling with deterministic replacement of chart data
 
-### Phase 6-04: deterministic portfolio time series
+### Phase 6-04: deterministic portfolio time series ✅
 
-- [ ] Produce a content-addressed portfolio timeline from verified replay events
-- [ ] Record quote cash, base quantity, mark price and cost basis per observation
-- [ ] Record realized PnL, unrealized PnL, equity, peak equity and drawdown
-- [ ] Bind every point to session identity, candle boundary and source checksum
-- [ ] Verify exact reconstruction and reject tampered or incompatible artifacts
-- [ ] Preserve existing latest-state and legacy session identities
+- [x] Produce a content-addressed portfolio timeline from verified replay events
+- [x] Record quote cash, base quantity, mark price and cost basis per observation
+- [x] Record realized PnL, unrealized PnL, equity, peak equity and drawdown
+- [x] Bind every point to session identity, candle boundary and source checksum
+- [x] Verify exact reconstruction and reject tampered or incompatible artifacts
+- [x] Preserve existing latest-state and legacy session identities
+
+**Operational contract**:
+[`docs/PAPER_TRADING_PORTFOLIO_TIMELINE.md`](./PAPER_TRADING_PORTFOLIO_TIMELINE.md)
 
 ### Phase 6-05: performance visualizations
 
@@ -824,7 +828,7 @@ and the bounded administrator-only local RAW candle API are integrated. Phase
 
 **Dependencies**: Phase 5 complete
 **Estimated Duration**: 4 weeks
-**Blockers**: None for Phase 6-03
+**Blockers**: None for Phase 6-05
 
 ---
 

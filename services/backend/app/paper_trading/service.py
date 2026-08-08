@@ -29,7 +29,12 @@ from app.paper_trading.domain import (
 )
 from app.paper_trading.errors import (
     InvalidPaperSessionError,
+    PaperSessionCorruptError,
     PaperSessionVerificationError,
+)
+from app.paper_trading.portfolio_timeline import build_paper_portfolio_timeline
+from app.paper_trading.portfolio_timeline_artifacts import (
+    PaperPortfolioTimelineArtifactStore,
 )
 from app.paper_trading.repository import PaperTradingRepository
 from app.paper_trading.source import (
@@ -49,6 +54,7 @@ class PaperTradingService:
         repository: PaperTradingRepository | None = None,
         source: PaperCandleSource | None = None,
         registry: StrategyPluginRegistry | None = None,
+        timeline_store: PaperPortfolioTimelineArtifactStore | None = None,
         clock: Callable[[], datetime] | None = None,
         lock_timeout_seconds: float = 10,
         lock_stale_after_seconds: float = 3_600,
@@ -64,6 +70,11 @@ class PaperTradingService:
             lock_stale_after_seconds=lock_stale_after_seconds,
         )
         self._registry = registry or StrategyPluginRegistry.builtins()
+        self._timeline_store = timeline_store or PaperPortfolioTimelineArtifactStore(
+            data_dir,
+            lock_timeout_seconds=lock_timeout_seconds,
+            lock_stale_after_seconds=lock_stale_after_seconds,
+        )
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def create(self, config: PaperSessionConfig) -> PaperSessionConfig:
@@ -93,8 +104,11 @@ class PaperTradingService:
                 and existing.data_range == batch.data_range
                 and existing.source_checksum == batch.source_checksum
             ):
+                effective_batch = self._batch_for_state(batch, existing)
+                self._publish_timeline(config, effective_batch, existing)
                 return PaperRunResult(PaperRunAction.NOOP, existing)
             state = self._execute(config, batch)
+            self._publish_timeline(config, batch, state)
             published = self._repository.publish_state(config, state, lease=lease)
             return PaperRunResult(PaperRunAction.UPDATED, published)
 
@@ -116,7 +130,53 @@ class PaperTradingService:
         )
         if rebuilt != persisted:
             raise PaperSessionVerificationError()
+        effective_batch = self._batch_for_state(batch, persisted)
+        expected_timeline = build_paper_portfolio_timeline(
+            config,
+            effective_batch,
+            persisted,
+        )
+        try:
+            persisted_timeline = self._timeline_store.load(
+                session_id,
+                expected_timeline.timeline_id,
+            )
+        except PaperSessionCorruptError:
+            raise PaperSessionVerificationError(
+                "O artefato da timeline de portfólio não pôde ser verificado."
+            ) from None
+        if persisted_timeline != expected_timeline:
+            raise PaperSessionVerificationError(
+                "O artefato da timeline de portfólio diverge do replay verificado."
+            )
         return persisted
+
+    def _publish_timeline(
+        self,
+        config: PaperSessionConfig,
+        batch: PaperCandleBatch,
+        state: PaperSessionState,
+    ) -> None:
+        timeline = build_paper_portfolio_timeline(config, batch, state)
+        persisted = self._timeline_store.publish(timeline)
+        if persisted != timeline:
+            raise PaperSessionVerificationError(
+                "A timeline de portfólio persistida diverge do replay."
+            )
+
+    @staticmethod
+    def _batch_for_state(
+        batch: PaperCandleBatch,
+        state: PaperSessionState,
+    ) -> PaperCandleBatch:
+        if batch.dataset_version == state.dataset_version:
+            return batch
+        return PaperCandleBatch(
+            data_range=batch.data_range,
+            dataset_version=state.dataset_version,
+            source_checksum=batch.source_checksum,
+            candles=batch.candles,
+        )
 
     def _execute(
         self,
