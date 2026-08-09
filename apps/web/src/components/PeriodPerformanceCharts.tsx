@@ -8,20 +8,19 @@ import {
   type IChartApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type {
-  PaperPeriodGranularity,
-  PaperPeriodMetricsSeriesResponse,
-} from "../types/api";
+import type { PaperPeriodGranularity } from "../types/api";
 import {
   buildPeriodHeatmap,
   buildPeriodPerformanceProjection,
   distributionPercentage,
   PERIOD_HEATMAP_MAX_BUCKETS,
   type PeriodChartPoint,
+  type PeriodPerformanceSeriesData,
 } from "../utils/periodPerformance";
 
 interface PeriodPerformanceChartsProps {
-  series: PaperPeriodMetricsSeriesResponse;
+  series: PeriodPerformanceSeriesData;
+  quoteAsset: string;
 }
 
 interface LineDefinition {
@@ -87,8 +86,10 @@ function baseChart(container: HTMLDivElement): IChartApi {
 
 function RealizedPeriodChart({
   series,
+  quoteAsset,
 }: {
-  series: PaperPeriodMetricsSeriesResponse;
+  series: PeriodPerformanceSeriesData;
+  quoteAsset: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const projection = useMemo(
@@ -125,8 +126,7 @@ function RealizedPeriodChart({
         <div>
           <h3>PnL realizado por período</h3>
           <p>
-            Série {granularityLabels[series.granularity]} ·{" "}
-            {series.filters.quote_asset}
+            Série {granularityLabels[series.granularity]} · {quoteAsset}
           </p>
         </div>
         <span className="period-performance-badge">realized-only</span>
@@ -205,11 +205,7 @@ function MultiLineChart({
   );
 }
 
-function PeriodHeatmap({
-  series,
-}: {
-  series: PaperPeriodMetricsSeriesResponse;
-}) {
+function PeriodHeatmap({ series }: { series: PeriodPerformanceSeriesData }) {
   const heatmap = useMemo(() => buildPeriodHeatmap(series), [series]);
 
   return (
@@ -268,6 +264,7 @@ function PeriodHeatmap({
 
 export function PeriodPerformanceCharts({
   series,
+  quoteAsset,
 }: PeriodPerformanceChartsProps) {
   const projection = useMemo(
     () => buildPeriodPerformanceProjection(series),
@@ -338,7 +335,7 @@ export function PeriodPerformanceCharts({
           </h2>
         </div>
         <span>
-          {series.granularity} · {series.filters.quote_asset}
+          {series.granularity} · {quoteAsset}
         </span>
       </div>
 
@@ -352,10 +349,10 @@ export function PeriodPerformanceCharts({
       </aside>
 
       <div className="period-performance-grid">
-        <RealizedPeriodChart series={series} />
+        <RealizedPeriodChart series={series} quoteAsset={quoteAsset} />
         <MultiLineChart
           title="Custos realizados por período"
-          subtitle={`Taxas e slippage atribuídos às saídas em ${series.filters.quote_asset}.`}
+          subtitle={`Taxas e slippage atribuídos às saídas em ${quoteAsset}.`}
           definitions={costDefinitions}
         />
         <MultiLineChart

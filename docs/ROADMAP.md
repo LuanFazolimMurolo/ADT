@@ -733,18 +733,19 @@ paper-session persistence, exchange-account access and live trading.
 
 ---
 
-## Phase 6: Advanced Frontend and Financial Charts 🚧 PLANNED
+## Phase 6: Advanced Frontend and Financial Charts 🚧 IN PROGRESS
 
 **Goal**: Turn the existing read-only administrative surfaces into a precise,
 accessible and bounded visual analysis environment without weakening the
 deterministic market-data, paper-trading and audit contracts delivered through
 Phase 5.
 
-**Status**: Phase 6-01 through Phase 6-05 are complete in the current Phase 6
+**Status**: Phase 6-01 through Phase 6-06 are implemented in the current Phase 6
 feature sequence. The visual architecture, bounded local RAW candle API,
-instrument/paper-session chart, deterministic portfolio timeline and bounded
-performance visualizations are implemented. Phase 6-06 public and
-authenticated-user surfaces are the next delivery.
+instrument/paper-session charts, deterministic portfolio timeline, bounded
+performance visualizations and separated public/authenticated/administrative
+surfaces are implemented. Phase 6 remains in progress; Phase 6-07 is the next
+delivery and owns the final integration and closure gate.
 
 ### Phase 6-01: visual architecture and chart-data contracts ✅
 
@@ -797,14 +798,22 @@ authenticated-user surfaces are the next delivery.
 **Operational contract**:
 [`docs/PAPER_TRADING_PERFORMANCE_VISUALIZATIONS.md`](./PAPER_TRADING_PERFORMANCE_VISUALIZATIONS.md)
 
-### Phase 6-06: public and authenticated-user surfaces
+### Phase 6-06: public and authenticated-user surfaces ✅
 
-- [ ] Improve the public landing page without exposing administrative data
-- [ ] Establish an authenticated `/app` boundary separate from `/admin`
-- [ ] Define read-only user views for charts, signals and authorized performance
-- [ ] Keep user registration disabled unless separately reviewed and approved
-- [ ] Preserve backend authorization as the source of access control
-- [ ] Add route, authorization, accessibility and responsive-layout tests
+- [x] Improve the public landing page using only intentional public projections
+- [x] Establish an authenticated `/app` boundary separate from `/admin`
+- [x] Define read-only authenticated views for market charts and authorized
+      paper-session charts, trades and performance
+- [x] Explicitly defer trading signals until an authoritative signal contract
+      and artifact exist
+- [x] Keep public user registration disabled
+- [x] Preserve backend authentication and `app_admins` authorization as the
+      authoritative access-control source
+- [x] Add route, authentication, authorization, accessibility, browser and
+      responsive-layout tests
+
+**Operational contract**:
+[`docs/PHASE6_USER_SURFACES.md`](./PHASE6_USER_SURFACES.md)
 
 ### Phase 6-07: integration and closure gate
 

@@ -425,7 +425,10 @@ export function PaperPeriodMetricsPage() {
 
           {series.items.length ? (
             <>
-              <PeriodPerformanceCharts series={series} />
+              <PeriodPerformanceCharts
+                series={series}
+                quoteAsset={series.filters.quote_asset}
+              />
               <section
                 className="period-metrics-series"
                 aria-labelledby="period-metrics-series-title"

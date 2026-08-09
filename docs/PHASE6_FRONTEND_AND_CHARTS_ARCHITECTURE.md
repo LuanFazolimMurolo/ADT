@@ -4,7 +4,7 @@
 
 - **Phase**: 6
 - **Delivery**: 6-01
-- **Status**: approved and integrated in Phase 6-01
+- **Status**: approved in Phase 6-01 and reconciled through Phase 6-06
 - **Base release**: annotated tag `phase-5`
 - **Base commit**: `f50d8f087375158112f8d3f43dd25e45a5f83b05`
 - **Scope authority**: this document and the Phase 6 section of `docs/ROADMAP.md`
@@ -188,35 +188,44 @@ timeline ad hoc from incomplete summaries.
 
 ### 9.1 Public surface
 
-Route `/` remains public and must expose only intentionally public information.
-No administrator session, private strategy configuration, operational control or
-unreviewed performance data may leak into the public page.
+Route `/` is an institutional landing page and exposes only the intentional
+`GET /api/v1/system/status` and `GET /api/v1/public/simulation` projections.
+Its single authentication CTA points to `/login`. It exposes no administrator
+session, private strategy configuration, operational control or private
+performance data, and it offers no public registration.
 
 ### 9.2 Authenticated user surface
 
-Phase 6-06 establishes `/app` as a distinct authenticated, read-only product
-boundary. Initial scope may remain limited to the project owner. Public
-self-registration is not enabled by Phase 6.
+Phase 6-06 establishes `/app` as a distinct authenticated, strictly read-only
+product boundary. Any authenticated user can open its home and read bounded,
+persisted local market candles at `/app/market`; this access does not depend on
+`app_admins`.
 
-Candidate views:
+Paper-session access is deliberately more restrictive. There is no persisted
+ownership relation between a user and a paper session, so the MVP
+project-owner reader policy is membership in `app_admins`. A non-member receives
+a successful empty session catalog. Session detail, chart annotations, trades
+and performance require the project-owner reader dependency before any session
+or artifact lookup, making existing and nonexistent IDs indistinguishable to an
+unauthorized authenticated user.
 
-- authorized market and session charts;
-- authorized signals and trade history;
-- performance summaries;
-- notification preferences prepared for the later Telegram phase.
+Implemented views are `/app/sessions`, `/app/sessions/:sessionId` and
+`/app/sessions/:sessionId/performance`. They project verified charts, trades,
+the persisted portfolio timeline and realized-only period metrics. They create
+no session, order, runner, collector, setting, simulation or capital movement.
+This policy grants read access to all local paper sessions to the project-owner
+reader; it must not be described as per-user ownership.
+
+Trading signals still have no authoritative source contract or artifact.
+Orders, fills, trades and chart annotations are not relabeled as signals.
+Signals are explicitly deferred until a future reviewed delivery creates that
+authority.
 
 ### 9.3 Administrator surface
 
 `/admin` remains the operational and audit surface. Phase 6 adds visual analysis,
-not process mutation.
-
-Candidate routes:
-
-- `/admin/market-data/charts`;
-- `/admin/paper-trading/:sessionId`;
-- `/admin/paper-trading/:sessionId/performance`.
-
-Final route names remain an implementation decision.
+without weakening its existing backend `require_administrator` contract. The
+new `/app` projections do not replace, proxy or relax administrative endpoints.
 
 ## 10. Interaction and accessibility requirements
 
@@ -308,6 +317,8 @@ It must preserve:
 - Telegram-assisted signals: Phase 10;
 - extended live validation: Phase 11;
 - automatic real-capital trading: optional Phase 12;
+- authenticated trading signals until an authoritative signal contract and
+  artifact exist;
 - WebSocket streaming unless separately justified by measured polling limits;
 - cross-quote currency conversion;
 - estimates presented as guaranteed future prices or execution times.

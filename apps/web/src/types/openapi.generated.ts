@@ -388,6 +388,166 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/app/market-data/candles/{base_asset}/{quote_asset}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get App Market Candles
+         * @description Return persisted closed candles to any authenticated user.
+         */
+        get: operations["get_app_market_candles_api_v1_app_market_data_candles__base_asset___quote_asset__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/app/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get App Me
+         * @description Return authenticated identity and backend-authoritative admin membership.
+         */
+        get: operations["get_app_me_api_v1_app_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/app/paper-trading/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get App Paper Sessions
+         * @description Return an empty or project-owner catalog without leaking global state.
+         */
+        get: operations["get_app_paper_sessions_api_v1_app_paper_trading_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/app/paper-trading/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get App Paper Session
+         * @description Return minimum identity only after project-owner authorization.
+         */
+        get: operations["get_app_paper_session_api_v1_app_paper_trading_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/app/paper-trading/sessions/{session_id}/chart-annotations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get App Paper Chart Annotations
+         * @description Return minimum chart events in the requested half-open UTC range.
+         */
+        get: operations["get_app_paper_chart_annotations_api_v1_app_paper_trading_sessions__session_id__chart_annotations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/app/paper-trading/sessions/{session_id}/period-metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get App Paper Period Metrics
+         * @description Build realized-only metrics for exactly the authorized path session.
+         */
+        get: operations["get_app_paper_period_metrics_api_v1_app_paper_trading_sessions__session_id__period_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/app/paper-trading/sessions/{session_id}/portfolio-timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get App Paper Portfolio Timeline
+         * @description Read one backward page from the existing persisted timeline only.
+         */
+        get: operations["get_app_paper_portfolio_timeline_api_v1_app_paper_trading_sessions__session_id__portfolio_timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/app/paper-trading/sessions/{session_id}/trades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get App Paper Trades
+         * @description Return one server-paginated journal page scoped only by the path.
+         */
+        get: operations["get_app_paper_trades_api_v1_app_paper_trading_sessions__session_id__trades_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/market/assets": {
         parameters: {
             query?: never;
@@ -672,6 +832,424 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
+        };
+        /**
+         * AppMeResponse
+         * @description Authenticated application identity without email or token data.
+         */
+        AppMeResponse: {
+            /** Is Admin */
+            is_admin: boolean;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /** AppPaperChartAnnotationPageResponse */
+        AppPaperChartAnnotationPageResponse: {
+            /** Base Asset */
+            base_asset: string;
+            /** Content Checksum */
+            content_checksum: string;
+            /** Count */
+            count: number;
+            /** Dataset Version */
+            dataset_version: string | null;
+            /** Fills */
+            fills: components["schemas"]["AppPaperChartFillAnnotationResponse"][];
+            /** Fills Count */
+            fills_count: number;
+            /** Last Candle Open Time */
+            last_candle_open_time: string | null;
+            /** Orders */
+            orders: components["schemas"]["AppPaperChartOrderAnnotationResponse"][];
+            /** Orders Count */
+            orders_count: number;
+            /** Quote Asset */
+            quote_asset: string;
+            /**
+             * Range End
+             * Format: date-time
+             */
+            range_end: string;
+            /**
+             * Range Start
+             * Format: date-time
+             */
+            range_start: string;
+            /** Session Id */
+            session_id: string;
+            /** State Available */
+            state_available: boolean;
+            /** Timeframe */
+            timeframe: string;
+        };
+        /** AppPaperChartFillAnnotationResponse */
+        AppPaperChartFillAnnotationResponse: {
+            /**
+             * Event Time
+             * Format: date-time
+             */
+            event_time: string;
+            /** Execution Price */
+            execution_price: string;
+            /** Fee */
+            fee: string;
+            /** Fill Id */
+            fill_id: string;
+            /** Is Engine Protective Stop */
+            is_engine_protective_stop: boolean;
+            /** Quantity */
+            quantity: string;
+            role: components["schemas"]["PaperChartFillRole"];
+            side: components["schemas"]["OrderSide"];
+            /** Slippage Cost */
+            slippage_cost: string;
+            /** Trade Id */
+            trade_id: string;
+            /** Trade Sequence */
+            trade_sequence: number;
+        };
+        /** AppPaperChartOrderAnnotationResponse */
+        AppPaperChartOrderAnnotationResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Is Engine Protective Stop */
+            is_engine_protective_stop: boolean;
+            /** Order Id */
+            order_id: string;
+            /** Quantity */
+            quantity: string;
+            side: components["schemas"]["OrderSide"];
+            status: components["schemas"]["OrderStatus"];
+            /** Stop Price */
+            stop_price: string | null;
+        };
+        /** AppPaperPeriodMetricsBucketResponse */
+        AppPaperPeriodMetricsBucketResponse: {
+            /** Breakeven Realizations Count */
+            breakeven_realizations_count: number;
+            /** Exit Notional */
+            exit_notional: string;
+            /** Gross Loss */
+            gross_loss: string;
+            /** Gross Profit */
+            gross_profit: string;
+            /** Losing Realizations Count */
+            losing_realizations_count: number;
+            /**
+             * Period End
+             * Format: date-time
+             */
+            period_end: string;
+            /**
+             * Period Start
+             * Format: date-time
+             */
+            period_start: string;
+            /** Profit Factor */
+            profit_factor: string | null;
+            /** Quote Asset */
+            quote_asset: string;
+            /** Realizations Count */
+            realizations_count: number;
+            /** Realized Fees */
+            realized_fees: string;
+            /** Realized Pnl */
+            realized_pnl: string;
+            /** Realized Slippage Cost */
+            realized_slippage_cost: string;
+            /** Released Cost Basis */
+            released_cost_basis: string;
+            /** Win Rate Pct */
+            win_rate_pct: string | null;
+            /** Winning Realizations Count */
+            winning_realizations_count: number;
+        };
+        /** AppPaperPeriodMetricsSeriesResponse */
+        AppPaperPeriodMetricsSeriesResponse: {
+            /** Content Checksum */
+            content_checksum: string;
+            granularity: components["schemas"]["PaperPeriodGranularity"];
+            /** Items */
+            items: components["schemas"]["AppPaperPeriodMetricsBucketResponse"][];
+            /**
+             * Period Before
+             * Format: date-time
+             */
+            period_before: string;
+            /**
+             * Period From
+             * Format: date-time
+             */
+            period_from: string;
+            /** Query Checksum */
+            query_checksum: string;
+            /** Quote Asset */
+            quote_asset: string;
+            /** Session Id */
+            session_id: string;
+            totals: components["schemas"]["AppPaperPeriodMetricsTotalsResponse"];
+        };
+        /** AppPaperPeriodMetricsTotalsResponse */
+        AppPaperPeriodMetricsTotalsResponse: {
+            /** Active Periods Count */
+            active_periods_count: number;
+            /** Breakeven Realizations Count */
+            breakeven_realizations_count: number;
+            /** Exit Notional */
+            exit_notional: string;
+            /** Gross Loss */
+            gross_loss: string;
+            /** Gross Profit */
+            gross_profit: string;
+            /** Losing Realizations Count */
+            losing_realizations_count: number;
+            /** Periods Count */
+            periods_count: number;
+            /** Profit Factor */
+            profit_factor: string | null;
+            /** Quote Asset */
+            quote_asset: string;
+            /** Realizations Count */
+            realizations_count: number;
+            /** Realized Fees */
+            realized_fees: string;
+            /** Realized Pnl */
+            realized_pnl: string;
+            /** Realized Slippage Cost */
+            realized_slippage_cost: string;
+            /** Released Cost Basis */
+            released_cost_basis: string;
+            /** Win Rate Pct */
+            win_rate_pct: string | null;
+            /** Winning Realizations Count */
+            winning_realizations_count: number;
+        };
+        /** AppPaperPortfolioObservationResponse */
+        AppPaperPortfolioObservationResponse: {
+            /** Average Entry Price */
+            average_entry_price: string;
+            /** Base Quantity */
+            base_quantity: string;
+            /**
+             * Candle Close Time
+             * Format: date-time
+             */
+            candle_close_time: string;
+            /** Candle Index */
+            candle_index: number;
+            /**
+             * Candle Open Time
+             * Format: date-time
+             */
+            candle_open_time: string;
+            /** Cost Basis */
+            cost_basis: string;
+            /** Drawdown */
+            drawdown: string;
+            /** Drawdown Pct */
+            drawdown_pct: string;
+            /** Equity */
+            equity: string;
+            /** Mark Price */
+            mark_price: string;
+            /** Peak Equity */
+            peak_equity: string;
+            /** Quote Cash */
+            quote_cash: string;
+            /** Realized Pnl */
+            realized_pnl: string;
+            /** Risk Halt */
+            risk_halt: boolean;
+            /** Total Fees */
+            total_fees: string;
+            /** Total Slippage Cost */
+            total_slippage_cost: string;
+            /** Unrealized Pnl */
+            unrealized_pnl: string;
+        };
+        /** AppPaperPortfolioTimelinePageResponse */
+        AppPaperPortfolioTimelinePageResponse: {
+            /**
+             * Available End
+             * Format: date-time
+             */
+            available_end: string;
+            /**
+             * Available Start
+             * Format: date-time
+             */
+            available_start: string;
+            /** Base Asset */
+            base_asset: string;
+            /** Content Checksum */
+            content_checksum: string;
+            /** Count */
+            count: number;
+            /** Dataset Version */
+            dataset_version: string;
+            /** Has More Before */
+            has_more_before: boolean;
+            /** Initial Capital */
+            initial_capital: string;
+            /** Items */
+            items: components["schemas"]["AppPaperPortfolioObservationResponse"][];
+            /** Limit */
+            limit: number;
+            /** Next Before */
+            next_before: string | null;
+            /** Quote Asset */
+            quote_asset: string;
+            /**
+             * Range End
+             * Format: date-time
+             */
+            range_end: string;
+            /**
+             * Range Start
+             * Format: date-time
+             */
+            range_start: string;
+            /** Session Id */
+            session_id: string;
+            /** State Checksum */
+            state_checksum: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Timeline Content Checksum */
+            timeline_content_checksum: string;
+            /** Timeline Id */
+            timeline_id: string;
+            /** Total Observations */
+            total_observations: number;
+        };
+        /**
+         * AppPaperSessionCatalogItemResponse
+         * @description Minimum data required to select a future authorized session view.
+         */
+        AppPaperSessionCatalogItemResponse: {
+            /** Base Asset */
+            base_asset: string;
+            /** Quote Asset */
+            quote_asset: string;
+            /** Session Id */
+            session_id: string;
+            /** Strategy Name */
+            strategy_name: string;
+            /** Strategy Version */
+            strategy_version: string;
+            /** Timeframe */
+            timeframe: string;
+        };
+        /**
+         * AppPaperSessionCatalogResponse
+         * @description One bounded backend-authorized page of selectable sessions.
+         */
+        AppPaperSessionCatalogResponse: {
+            /** Items */
+            items: components["schemas"]["AppPaperSessionCatalogItemResponse"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+            /** Total Pages */
+            total_pages: number;
+        };
+        /** AppPaperSessionDetailResponse */
+        AppPaperSessionDetailResponse: {
+            /** Base Asset */
+            base_asset: string;
+            /** Last Candle Open Time */
+            last_candle_open_time: string | null;
+            /** Quote Asset */
+            quote_asset: string;
+            /** Session Id */
+            session_id: string;
+            /** State Available */
+            state_available: boolean;
+            /** Strategy Name */
+            strategy_name: string;
+            /** Strategy Version */
+            strategy_version: string;
+            /** Timeframe */
+            timeframe: string;
+        };
+        /** AppPaperTradePageResponse */
+        AppPaperTradePageResponse: {
+            /** Items */
+            items: components["schemas"]["AppPaperTradeResponse"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+            /** Total Pages */
+            total_pages: number;
+            totals: components["schemas"]["AppPaperTradeTotalsResponse"];
+        };
+        /** AppPaperTradeResponse */
+        AppPaperTradeResponse: {
+            /** Average Entry Price */
+            average_entry_price: string;
+            /** Average Exit Price */
+            average_exit_price: string | null;
+            /** Closed At */
+            closed_at: string | null;
+            /** Closed Quantity */
+            closed_quantity: string;
+            /** Mark Price */
+            mark_price: string | null;
+            /** Net Pnl */
+            net_pnl: string;
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            /** Opened Quantity */
+            opened_quantity: string;
+            /** Realized Pnl */
+            realized_pnl: string;
+            /** Remaining Quantity */
+            remaining_quantity: string;
+            /** Sequence */
+            sequence: number;
+            status: components["schemas"]["PaperTradeStatus"];
+            /** Total Fees */
+            total_fees: string;
+            /** Total Slippage Cost */
+            total_slippage_cost: string;
+            /** Trade Id */
+            trade_id: string;
+            /** Unrealized Pnl */
+            unrealized_pnl: string;
+        };
+        /** AppPaperTradeTotalsResponse */
+        AppPaperTradeTotalsResponse: {
+            /** Closed Trades Count */
+            closed_trades_count: number;
+            /** Open Trades Count */
+            open_trades_count: number;
+            /** Total Fees */
+            total_fees: string;
+            /** Total Net Pnl */
+            total_net_pnl: string;
+            /** Total Realized Pnl */
+            total_realized_pnl: string;
+            /** Total Slippage Cost */
+            total_slippage_cost: string;
+            /** Total Unrealized Pnl */
+            total_unrealized_pnl: string;
+            /** Trades Count */
+            trades_count: number;
         };
         /**
          * AssetListResponse
@@ -5265,6 +5843,772 @@ export interface operations {
                 };
             };
             /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_app_market_candles_api_v1_app_market_data_candles__base_asset___quote_asset__get: {
+        parameters: {
+            query: {
+                timeframe: string;
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                base_asset: string;
+                quote_asset: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded verified local RAW candle page for an authenticated user. */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "X-ADT-Candle-Content-Checksum"?: string;
+                    "X-ADT-Candle-Dataset-Version"?: string;
+                    "X-ADT-Candle-Rows"?: number;
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketCandlePageResponse"];
+                };
+            };
+            /** @description The market-data request is invalid. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested local market-data dataset does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested local market-data state is not available. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected authenticated request failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required authentication or local market-data service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_app_me_api_v1_app_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppMeResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected authenticated request failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required authorization service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_app_paper_sessions_api_v1_app_paper_trading_sessions_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPaperSessionCatalogResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected authenticated request failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required authorization service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_app_paper_session_api_v1_app_paper_trading_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPaperSessionDetailResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user cannot read paper sessions. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authorized paper session does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authorized paper-session state is not currently available. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected paper-session read failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required authentication or local paper-session service is unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_app_paper_chart_annotations_api_v1_app_paper_trading_sessions__session_id__chart_annotations_get: {
+        parameters: {
+            query: {
+                start: string;
+                before: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded authorized paper-session chart annotations. */
+            200: {
+                headers: {
+                    "X-ADT-Paper-Chart-Content-Checksum"?: string;
+                    "X-ADT-Paper-Chart-Rows"?: number;
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPaperChartAnnotationPageResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user cannot read paper sessions. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authorized paper session does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authorized paper-session state is not currently available. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected paper-session read failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required authentication or local paper-session service is unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_app_paper_period_metrics_api_v1_app_paper_trading_sessions__session_id__period_metrics_get: {
+        parameters: {
+            query: {
+                period_from: string;
+                period_before: string;
+                granularity?: components["schemas"]["PaperPeriodGranularity"];
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized realized-only UTC period metrics. */
+            200: {
+                headers: {
+                    "X-ADT-Period-Metrics-Content-Checksum"?: string;
+                    "X-ADT-Period-Metrics-Query-Checksum"?: string;
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPaperPeriodMetricsSeriesResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user cannot read paper sessions. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authorized paper session does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authorized paper-session state is not currently available. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected paper-session read failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required authentication or local paper-session service is unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_app_paper_portfolio_timeline_api_v1_app_paper_trading_sessions__session_id__portfolio_timeline_get: {
+        parameters: {
+            query?: {
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded authorized persisted paper portfolio timeline. */
+            200: {
+                headers: {
+                    "X-ADT-Paper-Timeline-Content-Checksum"?: string;
+                    "X-ADT-Paper-Timeline-ID"?: string;
+                    "X-ADT-Paper-Timeline-Rows"?: number;
+                    "X-ADT-Paper-Timeline-State-Checksum"?: string;
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPaperPortfolioTimelinePageResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user cannot read paper sessions. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authorized paper session does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authorized paper-session state is not currently available. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected paper-session read failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required authentication or local paper-session service is unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_app_paper_trades_api_v1_app_paper_trading_sessions__session_id__trades_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["PaperTradeStatus"] | null;
+                opened_from?: string | null;
+                opened_before?: string | null;
+                closed_from?: string | null;
+                closed_before?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPaperTradePageResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user cannot read paper sessions. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authorized paper session does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authorized paper-session state is not currently available. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected paper-session read failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required authentication or local paper-session service is unavailable. */
             503: {
                 headers: {
                     /** @description UUID correlation identifier assigned to this request. */

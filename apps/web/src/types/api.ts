@@ -8,6 +8,31 @@ import type { components } from "./openapi.generated";
 type ApiSchemas = components["schemas"];
 
 export type JsonValue = ApiSchemas["JsonValue-Input"];
+export type AppMe = ApiSchemas["AppMeResponse"];
+export type AppPaperSessionCatalogItem =
+  ApiSchemas["AppPaperSessionCatalogItemResponse"];
+export type AppPaperSessionCatalogResponse =
+  ApiSchemas["AppPaperSessionCatalogResponse"];
+export type AppPaperSessionDetail = ApiSchemas["AppPaperSessionDetailResponse"];
+export type AppPaperChartAnnotationPage =
+  ApiSchemas["AppPaperChartAnnotationPageResponse"];
+export type AppPaperChartOrderAnnotation =
+  ApiSchemas["AppPaperChartOrderAnnotationResponse"];
+export type AppPaperChartFillAnnotation =
+  ApiSchemas["AppPaperChartFillAnnotationResponse"];
+export type AppPaperTrade = ApiSchemas["AppPaperTradeResponse"];
+export type AppPaperTradeTotals = ApiSchemas["AppPaperTradeTotalsResponse"];
+export type AppPaperTradePage = ApiSchemas["AppPaperTradePageResponse"];
+export type AppPaperPortfolioObservation =
+  ApiSchemas["AppPaperPortfolioObservationResponse"];
+export type AppPaperPortfolioTimelinePage =
+  ApiSchemas["AppPaperPortfolioTimelinePageResponse"];
+export type AppPaperPeriodMetricsBucket =
+  ApiSchemas["AppPaperPeriodMetricsBucketResponse"];
+export type AppPaperPeriodMetricsTotals =
+  ApiSchemas["AppPaperPeriodMetricsTotalsResponse"];
+export type AppPaperPeriodMetricsSeries =
+  ApiSchemas["AppPaperPeriodMetricsSeriesResponse"];
 export type AdminMe = ApiSchemas["AdminMeResponse"];
 export type HealthResponse = ApiSchemas["HealthResponse"];
 export type PageMeta = ApiSchemas["PageMeta"];

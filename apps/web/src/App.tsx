@@ -1,11 +1,18 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
+import { AuthenticatedRoute } from "./auth/AuthenticatedRoute";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { PublicConfigError, validatePublicConfig } from "./config/env";
 import { AdminLayout } from "./layouts/AdminLayout";
+import { AppLayout } from "./layouts/AppLayout";
 import { PublicHome } from "./pages/PublicHome";
 import { DashboardPage } from "./pages/admin/DashboardPage";
+import { AppHomePage } from "./pages/app/AppHomePage";
+import { AppMarketChartPage } from "./pages/app/AppMarketChartPage";
+import { AppPaperSessionsPage } from "./pages/app/AppPaperSessionsPage";
+import { AppPaperSessionDetailPage } from "./pages/app/AppPaperSessionDetailPage";
+import { AppPaperSessionPerformancePage } from "./pages/app/AppPaperSessionPerformancePage";
 import { InstrumentChartPage } from "./pages/admin/InstrumentChartPage";
 import { PaperPeriodMetricsPage } from "./pages/admin/PaperPeriodMetricsPage";
 import { PaperPortfolioPerformancePage } from "./pages/admin/PaperPortfolioPerformancePage";
@@ -52,7 +59,8 @@ function App() {
         <AuthProvider>
           <Routes>
             <Route path="/" element={<PublicHome />} />
-            <Route path="/admin/login" element={<LoginPage />} />
+            <Route path="/login" element={<LoginPage mode="app" />} />
+            <Route path="/admin/login" element={<LoginPage mode="admin" />} />
             <Route
               path="/admin/forgot-password"
               element={<ForgotPasswordPage />}
@@ -61,6 +69,21 @@ function App() {
               path="/admin/reset-password"
               element={<ResetPasswordPage />}
             />
+            <Route element={<AuthenticatedRoute />}>
+              <Route path="/app" element={<AppLayout />}>
+                <Route index element={<AppHomePage />} />
+                <Route path="market" element={<AppMarketChartPage />} />
+                <Route path="sessions" element={<AppPaperSessionsPage />} />
+                <Route
+                  path="sessions/:sessionId"
+                  element={<AppPaperSessionDetailPage />}
+                />
+                <Route
+                  path="sessions/:sessionId/performance"
+                  element={<AppPaperSessionPerformancePage />}
+                />
+              </Route>
+            </Route>
             <Route element={<ProtectedRoute />}>
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index element={<DashboardPage />} />

@@ -1,10 +1,6 @@
 import { expect, test } from './fixtures/test'
 import { loginAsAdmin } from './support/actions'
-import {
-  ADMIN_EMAIL,
-  E2E_PASSWORD,
-  USER_EMAIL,
-} from './support/constants'
+import { ADMIN_EMAIL, E2E_PASSWORD, USER_EMAIL } from './support/constants'
 
 test.describe('autenticação administrativa', () => {
   test('redireciona a rota privada e preserva um destino administrativo seguro', async ({
@@ -29,7 +25,7 @@ test.describe('autenticação administrativa', () => {
       page.getByRole('heading', { name: 'Visão geral' }),
     ).toBeVisible()
 
-    const meRequests = services.requestsFor('GET', '/api/v1/admin/me')
+    const meRequests = services.requestsFor('GET', '/api/v1/app/me')
     expect(meRequests.length).toBeGreaterThanOrEqual(1)
     expect(meRequests.at(-1)?.authorization).toBe(
       `Bearer ${services.lastIssuedAccessToken}`,
@@ -55,28 +51,30 @@ test.describe('autenticação administrativa', () => {
     await expect(page.getByRole('alert')).not.toContainText(
       'Invalid login credentials',
     )
-    expect(
-      services.requestsFor('POST', '/auth/v1/token'),
-    ).toHaveLength(1)
+    expect(services.requestsFor('POST', '/auth/v1/token')).toHaveLength(1)
   })
 
-  test('usuário autenticado sem autorização é deslogado', async ({ page }) => {
+  test('usuário autenticado sem autorização administrativa segue para /app', async ({
+    page,
+  }) => {
     await page.goto('/admin/login')
     await page.getByLabel('E-mail').fill(USER_EMAIL)
     await page.getByLabel('Senha').fill(E2E_PASSWORD)
     await page.getByRole('button', { name: 'Entrar' }).click()
 
-    await expect(page).toHaveURL(/\/admin\/login$/)
-    await expect(page.getByRole('alert')).toContainText(
-      'não possui acesso administrativo',
-    )
+    await expect(page).toHaveURL(/\/app$/)
+    await expect(
+      page.getByRole('heading', {
+        name: /Paper trading, com acesso verificado/i,
+      }),
+    ).toBeVisible()
     expect(
       await page.evaluate(() =>
         Object.keys(localStorage).filter(
           (key) => key.startsWith('sb-') && key.endsWith('-auth-token'),
         ),
       ),
-    ).toEqual([])
+    ).toHaveLength(1)
   })
 
   test('restaura a sessão no reload e logout limpa o armazenamento local', async ({
@@ -84,19 +82,15 @@ test.describe('autenticação administrativa', () => {
     services,
   }) => {
     await loginAsAdmin(page)
-    expect(
-      services.requestsFor('POST', '/auth/v1/token'),
-    ).toHaveLength(1)
+    expect(services.requestsFor('POST', '/auth/v1/token')).toHaveLength(1)
 
     await page.reload()
     await expect(
       page.getByRole('heading', { name: 'Visão geral' }),
     ).toBeVisible()
+    expect(services.requestsFor('POST', '/auth/v1/token')).toHaveLength(1)
     expect(
-      services.requestsFor('POST', '/auth/v1/token'),
-    ).toHaveLength(1)
-    expect(
-      services.requestsFor('GET', '/api/v1/admin/me').length,
+      services.requestsFor('GET', '/api/v1/app/me').length,
     ).toBeGreaterThanOrEqual(2)
 
     await page.getByRole('button', { name: 'Sair' }).click()
@@ -108,12 +102,14 @@ test.describe('autenticação administrativa', () => {
     )
     expect(storedAuthKeys).toEqual([])
     expect(
-      services.requestsFor('POST', '/auth/v1/logout').some(
-        (request) =>
-          request.search === '?scope=local'
-          && request.authorization
-            === `Bearer ${services.lastIssuedAccessToken}`,
-      ),
+      services
+        .requestsFor('POST', '/auth/v1/logout')
+        .some(
+          (request) =>
+            request.search === '?scope=local' &&
+            request.authorization ===
+              `Bearer ${services.lastIssuedAccessToken}`,
+        ),
     ).toBe(true)
   })
 
@@ -129,15 +125,15 @@ test.describe('autenticação administrativa', () => {
     ).toBeVisible()
 
     expect(
-      services.requestsFor('POST', '/auth/v1/token').filter(
-        (request) => request.search.includes('grant_type=refresh_token'),
-      ),
+      services
+        .requestsFor('POST', '/auth/v1/token')
+        .filter((request) =>
+          request.search.includes('grant_type=refresh_token'),
+        ),
     ).toHaveLength(1)
-    const meRequests = services.requestsFor('GET', '/api/v1/admin/me')
+    const meRequests = services.requestsFor('GET', '/api/v1/app/me')
     expect(meRequests).toHaveLength(2)
-    expect(meRequests[0].authorization).not.toBe(
-      meRequests[1].authorization,
-    )
+    expect(meRequests[0].authorization).not.toBe(meRequests[1].authorization)
   })
 
   test('401 persistente invalida a sessão e não libera o painel', async ({
@@ -151,12 +147,8 @@ test.describe('autenticação administrativa', () => {
     await page.getByRole('button', { name: 'Entrar' }).click()
 
     await expect(page).toHaveURL(/\/admin\/login$/)
-    await expect(page.getByRole('alert')).toContainText(
-      'não possui acesso administrativo',
-    )
-    expect(
-      services.requestsFor('GET', '/api/v1/admin/me'),
-    ).toHaveLength(2)
+    await expect(page.getByRole('alert')).toContainText('sessão expirou')
+    expect(services.requestsFor('GET', '/api/v1/app/me')).toHaveLength(2)
     expect(
       await page.evaluate(() =>
         Object.keys(localStorage).filter(
@@ -174,9 +166,7 @@ test.describe('recuperação de senha', () => {
   }) => {
     await page.goto('/admin/forgot-password')
     await page.getByLabel('E-mail').fill(ADMIN_EMAIL)
-    await page
-      .getByRole('button', { name: 'Enviar instruções' })
-      .click()
+    await page.getByRole('button', { name: 'Enviar instruções' }).click()
 
     await expect(page.getByRole('status')).toContainText(
       'Se a conta estiver cadastrada',
@@ -192,23 +182,17 @@ test.describe('recuperação de senha', () => {
     services,
   }) => {
     await page.goto(services.recoveryCallbackUrl())
-    await expect(
-      page.getByLabel('Nova senha', { exact: true }),
-    ).toBeVisible()
+    await expect(page.getByLabel('Nova senha', { exact: true })).toBeVisible()
     await expect(page).not.toHaveURL(/access_token=/)
 
     await page
       .getByLabel('Nova senha', { exact: true })
       .fill('nova-senha-e2e-123')
-    await page
-      .getByLabel('Confirmar nova senha')
-      .fill('nova-senha-e2e-123')
+    await page.getByLabel('Confirmar nova senha').fill('nova-senha-e2e-123')
     await page.getByRole('button', { name: 'Atualizar senha' }).click()
 
     await expect(page).toHaveURL(/\/admin\/login$/)
-    await expect(page.getByRole('status')).toContainText(
-      'Senha atualizada',
-    )
+    await expect(page.getByRole('status')).toContainText('Senha atualizada')
     expect(services.updatedPassword).toBe('nova-senha-e2e-123')
   })
 

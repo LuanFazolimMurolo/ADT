@@ -14,18 +14,18 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type {
-  MarketCandle,
-  PaperChartAnnotationPageResponse,
-} from "../types/api";
+import type { MarketCandle } from "../types/api";
 import { calculateChartEma } from "../utils/chartEma";
-import { buildChartMarkers } from "../utils/chartMarkers";
+import {
+  buildChartMarkers,
+  type ChartAnnotationData,
+} from "../utils/chartMarkers";
 
 interface FinancialCandlestickChartProps {
   candles: readonly MarketCandle[];
   fastPeriod: number | null;
   slowPeriod: number | null;
-  annotations: PaperChartAnnotationPageResponse | null;
+  annotations: ChartAnnotationData | null;
   selectedTradeId: string | null;
   resetKey: number;
 }
@@ -225,7 +225,7 @@ export function FinancialCandlestickChart({
               </span>
             </>
           ) : (
-            <span>Estratégia sem períodos EMA publicados</span>
+            <span>Sem overlays</span>
           )}
           {annotations && (
             <span>

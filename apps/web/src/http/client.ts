@@ -4,6 +4,13 @@ import { signOutLocally } from "../auth/signOut";
 import { getPersistedSupabaseAccessToken } from "../auth/supabaseSessionStorage";
 import type {
   AdminMe,
+  AppMe,
+  AppPaperChartAnnotationPage,
+  AppPaperPeriodMetricsSeries,
+  AppPaperPortfolioTimelinePage,
+  AppPaperSessionCatalogResponse,
+  AppPaperSessionDetail,
+  AppPaperTradePage,
   ApiErrorEnvelope,
   CapitalMovement,
   HealthResponse,
@@ -70,6 +77,25 @@ export interface PaperTradeJournalFilters {
   openedBefore?: string;
   closedFrom?: string;
   closedBefore?: string;
+}
+
+export interface AppPaperTradeFilters {
+  status?: PaperTradeStatus;
+  openedFrom?: string;
+  openedBefore?: string;
+  closedFrom?: string;
+  closedBefore?: string;
+}
+
+export interface AppPaperPortfolioTimelineQuery {
+  before?: string;
+  limit?: number;
+}
+
+export interface AppPaperPeriodMetricsQuery {
+  periodFrom: string;
+  periodBefore: string;
+  granularity: PaperPeriodGranularity;
 }
 
 export interface PaperPeriodMetricsFilters {
@@ -228,10 +254,7 @@ export class ApiClient {
           try {
             return await this.performRequest<T>(path, options, refreshedToken);
           } catch (retryError) {
-            if (
-              retryError instanceof ApiError &&
-              (retryError.status === 401 || retryError.status === 403)
-            ) {
+            if (retryError instanceof ApiError && retryError.status === 401) {
               await this.options.onAuthenticationFailure?.(refreshedToken);
             }
             throw retryError;
@@ -241,7 +264,7 @@ export class ApiClient {
       } else if (
         error instanceof ApiError &&
         authenticated &&
-        (error.status === 401 || error.status === 403)
+        error.status === 401
       ) {
         await this.options.onAuthenticationFailure?.(token);
       }
@@ -269,6 +292,90 @@ export class ApiClient {
     return this.request("/api/v1/public/simulation", {}, false);
   }
 
+  getAppMe(): Promise<AppMe> {
+    return this.request("/api/v1/app/me");
+  }
+
+  getAppPaperSessions(
+    page = 1,
+    pageSize = 20,
+  ): Promise<AppPaperSessionCatalogResponse> {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+    });
+    return this.request(
+      `/api/v1/app/paper-trading/sessions?${params.toString()}`,
+    );
+  }
+
+  getAppPaperSession(sessionId: string): Promise<AppPaperSessionDetail> {
+    return this.request(
+      `/api/v1/app/paper-trading/sessions/${encodeURIComponent(sessionId)}`,
+    );
+  }
+
+  getAppPaperChartAnnotations(
+    sessionId: string,
+    query: PaperChartAnnotationQuery,
+  ): Promise<AppPaperChartAnnotationPage> {
+    const params = new URLSearchParams({
+      start: query.start,
+      before: query.before,
+    });
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    return this.request(
+      `/api/v1/app/paper-trading/sessions/${encodeURIComponent(sessionId)}/chart-annotations?${params.toString()}`,
+    );
+  }
+
+  getAppPaperTrades(
+    sessionId: string,
+    filters: AppPaperTradeFilters = {},
+    page = 1,
+    pageSize = 20,
+  ): Promise<AppPaperTradePage> {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+    });
+    appendQueryValue(params, "status", filters.status);
+    appendQueryValue(params, "opened_from", filters.openedFrom);
+    appendQueryValue(params, "opened_before", filters.openedBefore);
+    appendQueryValue(params, "closed_from", filters.closedFrom);
+    appendQueryValue(params, "closed_before", filters.closedBefore);
+    return this.request(
+      `/api/v1/app/paper-trading/sessions/${encodeURIComponent(sessionId)}/trades?${params.toString()}`,
+    );
+  }
+
+  getAppPaperPortfolioTimeline(
+    sessionId: string,
+    query: AppPaperPortfolioTimelineQuery = {},
+  ): Promise<AppPaperPortfolioTimelinePage> {
+    const params = new URLSearchParams();
+    appendQueryValue(params, "before", query.before);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request(
+      `/api/v1/app/paper-trading/sessions/${encodeURIComponent(sessionId)}/portfolio-timeline${suffix}`,
+    );
+  }
+
+  getAppPaperPeriodMetrics(
+    sessionId: string,
+    query: AppPaperPeriodMetricsQuery,
+  ): Promise<AppPaperPeriodMetricsSeries> {
+    const params = new URLSearchParams({
+      period_from: query.periodFrom,
+      period_before: query.periodBefore,
+      granularity: query.granularity,
+    });
+    return this.request(
+      `/api/v1/app/paper-trading/sessions/${encodeURIComponent(sessionId)}/period-metrics?${params.toString()}`,
+    );
+  }
+
   getAdminMe(): Promise<AdminMe> {
     return this.request("/api/v1/admin/me");
   }
@@ -283,6 +390,19 @@ export class ApiClient {
     if (query.limit !== undefined) params.set("limit", String(query.limit));
     return this.request(
       `/api/v1/admin/market-data/candles/${encodeURIComponent(baseAsset)}/${encodeURIComponent(quoteAsset)}?${params.toString()}`,
+    );
+  }
+
+  getAppMarketCandles(
+    baseAsset: string,
+    quoteAsset: string,
+    query: MarketCandleQuery,
+  ): Promise<MarketCandlePageResponse> {
+    const params = new URLSearchParams({ timeframe: query.timeframe });
+    appendQueryValue(params, "before", query.before);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    return this.request(
+      `/api/v1/app/market-data/candles/${encodeURIComponent(baseAsset)}/${encodeURIComponent(quoteAsset)}?${params.toString()}`,
     );
   }
 

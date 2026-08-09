@@ -1,8 +1,15 @@
 import type { BrowserContext, Request, Route } from "@playwright/test";
 import type {
+  AppPaperChartAnnotationPage,
+  AppPaperPeriodMetricsSeries,
+  AppPaperPortfolioTimelinePage,
+  AppPaperSessionCatalogResponse,
+  AppPaperSessionDetail,
+  AppPaperTradePage,
   CapitalMovement,
   JsonValue,
   MovementCreateRequest,
+  MarketCandlePageResponse,
   PaperDashboardResponse,
   Setting,
   SimulationCreateRequest,
@@ -18,6 +25,7 @@ import {
   REQUEST_ID,
   SUPABASE_ORIGIN,
   USER_EMAIL,
+  USER_ID,
   WEB_ORIGIN,
 } from "./constants";
 import {
@@ -52,6 +60,8 @@ const JSON_HEADERS = {
   "Content-Type": "application/json",
   "X-Request-ID": REQUEST_ID,
 };
+
+export const PAPER_SESSION_ID = "c".repeat(64);
 
 function decimalToBigInt(value: string): bigint {
   const match = /^(-?)(\d+)(?:\.(\d{1,8}))?$/.exec(value);
@@ -535,6 +545,466 @@ export class MockServices {
             }
           : null,
       );
+      return;
+    }
+
+    if (request.method() === "GET" && url.pathname === "/api/v1/app/me") {
+      if (!this.databaseAvailable) {
+        await this.apiError(
+          route,
+          503,
+          "database_unavailable",
+          "O banco de dados está temporariamente indisponível.",
+        );
+        return;
+      }
+      if (this.pendingAdminUnauthorizedResponses > 0) {
+        this.pendingAdminUnauthorizedResponses -= 1;
+        await this.apiError(route, 401, "token_expired", "A sessão expirou.");
+        return;
+      }
+      const role = this.roleForRequest(request);
+      if (!role) {
+        await this.apiError(
+          route,
+          401,
+          "authentication_required",
+          "Autenticação válida é obrigatória.",
+        );
+        return;
+      }
+      await this.json(route, 200, {
+        user_id: role === "admin" ? ADMIN_ID : USER_ID,
+        is_admin: role === "admin",
+      });
+      return;
+    }
+
+    if (
+      request.method() === "GET" &&
+      url.pathname === "/api/v1/app/paper-trading/sessions"
+    ) {
+      const role = this.roleForRequest(request);
+      if (!role) {
+        await this.apiError(
+          route,
+          401,
+          "authentication_required",
+          "Autenticação válida é obrigatória.",
+        );
+        return;
+      }
+      const page = Number(url.searchParams.get("page") ?? "1");
+      const pageSize = Number(url.searchParams.get("page_size") ?? "20");
+      const isProjectOwnerReader = role === "admin";
+      const response = {
+        items:
+          isProjectOwnerReader && page === 1
+            ? [
+                {
+                  session_id: PAPER_SESSION_ID,
+                  base_asset: "BTC",
+                  quote_asset: "USDT",
+                  timeframe: "15m",
+                  strategy_name: "paper-buy-test",
+                  strategy_version: "1",
+                },
+              ]
+            : [],
+        page,
+        page_size: pageSize,
+        total: isProjectOwnerReader ? 1 : 0,
+        total_pages: isProjectOwnerReader ? 1 : 0,
+      } satisfies AppPaperSessionCatalogResponse;
+      await this.json(route, 200, response);
+      return;
+    }
+
+    const appPaperAnnotationsMatch =
+      /^\/api\/v1\/app\/paper-trading\/sessions\/([0-9a-f]{64})\/chart-annotations$/.exec(
+        url.pathname,
+      );
+    if (request.method() === "GET" && appPaperAnnotationsMatch) {
+      const role = this.roleForRequest(request);
+      if (!role) {
+        await this.apiError(
+          route,
+          401,
+          "authentication_required",
+          "Autenticação válida é obrigatória.",
+        );
+        return;
+      }
+      if (role !== "admin") {
+        await this.apiError(route, 403, "forbidden", "Acesso negado.");
+        return;
+      }
+      const [, sessionId] = appPaperAnnotationsMatch;
+      const response = {
+        session_id: sessionId,
+        base_asset: "BTC",
+        quote_asset: "USDT",
+        timeframe: "15m",
+        state_available: true,
+        dataset_version: "a".repeat(64),
+        range_start: url.searchParams.get("start") ?? "2026-08-08T00:00:00Z",
+        range_end: url.searchParams.get("before") ?? "2026-08-08T00:45:00Z",
+        count: 2,
+        orders_count: 1,
+        fills_count: 1,
+        orders: [
+          {
+            order_id: "O000000000001",
+            created_at: "2026-08-08T00:15:00Z",
+            status: "OPEN",
+            side: "SELL",
+            quantity: "1.000000000000000000",
+            stop_price: "95.000000000000000000",
+            is_engine_protective_stop: true,
+          },
+        ],
+        fills: [
+          {
+            fill_id: "F000000000001",
+            trade_id: "T000000000001",
+            trade_sequence: 1,
+            role: "ENTRY",
+            event_time: "2026-08-08T00:15:00Z",
+            side: "BUY",
+            quantity: "1.000000000000000000",
+            execution_price: "105.000000000000000000",
+            fee: "0.100000000000000000",
+            slippage_cost: "0.010000000000000000",
+            is_engine_protective_stop: false,
+          },
+        ],
+        last_candle_open_time: "2026-08-08T00:30:00Z",
+        content_checksum: "d".repeat(64),
+      } satisfies AppPaperChartAnnotationPage;
+      await this.json(route, 200, response);
+      return;
+    }
+
+    const appPaperTradesMatch =
+      /^\/api\/v1\/app\/paper-trading\/sessions\/([0-9a-f]{64})\/trades$/.exec(
+        url.pathname,
+      );
+    if (request.method() === "GET" && appPaperTradesMatch) {
+      const role = this.roleForRequest(request);
+      if (!role) {
+        await this.apiError(
+          route,
+          401,
+          "authentication_required",
+          "Autenticação válida é obrigatória.",
+        );
+        return;
+      }
+      if (role !== "admin") {
+        await this.apiError(route, 403, "forbidden", "Acesso negado.");
+        return;
+      }
+      const page = Number(url.searchParams.get("page") ?? "1");
+      const pageSize = Number(url.searchParams.get("page_size") ?? "20");
+      const response = {
+        items: [
+          {
+            trade_id: "T000000000001",
+            sequence: 1,
+            status: "OPEN",
+            opened_at: "2026-08-08T00:15:00Z",
+            closed_at: null,
+            opened_quantity: "1.000000000000000000",
+            closed_quantity: "0.000000000000000000",
+            remaining_quantity: "1.000000000000000000",
+            average_entry_price: "105.000000000000000000",
+            average_exit_price: null,
+            realized_pnl: "0.000000000000000000",
+            unrealized_pnl: "13.000000000000000000",
+            net_pnl: "13.000000000000000000",
+            total_fees: "0.100000000000000000",
+            total_slippage_cost: "0.010000000000000000",
+            mark_price: "118.000000000000000000",
+          },
+        ],
+        page,
+        page_size: pageSize,
+        total: 1,
+        total_pages: 1,
+        totals: {
+          trades_count: 1,
+          closed_trades_count: 0,
+          open_trades_count: 1,
+          total_realized_pnl: "0.000000000000000000",
+          total_unrealized_pnl: "13.000000000000000000",
+          total_net_pnl: "13.000000000000000000",
+          total_fees: "0.100000000000000000",
+          total_slippage_cost: "0.010000000000000000",
+        },
+      } satisfies AppPaperTradePage;
+      await this.json(route, 200, response);
+      return;
+    }
+
+    const appPaperTimelineMatch =
+      /^\/api\/v1\/app\/paper-trading\/sessions\/([0-9a-f]{64})\/portfolio-timeline$/.exec(
+        url.pathname,
+      );
+    if (request.method() === "GET" && appPaperTimelineMatch) {
+      const role = this.roleForRequest(request);
+      if (!role) {
+        await this.apiError(
+          route,
+          401,
+          "authentication_required",
+          "Autenticação válida é obrigatória.",
+        );
+        return;
+      }
+      if (role !== "admin") {
+        await this.apiError(route, 403, "forbidden", "Acesso negado.");
+        return;
+      }
+      const observation = (index: number, equity: string) => ({
+        candle_index: index,
+        candle_open_time: `2026-08-0${index + 1}T00:00:00Z`,
+        candle_close_time: `2026-08-0${index + 1}T00:15:00Z`,
+        mark_price: "105.000000000000000000",
+        quote_cash: "900.000000000000000000",
+        base_quantity: "1.000000000000000000",
+        average_entry_price: "100.000000000000000000",
+        cost_basis: "100.000000000000000000",
+        realized_pnl: "4.900000000000000000",
+        unrealized_pnl: "5.000000000000000000",
+        total_fees: "0.100000000000000000",
+        total_slippage_cost: "0.010000000000000000",
+        equity,
+        peak_equity: "1010.000000000000000000",
+        drawdown: "0.100000000000000000",
+        drawdown_pct: "0.009900990099009901",
+        risk_halt: false,
+      });
+      const items = [
+        observation(0, "1009.900000000000000000"),
+        observation(1, "1009.800000000000000000"),
+      ];
+      const response = {
+        session_id: appPaperTimelineMatch[1],
+        state_checksum: "b".repeat(64),
+        base_asset: "BTC",
+        quote_asset: "USDT",
+        timeframe: "15m",
+        dataset_version: "a".repeat(64),
+        timeline_id: "e".repeat(64),
+        timeline_content_checksum: "f".repeat(64),
+        initial_capital: "1000.000000000000000000",
+        available_start: "2026-08-01T00:00:00Z",
+        available_end: "2026-08-04T00:00:00Z",
+        range_start: "2026-08-01T00:00:00Z",
+        range_end: "2026-08-04T00:00:00Z",
+        limit: Number(url.searchParams.get("limit") ?? "1000"),
+        count: items.length,
+        total_observations: items.length,
+        has_more_before: false,
+        next_before: null,
+        content_checksum: "1".repeat(64),
+        items,
+      } satisfies AppPaperPortfolioTimelinePage;
+      await this.json(route, 200, response);
+      return;
+    }
+
+    const appPaperPeriodMatch =
+      /^\/api\/v1\/app\/paper-trading\/sessions\/([0-9a-f]{64})\/period-metrics$/.exec(
+        url.pathname,
+      );
+    if (request.method() === "GET" && appPaperPeriodMatch) {
+      const role = this.roleForRequest(request);
+      if (!role) {
+        await this.apiError(
+          route,
+          401,
+          "authentication_required",
+          "Autenticação válida é obrigatória.",
+        );
+        return;
+      }
+      if (role !== "admin") {
+        await this.apiError(route, 403, "forbidden", "Acesso negado.");
+        return;
+      }
+      const bucket = {
+        period_start: "2026-08-01T00:00:00Z",
+        period_end: "2026-08-02T00:00:00Z",
+        quote_asset: "USDT",
+        realizations_count: 1,
+        winning_realizations_count: 1,
+        losing_realizations_count: 0,
+        breakeven_realizations_count: 0,
+        exit_notional: "105.000000000000000000",
+        released_cost_basis: "100.000000000000000000",
+        realized_fees: "0.100000000000000000",
+        realized_slippage_cost: "0.010000000000000000",
+        gross_profit: "4.890000000000000000",
+        gross_loss: "0.000000000000000000",
+        realized_pnl: "4.890000000000000000",
+        win_rate_pct: "100.000000000000000000",
+        profit_factor: null,
+      };
+      const response = {
+        session_id: appPaperPeriodMatch[1],
+        quote_asset: "USDT",
+        granularity: "DAILY",
+        period_from:
+          url.searchParams.get("period_from") ?? "2026-08-01T00:00:00Z",
+        period_before:
+          url.searchParams.get("period_before") ?? "2026-08-04T00:00:00Z",
+        items: [bucket],
+        totals: {
+          periods_count: 3,
+          active_periods_count: 1,
+          quote_asset: "USDT",
+          realizations_count: 1,
+          winning_realizations_count: 1,
+          losing_realizations_count: 0,
+          breakeven_realizations_count: 0,
+          exit_notional: bucket.exit_notional,
+          released_cost_basis: bucket.released_cost_basis,
+          realized_fees: bucket.realized_fees,
+          realized_slippage_cost: bucket.realized_slippage_cost,
+          gross_profit: bucket.gross_profit,
+          gross_loss: bucket.gross_loss,
+          realized_pnl: bucket.realized_pnl,
+          win_rate_pct: bucket.win_rate_pct,
+          profit_factor: bucket.profit_factor,
+        },
+        query_checksum: "2".repeat(64),
+        content_checksum: "3".repeat(64),
+      } satisfies AppPaperPeriodMetricsSeries;
+      await this.json(route, 200, response);
+      return;
+    }
+
+    const appPaperDetailMatch =
+      /^\/api\/v1\/app\/paper-trading\/sessions\/([0-9a-f]{64})$/.exec(
+        url.pathname,
+      );
+    if (request.method() === "GET" && appPaperDetailMatch) {
+      const role = this.roleForRequest(request);
+      if (!role) {
+        await this.apiError(
+          route,
+          401,
+          "authentication_required",
+          "Autenticação válida é obrigatória.",
+        );
+        return;
+      }
+      if (role !== "admin") {
+        await this.apiError(route, 403, "forbidden", "Acesso negado.");
+        return;
+      }
+      const response = {
+        session_id: appPaperDetailMatch[1],
+        base_asset: "BTC",
+        quote_asset: "USDT",
+        timeframe: "15m",
+        strategy_name: "paper-buy-test",
+        strategy_version: "1",
+        state_available: true,
+        last_candle_open_time: "2026-08-08T00:30:00Z",
+      } satisfies AppPaperSessionDetail;
+      await this.json(route, 200, response);
+      return;
+    }
+
+    const appMarketCandlesMatch =
+      /^\/api\/v1\/app\/market-data\/candles\/([^/]+)\/([^/]+)$/.exec(
+        url.pathname,
+      );
+    if (request.method() === "GET" && appMarketCandlesMatch) {
+      const role = this.roleForRequest(request);
+      if (!role) {
+        await this.apiError(
+          route,
+          401,
+          "authentication_required",
+          "Autenticação válida é obrigatória.",
+        );
+        return;
+      }
+      const [, rawBaseAsset, rawQuoteAsset] = appMarketCandlesMatch;
+      const baseAsset = decodeURIComponent(rawBaseAsset).toUpperCase();
+      const quoteAsset = decodeURIComponent(rawQuoteAsset).toUpperCase();
+      const timeframe = url.searchParams.get("timeframe") ?? "15m";
+      const datasetVersion = "a".repeat(64);
+      const contentChecksum = "b".repeat(64);
+      const response = {
+        schema_version: 1,
+        exchange: "binance",
+        market_type: "spot",
+        symbol: `${baseAsset}/${quoteAsset}`,
+        base_asset: baseAsset,
+        quote_asset: quoteAsset,
+        timeframe,
+        requested_before: null,
+        available_start: "2026-08-08T00:00:00Z",
+        available_end: "2026-08-08T00:45:00Z",
+        range_start: "2026-08-08T00:00:00Z",
+        range_end: "2026-08-08T00:45:00Z",
+        limit: Number(url.searchParams.get("limit") ?? "1000"),
+        count: 3,
+        dataset_candle_count: 3,
+        dataset_version: datasetVersion,
+        dataset_version_algorithm: "sha256",
+        content_checksum: contentChecksum,
+        has_more_before: false,
+        next_before: null,
+        items: [
+          [
+            "2026-08-08T00:00:00Z",
+            "2026-08-08T00:14:59.999Z",
+            "100",
+            "110",
+            "90",
+            "105",
+          ],
+          [
+            "2026-08-08T00:15:00Z",
+            "2026-08-08T00:29:59.999Z",
+            "105",
+            "115",
+            "100",
+            "112",
+          ],
+          [
+            "2026-08-08T00:30:00Z",
+            "2026-08-08T00:44:59.999Z",
+            "112",
+            "120",
+            "108",
+            "118",
+          ],
+        ].map(([openTime, closeTime, open, high, low, close]) => ({
+          open_time: openTime,
+          close_time: closeTime,
+          open,
+          high,
+          low,
+          close,
+          volume: "2.500000000000000000",
+          quote_volume: null,
+          trade_count: 10,
+          is_closed: true,
+          source: "e2e_fixture",
+        })),
+      } satisfies MarketCandlePageResponse;
+      await this.json(route, 200, response, {
+        "Cache-Control": "no-store",
+        "X-ADT-Candle-Dataset-Version": datasetVersion,
+        "X-ADT-Candle-Content-Checksum": contentChecksum,
+        "X-ADT-Candle-Rows": "3",
+      });
       return;
     }
 

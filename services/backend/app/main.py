@@ -23,11 +23,16 @@ from app.api.routes import (
     admin_settings,
     admin_simulations,
     admin_strategies,
+    app_market_candles,
+    app_paper_session_detail,
+    app_paper_session_performance,
+    app_paper_sessions,
     assets,
     health,
     paper_trading,
     public,
     system,
+    user_app,
 )
 from app.auth import SupabaseJWTVerifier
 from app.core.config import Settings, get_settings
@@ -241,6 +246,11 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(assets.router)
     application.include_router(system.router)
     application.include_router(public.router)
+    application.include_router(user_app.router)
+    application.include_router(app_market_candles.router)
+    application.include_router(app_paper_sessions.router)
+    application.include_router(app_paper_session_detail.router)
+    application.include_router(app_paper_session_performance.router)
     application.include_router(paper_trading.router)
     application.include_router(admin.router)
     application.include_router(admin_market_candles.router)

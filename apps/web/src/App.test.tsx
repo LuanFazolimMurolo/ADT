@@ -5,7 +5,9 @@ import App from './App'
 vi.mock('./lib/supabase', () => ({
   getSupabaseClient: () => ({
     auth: {
-      getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
+      getSession: vi
+        .fn()
+        .mockResolvedValue({ data: { session: null }, error: null }),
       onAuthStateChange: vi.fn(() => ({
         data: { subscription: { unsubscribe: vi.fn() } },
       })),
@@ -17,7 +19,11 @@ vi.mock('./lib/supabase', () => ({
 
 vi.mock('./http/client', async () => {
   class ApiError extends Error {
-    constructor(public status: number, public code: string, message: string) {
+    constructor(
+      public status: number,
+      public code: string,
+      message: string,
+    ) {
       super(message)
     }
   }
@@ -30,16 +36,29 @@ vi.mock('./http/client', async () => {
         environment: 'development',
         timestamp: new Date().toISOString(),
       }),
+      getPublicSimulation: vi.fn().mockResolvedValue(null),
     },
   }
 })
 
 describe('site público', () => {
-  it('mantém o site público sem login ou cadastro visível', async () => {
+  it('mantém a landing pública e oferece somente o login geral', async () => {
     render(<App />)
-    expect(screen.getByText(/Decisões frias/)).toBeDefined()
-    expect(screen.getByRole('heading', { name: 'Paper trading' })).toBeDefined()
-    expect(screen.queryByText('Entrar')).toBeNull()
-    expect(screen.queryByText(/cadastro/i)?.textContent).toContain('sem cadastro público')
+    await screen.findByText('API operacional')
+    await screen.findByText('Nenhuma simulação pública ativa no momento.')
+
+    expect(screen.getByText(/Pesquisa disciplinada/)).toBeDefined()
+    expect(
+      screen.getByRole('heading', { name: 'Paper trading público' }),
+    ).toBeDefined()
+    expect(
+      screen.getByRole('link', { name: 'Entrar' }).getAttribute('href'),
+    ).toBe('/login')
+    expect(
+      screen.queryByRole('link', { name: /criar conta|registrar|sign up/i }),
+    ).toBeNull()
+    expect(screen.queryByText(/cadastro/i)?.textContent?.toLowerCase()).toContain(
+      'sem cadastro público',
+    )
   })
 })

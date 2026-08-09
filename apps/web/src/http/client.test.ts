@@ -25,6 +25,166 @@ describe("ApiClient", () => {
     }
   });
 
+  it("consulta a identidade /app com Bearer sem exigir rota administrativa", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        user_id: "11111111-1111-4111-8111-111111111111",
+        is_admin: false,
+      }),
+    );
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    await expect(client.getAppMe()).resolves.toMatchObject({
+      is_admin: false,
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://api.test/api/v1/app/me");
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer token");
+  });
+
+  it("consulta candles autenticados somente pela superfície /app", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        items: [],
+      }),
+    );
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    await client.getAppMarketCandles("BTC", "USDT", {
+      timeframe: "15m",
+      before: "2026-08-08T00:00:00Z",
+      limit: 1000,
+    });
+
+    const requestedUrl = new URL(fetchMock.mock.calls[0]?.[0] as string);
+    expect(requestedUrl.pathname).toBe(
+      "/api/v1/app/market-data/candles/BTC/USDT",
+    );
+    expect(requestedUrl.pathname).not.toContain("/api/v1/admin/");
+    expect(requestedUrl.searchParams.get("timeframe")).toBe("15m");
+    expect(requestedUrl.searchParams.get("before")).toBe(
+      "2026-08-08T00:00:00Z",
+    );
+    expect(requestedUrl.searchParams.get("limit")).toBe("1000");
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer token");
+  });
+
+  it("consulta o catálogo bounded de sessões somente pela superfície /app", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        items: [],
+        page: 2,
+        page_size: 20,
+        total: 0,
+        total_pages: 0,
+      }),
+    );
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    await client.getAppPaperSessions(2, 20);
+
+    const requestedUrl = new URL(fetchMock.mock.calls[0]?.[0] as string);
+    expect(requestedUrl.pathname).toBe("/api/v1/app/paper-trading/sessions");
+    expect(requestedUrl.pathname).not.toContain("/api/v1/admin/");
+    expect(requestedUrl.searchParams.get("page")).toBe("2");
+    expect(requestedUrl.searchParams.get("page_size")).toBe("20");
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer token");
+  });
+
+  it("consulta detail, annotations e trades somente por rotas session-scoped /app", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(200, {})));
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+    const sessionId = "a".repeat(64);
+
+    await client.getAppPaperSession(sessionId);
+    await client.getAppPaperChartAnnotations(sessionId, {
+      start: "2026-08-08T00:00:00Z",
+      before: "2026-08-08T01:00:00Z",
+      limit: 5000,
+    });
+    await client.getAppPaperTrades(
+      sessionId,
+      { status: "OPEN", openedFrom: "2026-08-01T00:00:00Z" },
+      2,
+      100,
+    );
+
+    const urls = fetchMock.mock.calls.map((call) => new URL(call[0] as string));
+    expect(urls.map((url) => url.pathname)).toEqual([
+      `/api/v1/app/paper-trading/sessions/${sessionId}`,
+      `/api/v1/app/paper-trading/sessions/${sessionId}/chart-annotations`,
+      `/api/v1/app/paper-trading/sessions/${sessionId}/trades`,
+    ]);
+    expect(urls.every((url) => !url.pathname.includes("/api/v1/admin/"))).toBe(
+      true,
+    );
+    expect(urls[1].searchParams.get("limit")).toBe("5000");
+    expect(urls[2].searchParams.get("status")).toBe("OPEN");
+    expect(urls[2].searchParams.get("page")).toBe("2");
+    expect(urls[2].searchParams.get("page_size")).toBe("100");
+    expect(urls[2].searchParams.has("session_id")).toBe(false);
+  });
+
+  it("consulta timeline e period metrics somente pela sessão do path /app", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(200, {})));
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+    const sessionId = "a".repeat(64);
+
+    await client.getAppPaperPortfolioTimeline(sessionId, {
+      before: "2026-08-08T00:00:00Z",
+      limit: 5000,
+    });
+    await client.getAppPaperPeriodMetrics(sessionId, {
+      periodFrom: "2026-08-01T00:00:00Z",
+      periodBefore: "2026-08-08T00:00:00Z",
+      granularity: "DAILY",
+    });
+
+    const urls = fetchMock.mock.calls.map((call) => new URL(call[0] as string));
+    expect(urls.map((url) => url.pathname)).toEqual([
+      `/api/v1/app/paper-trading/sessions/${sessionId}/portfolio-timeline`,
+      `/api/v1/app/paper-trading/sessions/${sessionId}/period-metrics`,
+    ]);
+    expect(urls.every((url) => !url.pathname.includes("/api/v1/admin/"))).toBe(
+      true,
+    );
+    expect(urls[0].searchParams.get("before")).toBe("2026-08-08T00:00:00Z");
+    expect(urls[0].searchParams.get("limit")).toBe("5000");
+    expect(urls[1].searchParams.get("period_from")).toBe(
+      "2026-08-01T00:00:00Z",
+    );
+    expect(urls[1].searchParams.get("granularity")).toBe("DAILY");
+    expect(urls[1].searchParams.has("session_id")).toBe(false);
+    expect(urls[1].searchParams.has("quote_asset")).toBe(false);
+  });
+
   it("consulta a timeline de portfólio com cursor e limite autenticados", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse(200, {
@@ -217,15 +377,62 @@ describe("ApiClient", () => {
     const client = new ApiClient({
       baseUrl: "http://api.test",
       getAccessToken: async () => "token",
-      fetchImplementation: vi
-        .fn()
-        .mockResolvedValue(
-          jsonResponse(status, {
-            error: { code, message: "Mensagem segura." },
-          }),
-        ),
+      fetchImplementation: vi.fn().mockResolvedValue(
+        jsonResponse(status, {
+          error: { code, message: "Mensagem segura." },
+        }),
+      ),
     });
     await expect(client.getAdminMe()).rejects.toMatchObject({ status, code });
+  });
+
+  it("propaga 403 autenticado sem invalidar a sessão", async () => {
+    const onFailure = vi.fn();
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "valid-token",
+      onAuthenticationFailure: onFailure,
+      fetchImplementation: vi.fn().mockResolvedValue(
+        jsonResponse(403, {
+          error: { code: "administrator_required", message: "Negado." },
+        }),
+      ) as typeof fetch,
+    });
+
+    await expect(client.getAdminMe()).rejects.toMatchObject({
+      status: 403,
+      code: "administrator_required",
+    });
+    expect(onFailure).not.toHaveBeenCalled();
+  });
+
+  it("renova uma vez em GET após 401 e mantém a sessão quando o retry funciona", async () => {
+    const onFailure = vi.fn();
+    const refreshAccessToken = vi.fn().mockResolvedValue("new-token");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(401, { error: { code: "expired", message: "Expirado." } }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(200, { user_id: "id", is_admin: true }),
+      );
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "old-token",
+      refreshAccessToken,
+      onAuthenticationFailure: onFailure,
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    await expect(client.getAdminMe()).resolves.toMatchObject({
+      is_admin: true,
+    });
+    expect(refreshAccessToken).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retryHeaders = fetchMock.mock.calls[1]?.[1]?.headers as Headers;
+    expect(retryHeaders.get("Authorization")).toBe("Bearer new-token");
+    expect(onFailure).not.toHaveBeenCalled();
   });
 
   it("renova uma vez em GET e encerra a sessão após 401 persistente", async () => {
@@ -277,7 +484,7 @@ describe("ApiClient", () => {
     expect(onFailure).toHaveBeenCalledWith("token");
   });
 
-  it("encerra a sessão se o GET renovado for proibido", async () => {
+  it("propaga 403 após refresh sem invalidar a sessão renovada", async () => {
     const onFailure = vi.fn();
     const fetchMock = vi
       .fn()
@@ -299,8 +506,35 @@ describe("ApiClient", () => {
       status: 403,
       code: "forbidden",
     });
-    expect(onFailure).toHaveBeenCalledWith("new-token");
+    expect(onFailure).not.toHaveBeenCalled();
   });
+
+  it.each(["POST", "PATCH"])(
+    "propaga 403 em %s sem refresh ou falha de autenticação",
+    async (method) => {
+      const onFailure = vi.fn();
+      const refreshAccessToken = vi.fn();
+      const fetchMock = vi.fn().mockResolvedValue(
+        jsonResponse(403, {
+          error: { code: "forbidden", message: "Negado." },
+        }),
+      );
+      const client = new ApiClient({
+        baseUrl: "http://api.test",
+        getAccessToken: async () => "valid-token",
+        refreshAccessToken,
+        onAuthenticationFailure: onFailure,
+        fetchImplementation: fetchMock as typeof fetch,
+      });
+
+      await expect(
+        client.request("/api/v1/admin/resource", { method }),
+      ).rejects.toMatchObject({ status: 403, code: "forbidden" });
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(refreshAccessToken).not.toHaveBeenCalled();
+      expect(onFailure).not.toHaveBeenCalled();
+    },
+  );
 
   it("normaliza falha ao obter a sessão e invalida sem vazar detalhes", async () => {
     const onFailure = vi.fn();

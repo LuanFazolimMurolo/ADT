@@ -1,7 +1,22 @@
-import type {
-  MarketCandle,
-  PaperChartAnnotationPageResponse,
-} from "../types/api";
+import type { MarketCandle } from "../types/api";
+
+export interface ChartAnnotationData {
+  fills_count: number;
+  fills: readonly {
+    fill_id: string;
+    trade_id: string;
+    trade_sequence: number;
+    role: "ENTRY" | "EXIT";
+    event_time: string;
+  }[];
+  orders: readonly {
+    order_id: string;
+    created_at: string;
+    status: string;
+    stop_price: string | null;
+    is_engine_protective_stop: boolean;
+  }[];
+}
 
 export type ChartMarkerBarPosition = "aboveBar" | "belowBar" | "inBar";
 
@@ -80,7 +95,7 @@ function containingCandleOpenTime(
 
 export function buildChartMarkers(
   candles: readonly MarketCandle[],
-  annotations: PaperChartAnnotationPageResponse | null,
+  annotations: ChartAnnotationData | null,
   selectedTradeId: string | null,
 ): ChartAnnotationMarker[] {
   if (!annotations) return [];

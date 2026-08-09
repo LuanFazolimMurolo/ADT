@@ -1,7 +1,22 @@
-import type {
-  PaperPeriodMetricsBucket,
-  PaperPeriodMetricsSeriesResponse,
-} from "../types/api";
+import type { PaperPeriodGranularity } from "../types/api";
+
+export interface PeriodMetricsBucketData {
+  period_start: string;
+  period_end: string;
+  realizations_count: number;
+  winning_realizations_count: number;
+  losing_realizations_count: number;
+  breakeven_realizations_count: number;
+  realized_fees: string;
+  realized_slippage_cost: string;
+  realized_pnl: string;
+  profit_factor: string | null;
+}
+
+export interface PeriodPerformanceSeriesData {
+  granularity: PaperPeriodGranularity;
+  items: readonly PeriodMetricsBucketData[];
+}
 
 export interface PeriodChartPoint {
   time: string;
@@ -51,7 +66,7 @@ function visualNumber(value: string, field: string): number {
 }
 
 function metricPoint(
-  bucket: PaperPeriodMetricsBucket,
+  bucket: PeriodMetricsBucketData,
   field: "realized_pnl" | "realized_fees" | "realized_slippage_cost",
 ): PeriodChartPoint {
   return {
@@ -61,7 +76,7 @@ function metricPoint(
 }
 
 export function buildPeriodPerformanceProjection(
-  series: PaperPeriodMetricsSeriesResponse,
+  series: PeriodPerformanceSeriesData,
 ): PeriodPerformanceProjection {
   const outcomes = series.items.reduce<PeriodOutcomeDistribution>(
     (current, bucket) => ({
@@ -96,7 +111,7 @@ export function buildPeriodPerformanceProjection(
 }
 
 export function buildPeriodHeatmap(
-  series: PaperPeriodMetricsSeriesResponse,
+  series: PeriodPerformanceSeriesData,
   maxBuckets = PERIOD_HEATMAP_MAX_BUCKETS,
 ): PeriodHeatmapProjection {
   if (!Number.isInteger(maxBuckets) || maxBuckets < 1) {

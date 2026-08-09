@@ -108,11 +108,12 @@ those generated schemas. Decimal inputs are ordinary base-10 strings and
 decimal outputs remain strings. JSON `null` is distinct from an absent or empty
 HTTP body.
 
-## Phase 1C frontend
+## Phase 1C frontend baseline
 
-The React application keeps the public site at `/` and exposes no registration
-or visible login entry there. Administrative authentication starts only under
-`/admin`. The frontend is split into these boundaries:
+At the Phase 1C baseline, the React application kept the public site at `/`
+without registration or a visible login entry, and authenticated access was
+administrative-only under `/admin`. The frontend was split into these
+boundaries:
 
 - `config/` validates the three public `VITE_*` variables without echoing
   configured values;
@@ -140,6 +141,50 @@ Financial decimals remain strings across the JSON boundary. Withdrawal signs
 are mapped to the backend request contract, adjustments preserve the explicit
 sign, and balances/P&L displayed by the UI are always values calculated and
 returned by the backend.
+
+## Phase 6 authenticated-user frontend
+
+Phase 6-06 extends the historical Phase 1C baseline into three distinct
+presentation and authorization boundaries:
+
+- public `/`, backed only by intentional public status and simulation
+  projections;
+- authenticated `/app`, for read-only product views;
+- administrative `/admin`, for operational and audit workflows.
+
+The implemented routes are `/`, `/login`, `/app`, `/app/market`,
+`/app/sessions`, `/app/sessions/:sessionId`,
+`/app/sessions/:sessionId/performance`, `/admin/login` and `/admin/*`. Public
+self-registration remains disabled.
+
+Every restored or newly created Supabase session is confirmed through
+`GET /api/v1/app/me`. Its `user_id` comes from the verified token subject and
+its `is_admin` value comes exclusively from the backend lookup in
+`public.app_admins`. The older `GET /api/v1/admin/me` remains an
+administrator-only contract; it is not the general identity endpoint.
+
+`AuthenticatedRoute` requires a valid session and confirmed `/app/me` identity
+for `/app`. The administrative `ProtectedRoute` additionally uses the confirmed
+`is_admin` value to keep non-administrators out of the administrative UI. This
+frontend guard is navigation behavior only: every `/admin` API remains protected
+by backend `require_administrator`, and every session-scoped `/app` paper read
+is authorized independently by the backend before artifact or repository
+lookup.
+
+Authentication and authorization failures have separate lifecycle semantics.
+A missing, invalid or expired credential returns 401 and a persistent 401
+invalidates local access. A 403 means that the still-authenticated user lacks
+authorization and does not destroy a valid Supabase session. Consequently, a
+non-administrator may use `/app` and `/app/market`, receives an empty paper
+session catalog and cannot read a paper session by guessing its ID.
+
+There is no persisted `user_id → paper_session_id` ownership relation. The MVP
+project-owner reader policy therefore reuses membership in `app_admins`:
+members may read all local paper sessions through the GET-only `/app` projection,
+while non-members receive the same pre-lookup 403 for existing and nonexistent
+session IDs. This is an explicit temporary authorization policy, not ownership.
+The complete operational contract is
+[`docs/PHASE6_USER_SURFACES.md`](./PHASE6_USER_SURFACES.md).
 
 ## Observability and HTTP security
 
