@@ -150,6 +150,13 @@ class OperationIdempotencyConflictError(DomainConflictError):
     default_message = "A chave de idempotência já identifica outra solicitação."
 
 
+class MarketOperationPlanConflictError(DomainConflictError):
+    """The submitted checksum differs from the backend-recomputed bounded plan."""
+
+    code = "market_operation_plan_conflict"
+    default_message = "O plano operacional diverge da prévia confirmada."
+
+
 class InvalidDatasetIdError(InvalidDomainInputError):
     """An opaque HTTP dataset identifier is malformed or non-canonical."""
 

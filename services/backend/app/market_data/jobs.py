@@ -30,6 +30,7 @@ from app.market_data.planning import (
     BackfillProgress,
     MarketJobStatus,
     MarketJobType,
+    backfill_plan_checksum,
     expected_candle_count,
 )
 from app.market_data.timeframes import get_timeframe
@@ -89,7 +90,7 @@ class MarketJobCatalog:
                 if not isinstance(raw_existing, dict):
                     raise MarketDataStorageError("O catálogo de jobs é inválido.")
                 existing = self._decode(raw_existing)
-                if existing.plan_checksum != _plan_checksum(plan):
+                if existing.plan_checksum != backfill_plan_checksum(plan):
                     raise MarketDataInconsistencyError("O plano persistido do job é imutável.")
                 return existing
             now = self._now()
@@ -105,7 +106,7 @@ class MarketJobCatalog:
                     (chunk.data_range.start.isoformat(), chunk.data_range.end.isoformat())
                     for chunk in plan.chunks
                 ),
-                plan_checksum=_plan_checksum(plan),
+                plan_checksum=backfill_plan_checksum(plan),
                 next_chunk_index=0,
                 chunks_completed=0,
                 candles_expected=plan.expected_candles,
@@ -445,25 +446,6 @@ class MarketJobCatalog:
                 yield
             finally:
                 fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
-
-
-def _plan_checksum(plan: BackfillPlan) -> str:
-    payload = "|".join(
-        (
-            plan.dataset_key,
-            plan.job_type.value,
-            plan.timeframe.code,
-            plan.data_range.start.isoformat(),
-            plan.data_range.end.isoformat(),
-            str(plan.expected_candles),
-            str(plan.chunk_candles),
-            *(
-                f"{item.data_range.start.isoformat()}:{item.data_range.end.isoformat()}"
-                for item in plan.chunks
-            ),
-        )
-    )
-    return sha256(payload.encode()).hexdigest()
 
 
 def _record_checksum(record: MarketJobRecord) -> str:

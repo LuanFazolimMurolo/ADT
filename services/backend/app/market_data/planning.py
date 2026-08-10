@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from hashlib import sha256
 from uuid import uuid4
 
 from app.market_data.domain import DataRange, Instrument, Timeframe, require_utc
@@ -45,6 +46,26 @@ class BackfillPlan:
     expected_candles: int
     chunk_candles: int
     job_type: MarketJobType = MarketJobType.BACKFILL
+
+
+def backfill_plan_checksum(plan: BackfillPlan) -> str:
+    """Return the canonical checksum used by local jobs and operational previews."""
+    payload = "|".join(
+        (
+            plan.dataset_key,
+            plan.job_type.value,
+            plan.timeframe.code,
+            plan.data_range.start.isoformat(),
+            plan.data_range.end.isoformat(),
+            str(plan.expected_candles),
+            str(plan.chunk_candles),
+            *(
+                f"{item.data_range.start.isoformat()}:{item.data_range.end.isoformat()}"
+                for item in plan.chunks
+            ),
+        )
+    )
+    return sha256(payload.encode()).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)

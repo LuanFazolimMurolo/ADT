@@ -49,6 +49,9 @@ class MarketOperationRepository(Protocol):
         *,
         limit: int,
         offset: int,
+        state: MarketOperationState | None = None,
+        requested_by: UUID | None = None,
+        dataset_id: str | None = None,
     ) -> tuple[MarketOperationSnapshot, ...]: ...
 
     async def request_state(
