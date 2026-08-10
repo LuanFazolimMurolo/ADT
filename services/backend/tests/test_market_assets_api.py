@@ -120,7 +120,9 @@ async def test_asset_list_exposes_normalized_catalog_and_freshness(
         "30m",
         "1h",
         "4h",
+        "12h",
         "1d",
+        "1w",
     ]
     assert payload["total"] == 1
     assert payload["total_pages"] == 1

@@ -41,7 +41,7 @@ from app.market_data.operations import (
     encode_dataset_id,
     operation_request_fingerprint,
 )
-from app.market_data.timeframes import get_timeframe
+from app.market_data.timeframes import TIMEFRAMES, get_timeframe
 from app.repositories.market_operation_repository import (
     PostgresMarketOperationRepository,
     failure_message_for,
@@ -294,6 +294,20 @@ def test_phase2d_schema_indexes_rls_and_privileges(database_url: str) -> None:
             """
         ).fetchone()
         assert foreign_key == ("auth.users",)
+
+        identity_constraint = connection.execute(
+            """
+            select pg_get_constraintdef(oid)
+            from pg_catalog.pg_constraint
+            where conrelid = 'public.market_data_operations'::regclass
+              and conname = 'market_data_operations_identity_check'
+            """
+        ).fetchone()
+        assert identity_constraint is not None
+        identity_definition = identity_constraint[0]
+        assert isinstance(identity_definition, str)
+        for timeframe_code in TIMEFRAMES:
+            assert f"'{timeframe_code}'" in identity_definition
 
         for role in ("anon", "authenticated", "service_role"):
             privileges = connection.execute(

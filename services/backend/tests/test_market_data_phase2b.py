@@ -383,7 +383,7 @@ def _executor(
 @pytest.mark.parametrize("code", tuple(TIMEFRAMES))
 def test_exact_planning_for_all_supported_timeframes(code: str) -> None:
     timeframe = get_timeframe(code)
-    start = datetime(2026, 1, 1, tzinfo=UTC)
+    start = datetime(2026, 1, 5 if code == "1w" else 1, tzinfo=UTC)
     plan = _planner(chunk=3).backfill(
         _key(code),
         timeframe,

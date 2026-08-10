@@ -72,7 +72,7 @@ def test_submillisecond_timestamp_is_rejected() -> None:
         candle(utc(2026, 1, 1) + timedelta(microseconds=1))
 
 
-@pytest.mark.parametrize("code", ["1m", "5m", "15m", "30m", "1h", "4h", "1d"])
+@pytest.mark.parametrize("code", ["1m", "5m", "15m", "30m", "1h", "4h", "12h", "1d"])
 def test_configured_timeframes_align_and_advance(code: str) -> None:
     timeframe = get_timeframe(code)
     opening = utc(2026, 1, 1)
@@ -82,11 +82,22 @@ def test_configured_timeframes_align_and_advance(code: str) -> None:
     assert timeframe.native_code(Exchange.BINANCE) == code
 
 
+def test_weekly_timeframe_is_anchored_to_monday_utc() -> None:
+    timeframe = get_timeframe("1w")
+    monday = utc(2026, 8, 10)
+    sunday = utc(2026, 8, 9)
+
+    assert timeframe.validate_open_time(monday)
+    assert not timeframe.validate_open_time(sunday)
+    assert timeframe.next_open_time(monday) == monday + timedelta(days=7)
+    assert timeframe.native_code(Exchange.BINANCE) == "1w"
+
+
 def test_timeframe_rejects_misalignment_and_unknown_code() -> None:
     assert not get_timeframe("5m").validate_open_time(utc(2026, 1, 1) + timedelta(minutes=1))
     with pytest.raises(UnsupportedTimeframeError):
         get_timeframe("2h")
-    assert len(TIMEFRAMES) == 7
+    assert len(TIMEFRAMES) == 9
 
 
 def test_trading_pair_is_canonical_and_blocks_path_traversal() -> None:
