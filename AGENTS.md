@@ -50,17 +50,16 @@ This file instructs AI assistants (like GitHub Copilot, Claude, or ChatGPT) on h
 
 ### Phases
 
-Current Phase: **5 complete; Phase 6 local closure gate passed, release integration pending**
+Current Phase: **Phase 6 complete; Phase 7 has not started**
 
 - ✅ Phase 4 is available as a stable boundary: finite deterministic search,
   temporal planning, bounded execution, walk-forward selection and explicit
   out-of-sample stability controls
 - ✅ Phase 5 is the stable deterministic paper-trading boundary
-- ✅ Phase 6-01 through 6-06 are implemented; Phase 6-07A through 6-07E
-  closure work is concluded
-- ✅ Phase 6-07F full local backend/frontend/browser gate passed
-- 🚧 Exact staged-diff audit, approved commit, integration into `main` and the
-  annotated `phase-6` tag remain pending before formal Phase 6 completion
+- ✅ Phase 6-01 through 6-07 are complete
+- ✅ The full local backend/frontend/browser gate, staged-diff audit and
+  fast-forward integration into `main` passed
+- ✅ The Phase 6 release is versioned by the annotated `phase-6` tag
 - ❌ Cannot work on: unbounded/random search, genetic or Bayesian optimization,
   real-capital orders, leverage, shorts, derivatives, distributed execution or
   machine learning

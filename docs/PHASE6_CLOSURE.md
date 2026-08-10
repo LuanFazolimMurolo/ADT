@@ -1,15 +1,15 @@
-# Phase 6 closure candidate
+# Phase 6 closure record
 
-**Status: CANDIDATE — LOCAL 6-07F GATE PASSED; RELEASE CLOSURE PENDING**
+**Status: COMPLETE — RELEASED AS `phase-6`**
 
 ## A. Scope and status
 
-This document is the operational closure record for the local Phase 6
-candidate. It consolidates implementation and validation evidence through the
-full local Phase 6-07F gate. It does not mark Phase 6 complete or assert remote
-CI or deployment. Exact staged-diff approval, the approved commit and
-integration, and the annotated `phase-6` tag remain required for formal
-completion.
+This document is the operational closure record for Phase 6. It consolidates
+implementation and validation evidence through the full Phase 6-07F local
+gate, exact staged-diff audit, approved commit and verified fast-forward
+integration into `main`. The final release is identified by the annotated
+`phase-6` tag. Remote CI, deployment and hosted-service validation are not
+claimed unless independently executed and evidenced.
 
 The governing scope remains the [roadmap](./ROADMAP.md) and the
 [Phase 6 architecture](./PHASE6_FRONTEND_AND_CHARTS_ARCHITECTURE.md).
@@ -31,9 +31,10 @@ The governing scope remains the [roadmap](./ROADMAP.md) and the
 - **6-07A–E closure work** covers reconnaissance, integrity closure,
   browser/accessibility validation, deterministic size budgets and the local
   security/auth/OpenAPI/documentation audit.
-- **6-07F local gate** passed the final backend, frontend and browser validation
-  matrix. Exact staged-diff approval, integration and release tagging remain
-  pending.
+- **6-07F closure** passed the final backend, frontend and browser validation
+  matrix. The exact staged diff was approved, the candidate was committed and
+  integrated into `main` by verified fast-forward, and the release is identified
+  by the annotated `phase-6` tag.
 
 ## C. Integrity closure
 
@@ -75,7 +76,8 @@ The final local Phase 6-07F gate has now passed. Backend evidence is 2,218
 passed and 1 skipped with 87% total coverage. Frontend evidence is Vitest 25
 files / 175 passed, successful typecheck, E2E typecheck, lint and OpenAPI
 contract checks, a 129-module production build, and 47/47 Playwright tests.
-Formal integration and the annotated `phase-6` release tag remain pending.
+The approved candidate was integrated into `main` by verified fast-forward,
+and the final Phase 6 release is identified by the annotated `phase-6` tag.
 
 ## E. Performance budgets
 
@@ -237,17 +239,18 @@ unless the roadmap or the final 6-07F review changes the acceptance boundary.
 - [x] Re-run the required browser closure matrix.
 - [x] Confirm deterministic integrity and response/bundle budget evidence.
 - [x] Audit working-tree secrets, local paths, migrations and dependencies.
-- [ ] Audit and approve the complete staged diff and exact file inventory.
-- [ ] Commit and verify the approved Phase 6 closure candidate.
-- [ ] Integrate the candidate into `main` by verified fast-forward.
-- [ ] Create and verify the annotated `phase-6` tag only after remote `main`
-  points to the approved closure commit.
+- [x] Audit and approve the complete staged diff and exact file inventory.
+- [x] Commit and verify the approved Phase 6 closure candidate.
+- [x] Integrate the candidate into `main` by verified fast-forward.
+- [x] Create and verify the annotated `phase-6` tag on the final Phase 6 release
+  commit.
 - Remote CI, deployment and hosted-service validation are not claimed unless
   independently executed and evidenced.
 
 ## K. Formal completion conditions
 
-Phase 6 becomes formally complete only after Phase 6-07F passes its full local
-gate and staged audit, the approved integration is performed, and the annotated
-Phase 6 tag is created as directed. Until all of those conditions are met, the
-authoritative status is **IN PROGRESS — 6-07F RELEASE CLOSURE PENDING**.
+All formal Phase 6 completion conditions are satisfied: the full local
+Phase 6-07F gate passed, the exact staged candidate was audited and approved,
+the candidate was integrated into `main` by verified fast-forward, and the
+annotated `phase-6` tag identifies the final release commit. The authoritative
+status is **COMPLETE**.
