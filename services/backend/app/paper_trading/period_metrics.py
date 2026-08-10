@@ -15,6 +15,7 @@ from app.market_data.domain import Timeframe, TradingPair, require_utc
 from app.paper_trading.domain import paper_session_id
 from app.paper_trading.errors import InvalidPaperSessionError, PaperSessionVerificationError
 from app.paper_trading.journal import PaperTradeJournal, build_paper_trade_journal
+from app.paper_trading.persisted_state import PaperPersistedStateVerifier
 from app.paper_trading.repository import PaperTradingRepository
 
 _SCHEMA_VERSION = 1
@@ -334,10 +335,17 @@ class PaperPeriodMetricsSeries:
 class PaperPeriodMetricsService:
     """Build bounded UTC calendar series from verified SELL realizations."""
 
-    def __init__(self, repository: PaperTradingRepository) -> None:
-        if not isinstance(repository, PaperTradingRepository):
+    def __init__(
+        self,
+        repository: PaperTradingRepository,
+        state_verifier: PaperPersistedStateVerifier,
+    ) -> None:
+        if not isinstance(repository, PaperTradingRepository) or not isinstance(
+            state_verifier, PaperPersistedStateVerifier
+        ):
             raise InvalidPaperSessionError("O repositório de métricas por período é inválido.")
         self._repository = repository
+        self._state_verifier = state_verifier
 
     def build_series(
         self,
@@ -379,6 +387,7 @@ class PaperPeriodMetricsService:
             state = self._repository.load_state(session_id)
             if state is None:
                 continue
+            self._state_verifier.verify(config, state)
             journal = build_paper_trade_journal(config, state)
             source_states.append(
                 PaperPeriodSourceState(

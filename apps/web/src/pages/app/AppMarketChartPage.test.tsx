@@ -153,6 +153,21 @@ describe("AppMarketChartPage", () => {
     );
   });
 
+  it("bloqueia whitespace interno antes de consultar novos candles", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByTestId("market-chart");
+
+    const baseAsset = screen.getByLabelText("Ativo base") as HTMLInputElement;
+    await user.clear(baseAsset);
+    await user.type(baseAsset, "BTC USDT");
+
+    expect(baseAsset.checkValidity()).toBe(false);
+    expect(baseAsset.validity.patternMismatch).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Aplicar seleção" }));
+    expect(mocks.getAppMarketCandles).toHaveBeenCalledTimes(1);
+  });
+
   it("renderiza candles-only e a representação textual Decimal/UTC crítica", async () => {
     renderPage();
 

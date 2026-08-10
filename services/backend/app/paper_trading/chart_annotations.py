@@ -23,13 +23,13 @@ from app.market_data.domain import Timeframe, TradingPair, require_utc
 from app.paper_trading.domain import (
     paper_config_checksum,
     paper_session_id,
-    validate_paper_state_against_config,
 )
 from app.paper_trading.errors import (
     InvalidPaperSessionError,
     PaperSessionVerificationError,
 )
 from app.paper_trading.journal import build_paper_trade_journal
+from app.paper_trading.persisted_state import PaperPersistedStateVerifier
 from app.paper_trading.repository import PaperTradingRepository
 
 PAPER_CHART_ANNOTATION_DEFAULT_LIMIT = 1_000
@@ -260,10 +260,17 @@ class PaperChartAnnotationPage:
 class PaperChartAnnotationReadService:
     """Project verified state events into one bounded chart interval."""
 
-    def __init__(self, repository: PaperTradingRepository) -> None:
-        if not isinstance(repository, PaperTradingRepository):
+    def __init__(
+        self,
+        repository: PaperTradingRepository,
+        state_verifier: PaperPersistedStateVerifier,
+    ) -> None:
+        if not isinstance(repository, PaperTradingRepository) or not isinstance(
+            state_verifier, PaperPersistedStateVerifier
+        ):
             raise InvalidPaperSessionError("O repositório de anotações do gráfico é inválido.")
         self._repository = repository
+        self._state_verifier = state_verifier
 
     def read_page(
         self,
@@ -308,7 +315,7 @@ class PaperChartAnnotationReadService:
                 replayed_at=None,
             )
 
-        validate_paper_state_against_config(state, config)
+        self._state_verifier.verify(config, state)
         journal = build_paper_trade_journal(config, state)
 
         execution_roles: dict[

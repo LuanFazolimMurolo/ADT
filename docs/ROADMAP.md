@@ -475,8 +475,9 @@ any unbounded or random search. Real-time paper trading begins only in Phase 5.
 
 **Status**: Complete. All scoped Phase 5 implementation deliverables passed the
 full repository gate, staged-diff and secret audit, and were merged to `main`.
-The release is versioned by the annotated `phase-5` tag. Phase 6 remains a
-separate future phase and is not started by this closure.
+The release is versioned by the annotated `phase-5` tag. Phase 6 is a separate
+subsequent phase whose implementation and local closure sequence are now in
+progress.
 
 ### Phase 5-01: live asset catalog and public market API ✅
 
@@ -740,12 +741,13 @@ accessible and bounded visual analysis environment without weakening the
 deterministic market-data, paper-trading and audit contracts delivered through
 Phase 5.
 
-**Status**: Phase 6-01 through Phase 6-06 are implemented in the current Phase 6
-feature sequence. The visual architecture, bounded local RAW candle API,
-instrument/paper-session charts, deterministic portfolio timeline, bounded
-performance visualizations and separated public/authenticated/administrative
-surfaces are implemented. Phase 6 remains in progress; Phase 6-07 is the next
-delivery and owns the final integration and closure gate.
+**Status**: Phase 6-01 through Phase 6-06 are implemented. Within Phase 6-07,
+the reconnaissance, integrity/determinism, browser/accessibility, deterministic
+budget and local security/auth/OpenAPI/documentation work (A through E) are
+concluded. The full local Phase 6-07F backend/frontend/browser gate has passed.
+Phase 6 remains **IN PROGRESS** until the exact staged diff is approved, the
+candidate is integrated into `main`, and the annotated `phase-6` tag is created
+and verified.
 
 ### Phase 6-01: visual architecture and chart-data contracts ✅
 
@@ -815,14 +817,22 @@ delivery and owns the final integration and closure gate.
 **Operational contract**:
 [`docs/PHASE6_USER_SURFACES.md`](./PHASE6_USER_SURFACES.md)
 
-### Phase 6-07: integration and closure gate
+### Phase 6-07: integration and closure gate 🚧
 
-- [ ] Backend, frontend, OpenAPI and generated-contract gates
-- [ ] Determinism and tamper-verification tests for historical series
-- [ ] Browser integration and accessibility validation
-- [ ] Response-size, latency and memory-budget validation
-- [ ] Authentication, authorization and secret audit
-- [ ] Documentation, staged-diff audit, merge and annotated Phase 6 tag
+- [x] Closure reconnaissance and gate inventory (6-07A)
+- [x] Final determinism, RAW partition integrity and persisted paper-state
+      binding work (6-07B, including B1R/B2R)
+- [x] Local Chromium browser integration and automated accessibility closure
+      (6-07C)
+- [x] Deterministic response-size and bundle baseline budgets; latency and
+      memory observations remain report-only (6-07D)
+- [x] Local authentication, authorization, secret, OpenAPI and documentation
+      audit (6-07E)
+- [x] Re-run the final full repository backend/frontend/browser matrix and
+      deterministic closure gates (6-07F local gate)
+- [ ] Audit and approve the exact staged diff, commit the candidate, integrate
+      it into `main` and create the annotated `phase-6` tag (6-07F release
+      closure)
 
 **Explicitly out of scope**:
 
@@ -841,7 +851,9 @@ delivery and owns the final integration and closure gate.
 
 **Dependencies**: Phase 5 complete
 **Estimated Duration**: 4 weeks
-**Blockers**: None for Phase 6-06
+**Blockers**: No implementation blocker identified by the completed local
+closure gate; staged-diff approval, integration and the annotated `phase-6` tag
+remain required for formal completion
 
 ---
 

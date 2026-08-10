@@ -27,9 +27,16 @@ from app.market_data.domain import (
 )
 from app.market_data.errors import MarketDataInconsistencyError, MarketDataStorageError
 from app.market_data.filesystem import ensure_safe_path, fsync_directory, market_root
+from app.market_data.integrity import (
+    LEGACY_RAW_DATASET_VERSION_ALGORITHM as _LEGACY_RAW_DATASET_VERSION_ALGORITHM,
+)
+from app.market_data.integrity import (
+    RAW_DATASET_VERSION_ALGORITHM as _RAW_DATASET_VERSION_ALGORITHM,
+)
+from app.market_data.integrity import RawPartitionIntegrityEntry
 
-RAW_DATASET_VERSION_ALGORITHM = "raw-partition-canonical-sha256-v1"
-LEGACY_RAW_DATASET_VERSION_ALGORITHM = "raw-canonical-stream-sha256-legacy"
+RAW_DATASET_VERSION_ALGORITHM = _RAW_DATASET_VERSION_ALGORITHM
+LEGACY_RAW_DATASET_VERSION_ALGORITHM = _LEGACY_RAW_DATASET_VERSION_ALGORITHM
 
 DECIMAL_TYPE = pa.decimal128(38, 18)
 PARQUET_SCHEMA = pa.schema(
@@ -77,6 +84,19 @@ class ParquetUpsertPlan:
     candle_count: int
     checksum: str
     version_algorithm: str = RAW_DATASET_VERSION_ALGORITHM
+    partition_integrity_entries: tuple[RawPartitionIntegrityEntry, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class RawPartitionIntegritySnapshot:
+    """One-pass offline projection of every committed RAW partition."""
+
+    entries: tuple[RawPartitionIntegrityEntry, ...]
+    current_version: str
+    legacy_version: str
+    first_open_time: datetime | None
+    last_open_time: datetime | None
+    candle_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +199,7 @@ class ParquetCandleStore:
                 last,
                 count,
                 compose_raw_dataset_version(()),
+                partition_integrity_entries=(),
             )
 
         identity = _candle_identity(candles[0])
@@ -256,19 +277,7 @@ class ParquetCandleStore:
             )
             stored_count += new_rows
 
-        first, last, current_count = self.first_last_count(
-            candles[0].exchange,
-            candles[0].market_type,
-            pair,
-            candles[0].timeframe,
-        )
-        incoming_times = [item.open_time for item in unique_incoming.values()]
-        if incoming_times:
-            incoming_first = min(incoming_times)
-            incoming_last = max(incoming_times)
-            first = min(first, incoming_first) if first is not None else incoming_first
-            last = max(last, incoming_last) if last is not None else incoming_last
-        checksum = self._future_logical_checksum(
+        future = self._future_dataset_integrity(
             candles[0].exchange,
             candles[0].market_type,
             pair,
@@ -280,20 +289,21 @@ class ParquetCandleStore:
             partitions=tuple(planned),
             stored_count=stored_count,
             duplicate_count=duplicate_count,
-            first_open_time=first,
-            last_open_time=last,
-            candle_count=current_count + stored_count,
-            checksum=checksum,
+            first_open_time=future.first_open_time,
+            last_open_time=future.last_open_time,
+            candle_count=future.candle_count,
+            checksum=future.current_version,
+            partition_integrity_entries=future.entries,
         )
 
-    def _future_logical_checksum(
+    def _future_dataset_integrity(
         self,
         exchange: Exchange,
         market_type: MarketType,
         pair: TradingPair,
         timeframe: Timeframe,
         incoming: dict[tuple[Exchange, str, str, datetime], Candle],
-    ) -> str:
+    ) -> RawPartitionIntegritySnapshot:
         logical: dict[tuple[Exchange, str, str, datetime], Candle] = {}
         dataset = self.dataset_root(exchange, market_type, pair, timeframe)
         if dataset.exists():
@@ -314,8 +324,13 @@ class ParquetCandleStore:
         grouped: dict[tuple[int, int], list[Candle]] = defaultdict(list)
         for candle in logical.values():
             grouped[(candle.open_time.year, candle.open_time.month)].append(candle)
-        partitions = []
+        entries: list[RawPartitionIntegrityEntry] = []
+        legacy = hashlib.sha256()
+        first: datetime | None = None
+        last: datetime | None = None
+        count = 0
         for (year, month), rows in sorted(grouped.items()):
+            ordered = tuple(sorted(rows, key=lambda item: item.open_time))
             target = self._partition_target(
                 exchange,
                 market_type,
@@ -324,13 +339,72 @@ class ParquetCandleStore:
                 year,
                 month,
             )
-            partitions.append(
-                (
-                    target.relative_to(self._root).as_posix(),
-                    raw_partition_logical_checksum(rows),
+            entries.append(
+                RawPartitionIntegrityEntry(
+                    relative_path=target.relative_to(self._root).as_posix(),
+                    checksum=raw_partition_logical_checksum(ordered),
                 )
             )
-        return compose_raw_dataset_version(partitions)
+            for candle in ordered:
+                legacy.update(_canonical_candle_bytes(candle))
+                first = candle.open_time if first is None else min(first, candle.open_time)
+                last = candle.open_time if last is None else max(last, candle.open_time)
+                count += 1
+        canonical_entries = tuple(entries)
+        return RawPartitionIntegritySnapshot(
+            entries=canonical_entries,
+            current_version=compose_raw_dataset_version(
+                (entry.relative_path, entry.checksum) for entry in canonical_entries
+            ),
+            legacy_version=legacy.hexdigest(),
+            first_open_time=first,
+            last_open_time=last,
+            candle_count=count,
+        )
+
+    def partition_integrity_snapshot(
+        self,
+        exchange: Exchange,
+        market_type: MarketType,
+        pair: TradingPair,
+        timeframe: Timeframe,
+    ) -> RawPartitionIntegritySnapshot:
+        """Read every RAW partition once for an explicit offline integrity operation."""
+        entries: list[RawPartitionIntegrityEntry] = []
+        legacy = hashlib.sha256()
+        first: datetime | None = None
+        last: datetime | None = None
+        count = 0
+        for path in self.partition_paths(exchange, market_type, pair, timeframe):
+            rows = self._read_file(
+                path,
+                timeframe=timeframe,
+                expected_exchange=exchange,
+                expected_market_type=market_type,
+                expected_pair=pair,
+            )
+            entries.append(
+                RawPartitionIntegrityEntry(
+                    relative_path=path.relative_to(self._root).as_posix(),
+                    checksum=raw_partition_logical_checksum(rows),
+                )
+            )
+            for candle in rows:
+                legacy.update(_canonical_candle_bytes(candle))
+                first = candle.open_time if first is None else min(first, candle.open_time)
+                last = candle.open_time if last is None else max(last, candle.open_time)
+                count += 1
+        canonical_entries = tuple(entries)
+        return RawPartitionIntegritySnapshot(
+            entries=canonical_entries,
+            current_version=compose_raw_dataset_version(
+                (entry.relative_path, entry.checksum) for entry in canonical_entries
+            ),
+            legacy_version=legacy.hexdigest(),
+            first_open_time=first,
+            last_open_time=last,
+            candle_count=count,
+        )
 
     def prepare_files(self, plan: ParquetUpsertPlan) -> None:
         """Write and fsync every planned temporary Parquet file."""
@@ -414,6 +488,44 @@ class ParquetCandleStore:
                     expected_pair=pair,
                 )
             )
+        return tuple(
+            candle
+            for candle in sorted(candles, key=lambda item: item.open_time)
+            if data_range.start <= candle.open_time < data_range.end
+        )
+
+    def read_verified(
+        self,
+        exchange: Exchange,
+        market_type: MarketType,
+        pair: TradingPair,
+        timeframe: Timeframe,
+        data_range: DataRange,
+        expected_checksums: dict[str, str],
+    ) -> tuple[Candle, ...]:
+        """Read, authenticate and return the same rows from intersecting partitions."""
+        candles: list[Candle] = []
+        for path in self._partition_paths(
+            exchange, market_type, pair, timeframe, data_range.start, data_range.end
+        ):
+            relative = path.relative_to(self._root).as_posix()
+            expected = expected_checksums.get(relative)
+            if expected is None:
+                raise MarketDataInconsistencyError(
+                    "A partição RAW solicitada não possui prova de integridade."
+                )
+            rows = self._read_file(
+                path,
+                timeframe=timeframe,
+                expected_exchange=exchange,
+                expected_market_type=market_type,
+                expected_pair=pair,
+            )
+            if raw_partition_logical_checksum(rows) != expected:
+                raise MarketDataInconsistencyError(
+                    "O conteúdo da partição RAW diverge do manifesto catalogado."
+                )
+            candles.extend(rows)
         return tuple(
             candle
             for candle in sorted(candles, key=lambda item: item.open_time)

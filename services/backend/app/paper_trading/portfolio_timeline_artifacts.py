@@ -26,6 +26,7 @@ from app.paper_trading.errors import (
     PaperPortfolioTimelineNotFoundError,
     PaperSessionCorruptError,
 )
+from app.paper_trading.persisted_state import PaperPersistedStateBinding
 from app.paper_trading.portfolio_timeline import (
     PaperPortfolioObservation,
     PaperPortfolioTimeline,
@@ -249,6 +250,61 @@ class PaperPortfolioTimelineArtifactStore:
         ):
             raise PaperSessionCorruptError()
         return timeline
+
+    def load_state_binding(
+        self,
+        session_id: str,
+        state_id: str,
+        state_checksum: str,
+    ) -> PaperPersistedStateBinding:
+        """Cross-check reference and manifest metadata without reading observations."""
+        _sha256(session_id)
+        _sha256(state_id)
+        _sha256(state_checksum)
+        reference_path = self._reference_path(session_id, state_checksum)
+        if not reference_path.is_file():
+            raise PaperPortfolioTimelineNotFoundError()
+        reference = _read_reference(reference_path)
+        if (
+            reference["session_id"] != session_id
+            or reference["state_id"] != state_id
+            or reference["state_checksum"] != state_checksum
+        ):
+            raise PaperSessionCorruptError()
+
+        timeline_id = _string(reference["timeline_id"])
+        timeline_root = ensure_safe_path(
+            self._market,
+            self._timeline_root(session_id) / timeline_id,
+        )
+        if not timeline_root.is_dir():
+            raise PaperSessionCorruptError()
+        manifest = _read_manifest(ensure_safe_path(self._market, timeline_root / _MANIFEST_NAME))
+        comparable = (
+            ("session_id", "session_id"),
+            ("config_checksum", "config_checksum"),
+            ("state_id", "state_id"),
+            ("state_checksum", "state_checksum"),
+            ("dataset_version", "dataset_version"),
+            ("source_checksum", "source_checksum"),
+            ("timeline_id", "timeline_id"),
+            ("timeline_content_checksum", "content_checksum"),
+        )
+        if any(
+            reference[reference_key] != manifest[manifest_key]
+            for reference_key, manifest_key in comparable
+        ):
+            raise PaperSessionCorruptError()
+        return PaperPersistedStateBinding(
+            session_id=_string(reference["session_id"]),
+            config_checksum=_string(reference["config_checksum"]),
+            state_id=_string(reference["state_id"]),
+            state_checksum=_string(reference["state_checksum"]),
+            dataset_version=_string(reference["dataset_version"]),
+            source_checksum=_string(reference["source_checksum"]),
+            timeline_id=timeline_id,
+            timeline_content_checksum=_string(reference["timeline_content_checksum"]),
+        )
 
     def _publish_reference(self, timeline: PaperPortfolioTimeline) -> None:
         payload = _reference_payload(timeline)

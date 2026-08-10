@@ -1340,11 +1340,15 @@ tbody tr:hover {
     grid-template-columns: 1fr;
   }
   .sidebar {
+    visibility: hidden;
     transform: translateX(-100%);
+    pointer-events: none;
     transition: transform 0.2s;
   }
   .sidebar--open {
+    visibility: visible;
     transform: translateX(0);
+    pointer-events: auto;
   }
   .sidebar-scrim {
     display: block;
@@ -1359,6 +1363,13 @@ tbody tr:hover {
   }
   .menu-button {
     display: block;
+    position: fixed;
+    z-index: 40;
+    top: 1rem;
+    left: 1rem;
+  }
+  .menu-button[aria-expanded="true"] {
+    left: calc(var(--sidebar-width) - 3.5rem);
   }
   .topbar {
     justify-content: flex-start;

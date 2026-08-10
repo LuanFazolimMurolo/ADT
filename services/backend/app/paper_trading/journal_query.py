@@ -16,6 +16,7 @@ from app.paper_trading.journal import (
     PaperTradeStatus,
     build_paper_trade_journal,
 )
+from app.paper_trading.persisted_state import PaperPersistedStateVerifier
 from app.paper_trading.repository import PaperTradingRepository
 
 _MAX_PAGE = 100_000
@@ -227,10 +228,17 @@ class PaperTradePage:
 class PaperTradeJournalReadService:
     """Build verified journals, filter them, and return bounded projections."""
 
-    def __init__(self, repository: PaperTradingRepository) -> None:
-        if not isinstance(repository, PaperTradingRepository):
+    def __init__(
+        self,
+        repository: PaperTradingRepository,
+        state_verifier: PaperPersistedStateVerifier,
+    ) -> None:
+        if not isinstance(repository, PaperTradingRepository) or not isinstance(
+            state_verifier, PaperPersistedStateVerifier
+        ):
             raise InvalidPaperSessionError("O repositório do journal é inválido.")
         self._repository = repository
+        self._state_verifier = state_verifier
 
     def list_trades(
         self,
@@ -283,6 +291,7 @@ class PaperTradeJournalReadService:
             state = self._repository.load_state(session_id)
             if state is None:
                 continue
+            self._state_verifier.verify(config, state)
             journal = build_paper_trade_journal(config, state)
             for trade in journal.trades:
                 if not _matches_trade(filters, trade):

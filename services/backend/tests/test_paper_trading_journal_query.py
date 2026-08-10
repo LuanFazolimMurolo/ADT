@@ -14,8 +14,9 @@ from pathlib import Path
 import pytest
 
 from app.backtesting.domain import OrderSide
-from app.paper_trading.domain import paper_session_id
-from app.paper_trading.errors import InvalidPaperSessionError
+from app.paper_trading.documents import encode_paper_state
+from app.paper_trading.domain import PaperSessionState, paper_session_id
+from app.paper_trading.errors import InvalidPaperSessionError, PaperSessionVerificationError
 from app.paper_trading.journal import PaperTradeStatus
 from app.paper_trading.journal_export import (
     PaperTradeExportFormat,
@@ -25,7 +26,12 @@ from app.paper_trading.journal_query import (
     PaperTradeJournalFilter,
     PaperTradeJournalReadService,
 )
+from app.paper_trading.persisted_state import PaperPersistedStateVerifier
+from app.paper_trading.portfolio_timeline_artifacts import (
+    PaperPortfolioTimelineArtifactStore,
+)
 from app.paper_trading.repository import PaperTradingRepository
+from tests.test_paper_chart_annotations import _resign_state
 from tests.test_paper_trading import FakeSource, _candle
 from tests.test_paper_trading_journal import (
     _intent,
@@ -56,9 +62,44 @@ def _populated_repository(
     return PaperTradingRepository(tmp_path), paper_session_id(config)
 
 
+def _state_verifier(tmp_path: Path) -> PaperPersistedStateVerifier:
+    return PaperPersistedStateVerifier(PaperPortfolioTimelineArtifactStore(tmp_path))
+
+
+def _persist_resigned_state(
+    tmp_path: Path,
+    repository: PaperTradingRepository,
+    session_id: str,
+    *,
+    dataset_version: str | None = None,
+    source_checksum: str | None = None,
+) -> PaperSessionState:
+    state = repository.load_state(session_id)
+    assert state is not None
+    resigned = _resign_state(
+        state,
+        dataset_version=dataset_version,
+        source_checksum=source_checksum,
+    )
+    state_path = tmp_path / "market" / "paper-trading" / session_id / "state.json"
+    state_path.write_bytes(encode_paper_state(resigned))
+    return resigned
+
+
+def _reference_path(tmp_path: Path, session_id: str, state_checksum: str) -> Path:
+    return (
+        tmp_path
+        / "market"
+        / "paper-trading"
+        / session_id
+        / "portfolio-timeline-refs"
+        / f"{state_checksum}.json"
+    )
+
+
 def test_journal_query_filters_and_paginates_newest_first(tmp_path: Path) -> None:
     repository, session_id = _populated_repository(tmp_path)
-    reader = PaperTradeJournalReadService(repository)
+    reader = PaperTradeJournalReadService(repository, _state_verifier(tmp_path))
     filters = PaperTradeJournalFilter(
         session_id=session_id,
         base_asset="btc",
@@ -70,8 +111,12 @@ def test_journal_query_filters_and_paginates_newest_first(tmp_path: Path) -> Non
 
     first = reader.list_trades(filters, page=1, page_size=1)
     second = reader.list_trades(filters, page=2, page_size=1)
+    repeated_first = reader.list_trades(filters, page=1, page_size=1)
+    repeated_second = reader.list_trades(filters, page=2, page_size=1)
 
     assert first.total == 2
+    assert repeated_first == first
+    assert repeated_second == second
     assert first.total_pages == 2
     assert first.totals.trades_count == 2
     assert first.totals.closed_trades_count == 1
@@ -79,6 +124,10 @@ def test_journal_query_filters_and_paginates_newest_first(tmp_path: Path) -> Non
     assert first.items[0].trade.status is PaperTradeStatus.OPEN
     assert second.items[0].trade.status is PaperTradeStatus.CLOSED
     assert first.items[0].trade.opened_at > second.items[0].trade.opened_at
+    assert first.items[0].trade.trade_id == repeated_first.items[0].trade.trade_id
+    assert first.items[0].trade.sequence == repeated_first.items[0].trade.sequence
+    assert second.items[0].trade.trade_id == repeated_second.items[0].trade.trade_id
+    assert second.items[0].trade.sequence == repeated_second.items[0].trade.sequence
     assert first.totals.total_net_pnl == (
         first.totals.total_realized_pnl + first.totals.total_unrealized_pnl
     )
@@ -140,7 +189,7 @@ def test_journal_query_skips_pending_sessions_and_applies_config_filters(
     tmp_path: Path,
 ) -> None:
     repository, session_id = _populated_repository(tmp_path)
-    reader = PaperTradeJournalReadService(repository)
+    reader = PaperTradeJournalReadService(repository, _state_verifier(tmp_path))
 
     assert (
         reader.list_trades(
@@ -188,7 +237,7 @@ def test_journal_exports_are_lossless_deterministic_and_query_bound(
     tmp_path: Path,
 ) -> None:
     repository, session_id = _populated_repository(tmp_path)
-    exporter = PaperTradeJournalExportService(repository)
+    exporter = PaperTradeJournalExportService(repository, _state_verifier(tmp_path))
     filters = PaperTradeJournalFilter(session_id=session_id)
 
     jsonl = exporter.export(filters, format=PaperTradeExportFormat.JSONL)
@@ -236,7 +285,7 @@ def test_journal_filter_and_pagination_reject_noncanonical_inputs(
     tmp_path: Path,
 ) -> None:
     repository, _ = _populated_repository(tmp_path)
-    reader = PaperTradeJournalReadService(repository)
+    reader = PaperTradeJournalReadService(repository, _state_verifier(tmp_path))
     opened = datetime(2026, 8, 1, tzinfo=UTC)
 
     with pytest.raises(InvalidPaperSessionError):
@@ -262,3 +311,43 @@ def test_journal_filter_and_pagination_reject_noncanonical_inputs(
     )
     assert page.items == ()
     assert page.total == 2
+
+
+@pytest.mark.parametrize(
+    ("dataset_version", "source_checksum"),
+    [("c" * 64, None), (None, "d" * 64)],
+)
+def test_journal_rejects_resigned_state_outside_persisted_binding(
+    tmp_path: Path,
+    dataset_version: str | None,
+    source_checksum: str | None,
+) -> None:
+    repository, session_id = _populated_repository(tmp_path)
+    _persist_resigned_state(
+        tmp_path,
+        repository,
+        session_id,
+        dataset_version=dataset_version,
+        source_checksum=source_checksum,
+    )
+
+    with pytest.raises(PaperSessionVerificationError):
+        PaperTradeJournalReadService(repository, _state_verifier(tmp_path)).list_trades(
+            PaperTradeJournalFilter(session_id=session_id),
+            page=1,
+            page_size=20,
+        )
+
+
+def test_journal_rejects_state_without_persisted_reference(tmp_path: Path) -> None:
+    repository, session_id = _populated_repository(tmp_path)
+    state = repository.load_state(session_id)
+    assert state is not None
+    _reference_path(tmp_path, session_id, state.checksum).unlink()
+
+    with pytest.raises(PaperSessionVerificationError):
+        PaperTradeJournalReadService(repository, _state_verifier(tmp_path)).list_trades(
+            PaperTradeJournalFilter(session_id=session_id),
+            page=1,
+            page_size=20,
+        )

@@ -31,7 +31,12 @@ from app.paper_trading.journal_query import (
     PaperTradePage,
 )
 from app.paper_trading.query import PaperTradingReadService
-from tests.test_paper_trading_journal_query import _populated_repository
+from app.paper_trading.repository import PaperTradingRepository
+from tests.test_paper_trading_journal_query import (
+    _persist_resigned_state,
+    _populated_repository,
+    _state_verifier,
+)
 
 MISSING_SESSION_ID = "f" * 64
 FORBIDDEN_FIELDS = {
@@ -86,8 +91,9 @@ async def authorized_session_client(
     ]
 ]:
     repository, session_id = _populated_repository(tmp_path)
-    annotations = RecordingAnnotationService(PaperChartAnnotationReadService(repository))
-    journal = RecordingJournalService(PaperTradeJournalReadService(repository))
+    verifier = _state_verifier(tmp_path)
+    annotations = RecordingAnnotationService(PaperChartAnnotationReadService(repository, verifier))
+    journal = RecordingJournalService(PaperTradeJournalReadService(repository, verifier))
     app.dependency_overrides[require_app_paper_session_reader] = lambda: UUID(int=1)
     app.dependency_overrides[get_paper_trading_read_service] = lambda: PaperTradingReadService(
         repository
@@ -282,6 +288,51 @@ async def test_project_owner_trades_are_path_scoped_and_preserve_decimal_totals(
         params={"page_size": 101},
     )
     assert invalid.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("suffix", "params"),
+    [
+        (
+            "/chart-annotations",
+            {
+                "start": "2026-01-01T00:00:00Z",
+                "before": "2026-01-02T00:00:00Z",
+            },
+        ),
+        ("/trades", {"page": 1, "page_size": 20}),
+    ],
+)
+async def test_authorized_app_derived_reads_reject_resigned_state_with_safe_conflict(
+    authorized_session_client: tuple[
+        httpx.AsyncClient,
+        str,
+        RecordingAnnotationService,
+        RecordingJournalService,
+    ],
+    tmp_path: Path,
+    suffix: str,
+    params: dict[str, object],
+) -> None:
+    client, session_id, _, _ = authorized_session_client
+    _persist_resigned_state(
+        tmp_path,
+        PaperTradingRepository(tmp_path),
+        session_id,
+        source_checksum="d" * 64,
+    )
+
+    response = await client.get(
+        f"/api/v1/app/paper-trading/sessions/{session_id}{suffix}",
+        params=params,
+    )
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert response.json()["error"] == {
+        "code": "paper_session_verification_failed",
+        "message": "A sessão de paper trading não pôde ser verificada.",
+    }
 
 
 def test_c3_router_is_get_only_without_export_or_cross_session_query() -> None:

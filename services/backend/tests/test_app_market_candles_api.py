@@ -21,6 +21,7 @@ from app.market_data.binance import BinanceSpotAdapter
 from app.market_data.candle_query import LocalMarketCandleReadService
 from tests.market_data_helpers import candle, utc
 from tests.test_market_candle_query import ingest_cataloged_candles
+from tests.test_raw_partition_integrity import _remove_manifest, _tamper_partition
 
 NON_ADMIN_ID = UUID("22222222-2222-2222-2222-222222222222")
 ADMIN_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -199,6 +200,28 @@ async def test_app_market_candles_never_fetches_from_binance(
     )
 
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ("tamper", "missing_manifest"))
+async def test_app_market_candles_fails_closed_on_raw_integrity_failure(
+    app_market_candle_client: httpx.AsyncClient,
+    tmp_path: Path,
+    failure: str,
+) -> None:
+    app.dependency_overrides[get_authenticated_user] = lambda: NON_ADMIN_ID
+    if failure == "tamper":
+        _tamper_partition(tmp_path, index=0, volume="3.50000000")
+    else:
+        _remove_manifest(tmp_path)
+
+    response = await app_market_candle_client.get(
+        ROUTE,
+        params={"timeframe": "1h", "limit": 2},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "market_data_inconsistency"
 
 
 def test_app_market_candle_http_boundary_is_read_only_and_app_scoped() -> None:

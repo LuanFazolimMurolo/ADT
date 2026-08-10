@@ -15,8 +15,12 @@ from app.api.dependencies.auth import require_administrator
 from app.api.dependencies.resources import get_paper_period_metrics_service
 from app.api.routes import admin_paper_period_metrics
 from app.main import app
-from app.paper_trading.period_metrics import PaperPeriodMetricsService
-from tests.test_paper_trading_period_metrics import _populated_period_repository
+from app.paper_trading.repository import PaperTradingRepository
+from tests.test_paper_trading_journal_query import _persist_resigned_state
+from tests.test_paper_trading_period_metrics import (
+    _period_service,
+    _populated_period_repository,
+)
 
 
 @pytest_asyncio.fixture
@@ -24,7 +28,8 @@ async def period_metrics_api_client(
     tmp_path: Path,
 ) -> AsyncIterator[tuple[httpx.AsyncClient, str]]:
     repository, session_id, _ = _populated_period_repository(tmp_path)
-    service = PaperPeriodMetricsService(repository)
+    del repository
+    service = _period_service(tmp_path)
     app.dependency_overrides[get_paper_period_metrics_service] = lambda: service
 
     async with httpx.AsyncClient(
@@ -122,6 +127,32 @@ async def test_period_metrics_api_requires_bounded_query_parameters(
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_admin_period_metrics_reject_resigned_source_state_with_safe_conflict(
+    period_metrics_api_client: tuple[httpx.AsyncClient, str],
+    tmp_path: Path,
+) -> None:
+    client, session_id = period_metrics_api_client
+    _persist_resigned_state(
+        tmp_path,
+        PaperTradingRepository(tmp_path),
+        session_id,
+        source_checksum="d" * 64,
+    )
+    app.dependency_overrides[require_administrator] = lambda: UUID(int=1)
+
+    response = await client.get(
+        "/api/v1/admin/paper-trading/period-metrics",
+        params={**_params(session_id), "granularity": "DAILY"},
+    )
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert response.json()["error"] == {
+        "code": "paper_session_verification_failed",
+        "message": "A sessão de paper trading não pôde ser verificada.",
+    }
 
 
 def test_period_metrics_http_boundary_is_read_only_and_admin_scoped() -> None:

@@ -50,19 +50,25 @@ This file instructs AI assistants (like GitHub Copilot, Claude, or ChatGPT) on h
 
 ### Phases
 
-Current Phase: **4 complete; Phase 5 is next and not started**
+Current Phase: **5 complete; Phase 6 local closure gate passed, release integration pending**
 
 - ✅ Phase 4 is available as a stable boundary: finite deterministic search,
   temporal planning, bounded execution, walk-forward selection and explicit
   out-of-sample stability controls
+- ✅ Phase 5 is the stable deterministic paper-trading boundary
+- ✅ Phase 6-01 through 6-06 are implemented; Phase 6-07A through 6-07E
+  closure work is concluded
+- ✅ Phase 6-07F full local backend/frontend/browser gate passed
+- 🚧 Exact staged-diff audit, approved commit, integration into `main` and the
+  annotated `phase-6` tag remain pending before formal Phase 6 completion
 - ❌ Cannot work on: unbounded/random search, genetic or Bayesian optimization,
-  multiple assets, real-time paper trading, live orders, leverage, shorts,
-  derivatives, distributed workers or machine learning
+  real-capital orders, leverage, shorts, derivatives, distributed execution or
+  machine learning
 
-Phase 4 must reuse the Phase 3C plugin descriptors and factories and the Phase
-3A/3B immutable backtest contracts. It must not alter RAW or DERIVED market
-datasets. Phase 2D operational administration remains a separate control-plane
-track and is not implemented by optimization code.
+Phase 6 remains a read-only presentation and analysis boundary. Operational
+session/worker controls remain Phase 7 work, and real-capital trading remains
+outside the current implementation scope. Phase 2D operational administration
+continues as a separate control-plane track.
 
 See [docs/BACKTESTING.md](./docs/BACKTESTING.md) and
 [docs/ROADMAP.md](./docs/ROADMAP.md).

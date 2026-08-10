@@ -19,6 +19,7 @@ from app.main import app
 from app.market_data.candle_query import LocalMarketCandleReadService
 from tests.market_data_helpers import candle, utc
 from tests.test_market_candle_query import ingest_cataloged_candles
+from tests.test_raw_partition_integrity import _remove_manifest, _tamper_partition
 
 
 @pytest_asyncio.fixture
@@ -173,6 +174,30 @@ async def test_market_candle_api_missing_dataset_uses_stable_404(
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "market_candle_dataset_not_found"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ("tamper", "missing_manifest"))
+async def test_market_candle_api_fails_closed_on_raw_integrity_failure(
+    market_candle_api_client: httpx.AsyncClient,
+    tmp_path: Path,
+    failure: str,
+) -> None:
+    app.dependency_overrides[require_administrator] = lambda: UUID(
+        "11111111-1111-1111-1111-111111111111"
+    )
+    if failure == "tamper":
+        _tamper_partition(tmp_path, index=0, close="106.00000000")
+    else:
+        _remove_manifest(tmp_path)
+
+    response = await market_candle_api_client.get(
+        "/api/v1/admin/market-data/candles/BTC/USDT",
+        params={"timeframe": "1h", "limit": 2},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "market_data_inconsistency"
 
 
 def test_market_candle_http_boundary_is_read_only_and_admin_scoped() -> None:

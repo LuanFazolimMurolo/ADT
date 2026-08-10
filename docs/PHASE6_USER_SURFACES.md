@@ -117,8 +117,17 @@ safe 401/403 lifecycle, states, controls, UTC/Decimal presentation, pagination
 and binding rejection. Playwright exercises public, authentication, market,
 paper catalog, detail and performance flows with deny-by-default network mocks.
 
-Manual browser/device accessibility review, measured response-size/latency/memory
-budgets and the final staged-diff/security closure remain Phase 6-07 work.
+The local automated browser closure covers Chromium, responsive/mobile overflow,
+keyboard operation, reduced motion, journal↔chart navigation, native control
+patterns and authentication boundaries. Its final stability evidence is 47/47
+Playwright tests in two consecutive full runs across 12 specs, plus 30/30 for
+the `phase6-accessibility` project with `repeat-each=3`.
+
+This does not claim complete WCAG or cross-browser validation. Manual validation
+remains for a real screen reader, contrast, 200%/400% zoom, physical
+touch/orientation and complete visual-clipping inspection. Firefox, WebKit and
+other operating-system/rendering combinations were not validated by this local
+closure.
 
 ## Known limitations and next delivery
 
@@ -126,11 +135,13 @@ budgets and the final staged-diff/security closure remain Phase 6-07 work.
 - public registration remains disabled;
 - signals remain deferred;
 - `/app` is read-only and cannot operate workers or financial state;
-- the current production bundle exceeds the initial 500 kB chunk warning and
-  must be assessed in the Phase 6-07 performance budget;
+- the production bundle is classified as **DEBT WITH HARD BASELINE BUDGET**;
+  route-level code splitting remains future optimization work even though the
+  deterministic Phase 6 budget passes;
 - cross-quote conversion and cross-session authenticated comparisons are absent.
 
-Phase 6-06 is complete after its documentation and full local gate. Phase 6
-remains in progress; Phase 6-07 owns final integration, determinism/tamper
-verification, browser/accessibility closure, measured performance budgets,
-final auth/secret and staged-diff audits, merge and the annotated Phase 6 tag.
+Phase 6-06 is complete. Phase 6 remains in progress: the Phase 6-07E candidate
+audit consolidates integrity, browser/accessibility, performance and security
+evidence in [`PHASE6_CLOSURE.md`](./PHASE6_CLOSURE.md), while Phase 6-07F still
+owns the final full gate, staged-diff audit, approved integration and annotated
+Phase 6 tag.

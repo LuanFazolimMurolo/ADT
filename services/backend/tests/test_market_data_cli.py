@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
@@ -21,7 +22,9 @@ from app.market_data.jobs import MarketJobCatalog
 from app.market_data.locks import DatasetLockManager
 from app.market_data.planning import MarketDataPlanner
 from app.market_data.timeframes import get_timeframe
-from tests.market_data_helpers import binance_kline, exchange_info_payload, utc
+from tests.market_data_helpers import binance_kline, candle, exchange_info_payload, utc
+from tests.test_market_candle_query import ingest_cataloged_candles
+from tests.test_raw_partition_integrity import _remove_manifest
 
 
 def _settings(tmp_path: Path, *, max_fetch_candles: int = 10_000) -> Settings:
@@ -255,6 +258,51 @@ def test_cli_backfill_plan_is_bounded_and_never_accesses_network(tmp_path: Path)
     assert payload["expected_candles"] == 5
     assert payload["chunks"] == 1
     assert not (tmp_path / "market").exists()
+
+
+def test_cli_integrity_backfill_is_explicit_idempotent_and_network_free(tmp_path: Path) -> None:
+    opening = utc(2024, 1, 1)
+    asyncio.run(
+        ingest_cataloged_candles(
+            tmp_path,
+            (candle(opening),),
+            start=opening,
+            end=opening + timedelta(hours=1),
+        )
+    )
+    _remove_manifest(tmp_path)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"unexpected HTTP request: {request.method}")
+
+    arguments = [
+        "market-data",
+        "integrity",
+        "backfill",
+        "--symbol",
+        "BTC/USDT",
+        "--timeframe",
+        "1h",
+    ]
+    first_output = StringIO()
+    first_code = main(
+        arguments,
+        app_settings=_settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+        stdout=first_output,
+    )
+    second_output = StringIO()
+    second_code = main(
+        arguments,
+        app_settings=_settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+        stdout=second_output,
+    )
+
+    assert first_code == EXIT_OK
+    assert second_code == EXIT_OK
+    assert json.loads(first_output.getvalue())["action"] == "CREATED"
+    assert json.loads(second_output.getvalue())["action"] == "NOOP"
 
 
 def test_cli_large_backfill_requires_explicit_confirmation_without_http(

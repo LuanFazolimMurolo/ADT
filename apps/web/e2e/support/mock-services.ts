@@ -10,7 +10,12 @@ import type {
   JsonValue,
   MovementCreateRequest,
   MarketCandlePageResponse,
+  PaperChartAnnotationPageResponse,
   PaperDashboardResponse,
+  PaperPeriodGranularity,
+  PaperPeriodMetricsSeriesResponse,
+  PaperPortfolioTimelinePageResponse,
+  PaperTradeJournalPageResponse,
   Setting,
   SimulationCreateRequest,
   SimulationDetail,
@@ -56,12 +61,19 @@ interface ErrorResponse {
   };
 }
 
+interface RequestHold {
+  promise: Promise<void>;
+  release(): void;
+}
+
 const JSON_HEADERS = {
   "Content-Type": "application/json",
   "X-Request-ID": REQUEST_ID,
 };
 
 export const PAPER_SESSION_ID = "c".repeat(64);
+export const ADMIN_PAPER_SESSION_ID = "a".repeat(64);
+export const ADMIN_PAPER_TRADE_ID = "e".repeat(64);
 
 function decimalToBigInt(value: string): bigint {
   const match = /^(-?)(\d+)(?:\.(\d{1,8}))?$/.exec(value);
@@ -98,6 +110,399 @@ function asListItem(simulation: SimulationDetail): SimulationListItem {
   };
 }
 
+function adminMarketCandlePage(timeframe: string): MarketCandlePageResponse {
+  const datasetVersion = "a".repeat(64);
+  return {
+    schema_version: 1,
+    exchange: "binance",
+    market_type: "spot",
+    symbol: "BTC/USDT",
+    base_asset: "BTC",
+    quote_asset: "USDT",
+    timeframe,
+    requested_before: null,
+    available_start: "2026-08-08T00:00:00Z",
+    available_end: "2026-08-08T00:03:00Z",
+    range_start: "2026-08-08T00:00:00Z",
+    range_end: "2026-08-08T00:03:00Z",
+    limit: 1_000,
+    count: 3,
+    dataset_candle_count: 3,
+    dataset_version: datasetVersion,
+    dataset_version_algorithm: "sha256",
+    content_checksum: "b".repeat(64),
+    has_more_before: false,
+    next_before: null,
+    items: [
+      [
+        "2026-08-08T00:00:00Z",
+        "2026-08-08T00:00:59.999Z",
+        "100",
+        "110",
+        "90",
+        "105",
+      ],
+      [
+        "2026-08-08T00:01:00Z",
+        "2026-08-08T00:01:59.999Z",
+        "105",
+        "115",
+        "100",
+        "112",
+      ],
+      [
+        "2026-08-08T00:02:00Z",
+        "2026-08-08T00:02:59.999Z",
+        "112",
+        "120",
+        "108",
+        "118",
+      ],
+    ].map(([openTime, closeTime, open, high, low, close]) => ({
+      open_time: openTime,
+      close_time: closeTime,
+      open,
+      high,
+      low,
+      close,
+      volume: "2.500000000000000000",
+      quote_volume: null,
+      trade_count: 10,
+      is_closed: true,
+      source: "e2e_fixture",
+    })),
+  };
+}
+
+function adminChartAnnotations(
+  rangeStart: string,
+  rangeEnd: string,
+): PaperChartAnnotationPageResponse {
+  return {
+    schema_version: 1,
+    session_id: ADMIN_PAPER_SESSION_ID,
+    config_checksum: "2".repeat(64),
+    state_available: true,
+    state_id: "3".repeat(64),
+    state_checksum: "4".repeat(64),
+    dataset_version: "a".repeat(64),
+    source_checksum: "5".repeat(64),
+    symbol: "BTC/USDT",
+    base_asset: "BTC",
+    quote_asset: "USDT",
+    timeframe: "1m",
+    strategy_name: "no-op",
+    strategy_version: "2",
+    strategy_parameters: {},
+    ema_fast_period: 3,
+    ema_slow_period: 5,
+    range_start: rangeStart,
+    range_end: rangeEnd,
+    limit: 5_000,
+    count: 2,
+    orders_count: 1,
+    fills_count: 1,
+    orders: [
+      {
+        order_id: "O000000000002",
+        created_sequence: 2,
+        created_at: "2026-08-08T00:02:00Z",
+        opened_at: "2026-08-08T00:02:00Z",
+        terminal_at: null,
+        status: "OPEN",
+        side: "SELL",
+        order_type: "STOP_MARKET",
+        time_in_force: "GTC",
+        quantity: "0.500000000000000000",
+        limit_price: null,
+        stop_price: "95.000000000000000000",
+        client_tag: "protective-stop",
+        rejection_code: null,
+        is_engine_protective_stop: true,
+      },
+    ],
+    fills: [
+      {
+        fill_id: "F000000000001",
+        order_id: "O000000000001",
+        trade_id: ADMIN_PAPER_TRADE_ID,
+        trade_sequence: 2,
+        role: "ENTRY",
+        event_time: "2026-08-08T00:01:00Z",
+        candle_index: 1,
+        side: "BUY",
+        order_type: "MARKET",
+        time_in_force: "GTC",
+        client_tag: "entry-e2e",
+        fill_reason: "MARKET_OPEN",
+        liquidity: "TAKER",
+        quantity: "0.500000000000000000",
+        base_price: "112.000000000000000000",
+        execution_price: "112.000000000000000000",
+        notional: "56.000000000000000000",
+        fee: "0.056000000000000000",
+        slippage_cost: "0.010000000000000000",
+        is_engine_protective_stop: false,
+      },
+    ],
+    last_candle_open_time: "2026-08-08T00:02:00Z",
+    replayed_at: "2026-08-08T00:03:00Z",
+    content_checksum: "6".repeat(64),
+  };
+}
+
+function adminJournalPage(
+  sessionId: string | null,
+): PaperTradeJournalPageResponse {
+  return {
+    filters: {
+      session_id: sessionId,
+      base_asset: null,
+      quote_asset: null,
+      timeframe: null,
+      strategy_name: null,
+      strategy_version: null,
+      status: null,
+      opened_from: null,
+      opened_before: null,
+      closed_from: null,
+      closed_before: null,
+    },
+    items: [
+      {
+        session_id: ADMIN_PAPER_SESSION_ID,
+        config_checksum: "2".repeat(64),
+        state_id: "3".repeat(64),
+        state_checksum: "4".repeat(64),
+        symbol: "BTC/USDT",
+        base_asset: "BTC",
+        quote_asset: "USDT",
+        timeframe: "1m",
+        strategy_name: "no-op",
+        strategy_version: "2",
+        strategy_parameters: {},
+        last_candle_open_time: "2026-08-08T00:02:00Z",
+        replayed_at: "2026-08-08T00:03:00Z",
+        trade: {
+          trade_id: ADMIN_PAPER_TRADE_ID,
+          session_id: ADMIN_PAPER_SESSION_ID,
+          sequence: 2,
+          status: "OPEN",
+          opened_at: "2026-08-08T00:01:00Z",
+          last_entry_at: "2026-08-08T00:01:00Z",
+          first_exit_at: null,
+          closed_at: null,
+          entry_executions: [
+            {
+              fill_id: "F000000000001",
+              order_id: "O000000000001",
+              order_sequence: 1,
+              side: "BUY",
+              order_type: "MARKET",
+              time_in_force: "GTC",
+              client_tag: "entry-e2e",
+              fill_reason: "MARKET_OPEN",
+              liquidity: "TAKER",
+              quantity: "0.500000000000000000",
+              base_price: "112.000000000000000000",
+              execution_price: "112.000000000000000000",
+              notional: "56.000000000000000000",
+              fee: "0.056000000000000000",
+              slippage_cost: "0.010000000000000000",
+              event_time: "2026-08-08T00:01:00Z",
+              candle_index: 1,
+            },
+          ],
+          exit_executions: [],
+          opened_quantity: "0.500000000000000000",
+          closed_quantity: "0.000000000000000000",
+          remaining_quantity: "0.500000000000000000",
+          entry_notional: "56.000000000000000000",
+          exit_notional: "0.000000000000000000",
+          entry_fees: "0.056000000000000000",
+          exit_fees: "0.000000000000000000",
+          total_fees: "0.056000000000000000",
+          entry_slippage_cost: "0.010000000000000000",
+          exit_slippage_cost: "0.000000000000000000",
+          total_slippage_cost: "0.010000000000000000",
+          entry_cost_basis: "56.066000000000000000",
+          released_cost_basis: "0.000000000000000000",
+          remaining_cost_basis: "56.066000000000000000",
+          average_entry_price: "112.000000000000000000",
+          average_exit_price: null,
+          realized_pnl: "0.000000000000000000",
+          unrealized_pnl: "3.000000000000000000",
+          net_pnl: "3.000000000000000000",
+          mark_price: "118.000000000000000000",
+        },
+      },
+    ],
+    page: 1,
+    page_size: 20,
+    total: 1,
+    total_pages: 1,
+    totals: {
+      trades_count: 1,
+      closed_trades_count: 0,
+      open_trades_count: 1,
+      total_realized_pnl: "0.000000000000000000",
+      total_unrealized_pnl: "3.000000000000000000",
+      total_net_pnl: "3.000000000000000000",
+      total_fees: "0.056000000000000000",
+      total_slippage_cost: "0.010000000000000000",
+    },
+  };
+}
+
+function adminPortfolioTimeline(): PaperPortfolioTimelinePageResponse {
+  const observation = (
+    candleIndex: number,
+    equity: string,
+    realizedPnl: string,
+    unrealizedPnl: string,
+    drawdown: string,
+    drawdownPct: string,
+    riskHalt: boolean,
+  ) => ({
+    candle_index: candleIndex,
+    candle_open_time: `2026-08-08T00:0${candleIndex}:00Z`,
+    candle_close_time: `2026-08-08T00:0${candleIndex}:59.999Z`,
+    mark_price: "118.000000000000000000",
+    quote_cash: "944.000000000000000000",
+    base_quantity: "0.500000000000000000",
+    average_entry_price: "112.000000000000000000",
+    cost_basis: "56.066000000000000000",
+    realized_pnl: realizedPnl,
+    unrealized_pnl: unrealizedPnl,
+    total_fees: "0.056000000000000000",
+    total_slippage_cost: "0.010000000000000000",
+    equity,
+    peak_equity: "1003.000000000000000000",
+    drawdown,
+    drawdown_pct: drawdownPct,
+    risk_halt: riskHalt,
+  });
+  const items = [
+    observation(0, "1000.000000000000000000", "0", "0", "0", "0", false),
+    observation(1, "1003.000000000000000000", "0", "3", "0", "0", false),
+    observation(
+      2,
+      "997.000000000000000000",
+      "-2",
+      "-1",
+      "6",
+      "0.598205383848454636",
+      true,
+    ),
+  ];
+  return {
+    schema_version: 1,
+    session_id: ADMIN_PAPER_SESSION_ID,
+    config_checksum: "2".repeat(64),
+    state_id: "3".repeat(64),
+    state_checksum: "4".repeat(64),
+    state_replayed_at: "2026-08-08T00:03:00Z",
+    symbol: "BTC/USDT",
+    base_asset: "BTC",
+    quote_asset: "USDT",
+    timeframe: "1m",
+    dataset_version: "a".repeat(64),
+    source_checksum: "5".repeat(64),
+    timeline_id: "7".repeat(64),
+    timeline_content_checksum: "8".repeat(64),
+    initial_capital: "1000.000000000000000000",
+    requested_before: null,
+    available_start: "2026-08-08T00:00:00Z",
+    available_end: "2026-08-08T00:03:00Z",
+    range_start: "2026-08-08T00:00:00Z",
+    range_end: "2026-08-08T00:03:00Z",
+    limit: 5_000,
+    count: items.length,
+    total_observations: items.length,
+    has_more_before: false,
+    next_before: null,
+    content_checksum: "9".repeat(64),
+    items,
+  };
+}
+
+function adminPeriodMetrics(
+  granularity: PaperPeriodGranularity,
+  quoteAsset: string,
+  periodFrom: string,
+  periodBefore: string,
+): PaperPeriodMetricsSeriesResponse {
+  const bucket = {
+    period_start: "2026-08-08T00:00:00Z",
+    period_end: "2026-08-09T00:00:00Z",
+    quote_asset: quoteAsset,
+    realizations_count: 2,
+    winning_realizations_count: 1,
+    losing_realizations_count: 1,
+    breakeven_realizations_count: 0,
+    sessions_count: 1,
+    symbols_count: 1,
+    exit_notional: "220.000000000000000000",
+    released_cost_basis: "203.800000000000000000",
+    realized_fees: "0.700000000000000000",
+    realized_slippage_cost: "0.200000000000000000",
+    gross_profit: "20.000000000000000000",
+    gross_loss: "-4.500000000000000000",
+    realized_pnl: "15.500000000000000000",
+    win_rate_pct: "50.000000000000000000",
+    profit_factor: "4.444444444444444444",
+  };
+  return {
+    schema_version: 1,
+    granularity,
+    filters: {
+      quote_asset: quoteAsset,
+      period_from: periodFrom,
+      period_before: periodBefore,
+      session_id: null,
+      base_asset: null,
+      timeframe: null,
+      strategy_name: null,
+      strategy_version: null,
+    },
+    source_states: [
+      {
+        session_id: ADMIN_PAPER_SESSION_ID,
+        config_checksum: "2".repeat(64),
+        state_id: "3".repeat(64),
+        state_checksum: "4".repeat(64),
+        base_asset: "BTC",
+        quote_asset: quoteAsset,
+        last_candle_open_time: "2026-08-08T00:02:00Z",
+        replayed_at: "2026-08-08T00:03:00Z",
+      },
+    ],
+    items: [bucket],
+    totals: {
+      periods_count: 1,
+      active_periods_count: 1,
+      quote_asset: quoteAsset,
+      realizations_count: 2,
+      winning_realizations_count: 1,
+      losing_realizations_count: 1,
+      breakeven_realizations_count: 0,
+      sessions_count: 1,
+      symbols_count: 1,
+      exit_notional: bucket.exit_notional,
+      released_cost_basis: bucket.released_cost_basis,
+      realized_fees: bucket.realized_fees,
+      realized_slippage_cost: bucket.realized_slippage_cost,
+      gross_profit: bucket.gross_profit,
+      gross_loss: bucket.gross_loss,
+      realized_pnl: bucket.realized_pnl,
+      win_rate_pct: bucket.win_rate_pct,
+      profit_factor: bucket.profit_factor,
+    },
+    query_checksum: "f".repeat(64),
+    content_checksum: "0".repeat(64),
+  };
+}
+
 export class MockServices {
   readonly requests: RecordedRequest[] = [];
   readonly unexpectedRequests: string[] = [];
@@ -109,6 +514,7 @@ export class MockServices {
   private movementSequence = 0;
   private readonly tokenRoles = new Map<string, MockRole>();
   private readonly refreshRoles = new Map<string, MockRole>();
+  private readonly requestHolds = new Map<string, RequestHold>();
   private simulations: SimulationDetail[] = [];
   private readonly movements = new Map<string, CapitalMovement[]>();
   private settings: Setting[] = createSettings();
@@ -177,6 +583,22 @@ export class MockServices {
         request.method === method.toUpperCase() &&
         request.pathname === pathname,
     );
+  }
+
+  holdNextApiRequest(method: string, pathname: string): () => void {
+    const key = `${method.toUpperCase()} ${pathname}`;
+    let releasePromise: (() => void) | undefined;
+    const promise = new Promise<void>((resolve) => {
+      releasePromise = resolve;
+    });
+    const hold: RequestHold = {
+      promise,
+      release() {
+        releasePromise?.();
+      },
+    };
+    this.requestHolds.set(key, hold);
+    return hold.release;
   }
 
   recoveryCallbackUrl(expired = false): string {
@@ -460,6 +882,12 @@ export class MockServices {
         ["accept", "authorization", "content-type", "x-request-id"],
       );
       return;
+    }
+    const holdKey = `${request.method()} ${url.pathname}`;
+    const hold = this.requestHolds.get(holdKey);
+    if (hold) {
+      this.requestHolds.delete(holdKey);
+      await hold.promise;
     }
     if (this.backendMode === "network-error") {
       await route.abort("connectionfailed");
@@ -767,8 +1195,8 @@ export class MockServices {
       }
       const observation = (index: number, equity: string) => ({
         candle_index: index,
-        candle_open_time: `2026-08-0${index + 1}T00:00:00Z`,
-        candle_close_time: `2026-08-0${index + 1}T00:15:00Z`,
+        candle_open_time: `2026-08-${index + 13}T00:00:00Z`,
+        candle_close_time: `2026-08-${index + 13}T00:15:00Z`,
         mark_price: "105.000000000000000000",
         quote_cash: "900.000000000000000000",
         base_quantity: "1.000000000000000000",
@@ -799,9 +1227,9 @@ export class MockServices {
         timeline_content_checksum: "f".repeat(64),
         initial_capital: "1000.000000000000000000",
         available_start: "2026-08-01T00:00:00Z",
-        available_end: "2026-08-04T00:00:00Z",
-        range_start: "2026-08-01T00:00:00Z",
-        range_end: "2026-08-04T00:00:00Z",
+        available_end: "2026-08-15T00:00:00Z",
+        range_start: "2026-08-13T00:00:00Z",
+        range_end: "2026-08-15T00:00:00Z",
         limit: Number(url.searchParams.get("limit") ?? "1000"),
         count: items.length,
         total_observations: items.length,
@@ -854,7 +1282,8 @@ export class MockServices {
       const response = {
         session_id: appPaperPeriodMatch[1],
         quote_asset: "USDT",
-        granularity: "DAILY",
+        granularity: (url.searchParams.get("granularity") ??
+          "DAILY") as PaperPeriodGranularity,
         period_from:
           url.searchParams.get("period_from") ?? "2026-08-01T00:00:00Z",
         period_before:
@@ -1026,6 +1455,112 @@ export class MockServices {
       if (!(await this.requireAdmin(route, request))) return;
     }
 
+    const adminMarketCandlesMatch =
+      /^\/api\/v1\/admin\/market-data\/candles\/([^/]+)\/([^/]+)$/.exec(
+        url.pathname,
+      );
+    if (request.method() === "GET" && adminMarketCandlesMatch) {
+      const [, rawBaseAsset, rawQuoteAsset] = adminMarketCandlesMatch;
+      const baseAsset = decodeURIComponent(rawBaseAsset).toUpperCase();
+      const quoteAsset = decodeURIComponent(rawQuoteAsset).toUpperCase();
+      if (baseAsset !== "BTC" || quoteAsset !== "USDT") {
+        await this.apiError(
+          route,
+          404,
+          "dataset_not_found",
+          "Dataset não encontrado.",
+        );
+        return;
+      }
+      const response = adminMarketCandlePage(
+        url.searchParams.get("timeframe") ?? "1m",
+      );
+      await this.json(route, 200, response, {
+        "Cache-Control": "no-store",
+        "X-ADT-Candle-Dataset-Version": response.dataset_version,
+        "X-ADT-Candle-Content-Checksum": response.content_checksum,
+        "X-ADT-Candle-Rows": String(response.count),
+      });
+      return;
+    }
+
+    const adminAnnotationsMatch =
+      /^\/api\/v1\/admin\/paper-trading\/sessions\/([0-9a-f]{64})\/chart-annotations$/.exec(
+        url.pathname,
+      );
+    if (request.method() === "GET" && adminAnnotationsMatch) {
+      if (adminAnnotationsMatch[1] !== ADMIN_PAPER_SESSION_ID) {
+        await this.apiError(
+          route,
+          404,
+          "paper_session_not_found",
+          "Sessão não encontrada.",
+        );
+        return;
+      }
+      await this.json(
+        route,
+        200,
+        adminChartAnnotations(
+          url.searchParams.get("start") ?? "2026-08-08T00:00:00Z",
+          url.searchParams.get("before") ?? "2026-08-08T00:03:00Z",
+        ),
+      );
+      return;
+    }
+
+    if (
+      request.method() === "GET" &&
+      url.pathname === "/api/v1/admin/paper-trading/journal"
+    ) {
+      await this.json(
+        route,
+        200,
+        adminJournalPage(url.searchParams.get("session_id")),
+      );
+      return;
+    }
+
+    const adminTimelineMatch =
+      /^\/api\/v1\/admin\/paper-trading\/sessions\/([0-9a-f]{64})\/portfolio-timeline$/.exec(
+        url.pathname,
+      );
+    if (request.method() === "GET" && adminTimelineMatch) {
+      if (adminTimelineMatch[1] !== ADMIN_PAPER_SESSION_ID) {
+        await this.apiError(
+          route,
+          404,
+          "paper_session_not_found",
+          "Sessão não encontrada.",
+        );
+        return;
+      }
+      await this.json(route, 200, adminPortfolioTimeline());
+      return;
+    }
+
+    if (
+      request.method() === "GET" &&
+      url.pathname === "/api/v1/admin/paper-trading/period-metrics"
+    ) {
+      const rawGranularity = url.searchParams.get("granularity");
+      const granularity: PaperPeriodGranularity =
+        rawGranularity === "WEEKLY" || rawGranularity === "MONTHLY"
+          ? rawGranularity
+          : "DAILY";
+      await this.json(
+        route,
+        200,
+        adminPeriodMetrics(
+          granularity,
+          url.searchParams.get("quote_asset") ?? "USDT",
+          url.searchParams.get("period_from") ?? "2026-08-01T00:00:00Z",
+          url.searchParams.get("period_before") ?? "2026-08-10T00:00:00Z",
+        ),
+      );
+      return;
+    }
+
     if (request.method() === "GET" && url.pathname === "/api/v1/admin/me") {
       await this.json(route, 200, {
         user_id: ADMIN_ID,
@@ -1043,8 +1578,7 @@ export class MockServices {
       const response: PaperDashboardResponse = {
         items: [
           {
-            session_id:
-              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            session_id: ADMIN_PAPER_SESSION_ID,
             symbol: "BTC/USDT",
             base_asset: "BTC",
             quote_asset: "USDT",

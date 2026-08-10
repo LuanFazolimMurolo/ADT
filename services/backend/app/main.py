@@ -50,6 +50,7 @@ from app.paper_trading.dashboard import PaperDashboardReadService
 from app.paper_trading.journal_export import PaperTradeJournalExportService
 from app.paper_trading.journal_query import PaperTradeJournalReadService
 from app.paper_trading.period_metrics import PaperPeriodMetricsService
+from app.paper_trading.persisted_state import PaperPersistedStateVerifier
 from app.paper_trading.portfolio_timeline_artifacts import (
     PaperPortfolioTimelineArtifactStore,
 )
@@ -154,26 +155,31 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
                 lock_timeout_seconds=app_settings.market_job_lock_timeout,
                 lock_stale_after_seconds=app_settings.market_job_stale_after,
             )
+            paper_timeline_store = PaperPortfolioTimelineArtifactStore(
+                app_settings.data_dir,
+                lock_timeout_seconds=app_settings.market_job_lock_timeout,
+                lock_stale_after_seconds=app_settings.market_job_stale_after,
+            )
+            paper_state_verifier = PaperPersistedStateVerifier(paper_timeline_store)
             application.state.paper_trading_read_service = PaperTradingReadService(paper_repository)
             application.state.paper_chart_annotation_read_service = PaperChartAnnotationReadService(
-                paper_repository
+                paper_repository,
+                paper_state_verifier,
             )
             application.state.paper_dashboard_read_service = PaperDashboardReadService(
                 paper_repository
             )
             application.state.paper_trade_journal_read_service = PaperTradeJournalReadService(
-                paper_repository
+                paper_repository,
+                paper_state_verifier,
             )
             application.state.paper_trade_journal_export_service = PaperTradeJournalExportService(
-                paper_repository
+                paper_repository,
+                paper_state_verifier,
             )
             application.state.paper_period_metrics_service = PaperPeriodMetricsService(
-                paper_repository
-            )
-            paper_timeline_store = PaperPortfolioTimelineArtifactStore(
-                app_settings.data_dir,
-                lock_timeout_seconds=app_settings.market_job_lock_timeout,
-                lock_stale_after_seconds=app_settings.market_job_stale_after,
+                paper_repository,
+                paper_state_verifier,
             )
             application.state.paper_portfolio_timeline_read_service = (
                 PaperPortfolioTimelineReadService(

@@ -19,8 +19,12 @@ from app.market_data.errors import (
     MarketJobLockTimeoutError,
 )
 from app.market_data.filesystem import ensure_safe_path, fsync_directory, market_root
+from app.market_data.integrity import (
+    LEGACY_RAW_DATASET_VERSION_ALGORITHM,
+    RawPartitionIntegrityEntry,
+    RawPartitionIntegrityManifest,
+)
 from app.market_data.locks import DatasetLockManager
-from app.market_data.storage import LEGACY_RAW_DATASET_VERSION_ALGORITHM
 
 Clock = Callable[[], datetime]
 
@@ -42,6 +46,16 @@ class DatasetMetadata:
     version: str
     updated_at: str
     version_algorithm: str = LEGACY_RAW_DATASET_VERSION_ALGORITHM
+    partition_integrity: RawPartitionIntegrityManifest | None = None
+
+    def __post_init__(self) -> None:
+        if self.partition_integrity is not None and (
+            not isinstance(self.partition_integrity, RawPartitionIntegrityManifest)
+            or self.partition_integrity.bound_dataset_version != self.version
+        ):
+            raise MarketDataInconsistencyError(
+                "O manifesto RAW diverge da versão catalogada do dataset."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -580,10 +594,44 @@ def _receipt_key(job_id: str, chunk_index: int) -> str:
 def _decode_dataset_metadata(raw: dict[str, object]) -> DatasetMetadata:
     payload = dict(raw)
     payload.setdefault("version_algorithm", LEGACY_RAW_DATASET_VERSION_ALGORITHM)
+    raw_integrity = payload.pop("partition_integrity", None)
     try:
+        partition_integrity = _decode_partition_integrity(raw_integrity)
+        payload["partition_integrity"] = partition_integrity
         return DatasetMetadata(**payload)  # type: ignore[arg-type]
-    except TypeError:
+    except (TypeError, MarketDataInconsistencyError):
         raise MarketDataStorageError("O dataset persistido é inválido.") from None
+
+
+def _decode_partition_integrity(raw: object) -> RawPartitionIntegrityManifest | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or set(raw) != {
+        "schema_version",
+        "bound_dataset_version",
+        "checksum_algorithm",
+        "entries",
+    }:
+        raise MarketDataInconsistencyError("O manifesto RAW persistido é inválido.")
+    raw_entries = raw["entries"]
+    if not isinstance(raw_entries, list):
+        raise MarketDataInconsistencyError("As entradas RAW persistidas são inválidas.")
+    entries: list[RawPartitionIntegrityEntry] = []
+    for item in raw_entries:
+        if not isinstance(item, dict) or set(item) != {"relative_path", "checksum"}:
+            raise MarketDataInconsistencyError("Uma entrada RAW persistida é inválida.")
+        entries.append(
+            RawPartitionIntegrityEntry(
+                relative_path=item["relative_path"],
+                checksum=item["checksum"],
+            )
+        )
+    return RawPartitionIntegrityManifest(
+        schema_version=raw["schema_version"],
+        bound_dataset_version=raw["bound_dataset_version"],
+        checksum_algorithm=raw["checksum_algorithm"],
+        entries=tuple(entries),
+    )
 
 
 def _decode_chunk_receipt(raw: dict[str, object]) -> ChunkCommitReceipt:

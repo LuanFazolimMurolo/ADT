@@ -97,6 +97,18 @@ def build_parser() -> argparse.ArgumentParser:
     _add_time_range(verify)
     verify.add_argument("--timeframe", choices=tuple(TIMEFRAMES), required=True)
 
+    integrity = commands.add_parser(
+        "integrity",
+        help="Manage authoritative RAW partition integrity metadata.",
+    )
+    integrity_commands = integrity.add_subparsers(dest="integrity_command", required=True)
+    integrity_backfill = integrity_commands.add_parser(
+        "backfill",
+        help="Backfill one explicitly selected RAW partition manifest.",
+    )
+    _add_market_identity(integrity_backfill)
+    integrity_backfill.add_argument("--timeframe", choices=tuple(TIMEFRAMES), required=True)
+
     backfill = commands.add_parser("backfill", help="Plan or execute bounded backfills.")
     backfill_commands = backfill.add_subparsers(dest="backfill_command", required=True)
     for name in ("plan", "run"):
@@ -463,6 +475,22 @@ async def _run_market_command(
 
         assert pair is not None
         instrument = _local_instrument(pair)
+        if args.command == "integrity" and args.integrity_command == "backfill":
+            integrity_result = history_service.backfill_partition_integrity(
+                instrument,
+                get_timeframe(args.timeframe),
+            )
+            _print(
+                {
+                    "action": integrity_result.action,
+                    "dataset_key": integrity_result.metadata.key,
+                    "dataset_version": integrity_result.metadata.version,
+                    "version_algorithm": integrity_result.metadata.version_algorithm,
+                    "partitions": integrity_result.partition_count,
+                },
+                stdout,
+            )
+            return EXIT_OK
         if args.command == "quality":
             quality_timeframe = get_timeframe(args.timeframe)
             quality_range = (

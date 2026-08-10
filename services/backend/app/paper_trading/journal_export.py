@@ -19,6 +19,7 @@ from app.paper_trading.journal_query import (
     PaperTradeJournalReadService,
     PaperTradeRecord,
 )
+from app.paper_trading.persisted_state import PaperPersistedStateVerifier
 from app.paper_trading.repository import PaperTradingRepository
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -122,10 +123,16 @@ class PaperTradeExport:
 class PaperTradeJournalExportService:
     """Export all matching trades through the same verified bounded read path."""
 
-    def __init__(self, repository: PaperTradingRepository) -> None:
-        if not isinstance(repository, PaperTradingRepository):
+    def __init__(
+        self,
+        repository: PaperTradingRepository,
+        state_verifier: PaperPersistedStateVerifier,
+    ) -> None:
+        if not isinstance(repository, PaperTradingRepository) or not isinstance(
+            state_verifier, PaperPersistedStateVerifier
+        ):
             raise InvalidPaperSessionError("O repositório de exportação é inválido.")
-        self._reader = PaperTradeJournalReadService(repository)
+        self._reader = PaperTradeJournalReadService(repository, state_verifier)
 
     def export(
         self,

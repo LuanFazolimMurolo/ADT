@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -33,10 +33,15 @@ from app.market_data.errors import (
     MarketDataError,
     MarketDataInconsistencyError,
 )
+from app.market_data.integrity import (
+    LEGACY_RAW_DATASET_VERSION_ALGORITHM,
+    RAW_DATASET_VERSION_ALGORITHM,
+    RawPartitionIntegrityManifest,
+    build_raw_partition_integrity_manifest,
+)
 from app.market_data.locks import DatasetLease, DatasetLockManager
 from app.market_data.quality import MarketDataQualityValidator
 from app.market_data.storage import (
-    RAW_DATASET_VERSION_ALGORITHM,
     ParquetCandleStore,
     ParquetUpsertPlan,
     compose_raw_dataset_version,
@@ -44,6 +49,15 @@ from app.market_data.storage import (
 from app.market_data.transaction import MarketDataTransactionCoordinator
 
 Clock = Callable[[], datetime]
+
+
+@dataclass(frozen=True, slots=True)
+class PartitionIntegrityBackfillResult:
+    """Outcome of one explicit local catalog-only integrity backfill."""
+
+    action: str
+    metadata: DatasetMetadata
+    partition_count: int
 
 
 class InstrumentCatalogService:
@@ -226,6 +240,11 @@ class HistoricalMarketDataService:
                         checksum=version,
                         version_algorithm=version_algorithm,
                     )
+                partition_integrity = (
+                    previous.partition_integrity
+                    if previous is not None and plan.stored_count == 0
+                    else _manifest_from_current_plan(version, version_algorithm, plan)
+                )
                 metadata = self._dataset_metadata(
                     instrument,
                     timeframe,
@@ -234,6 +253,7 @@ class HistoricalMarketDataService:
                     count=plan.candle_count,
                     version=version,
                     version_algorithm=version_algorithm,
+                    partition_integrity=partition_integrity,
                     catalog_lease=catalog_lease,
                 )
                 receipt = (
@@ -307,6 +327,119 @@ class HistoricalMarketDataService:
         with self.dataset_lease(instrument, timeframe, lease=lease):
             return self._dataset_metadata(instrument, timeframe)
 
+    def backfill_partition_integrity(
+        self,
+        instrument: Instrument,
+        timeframe: Timeframe,
+        *,
+        lease: DatasetLease | None = None,
+    ) -> PartitionIntegrityBackfillResult:
+        """Authenticate one complete RAW dataset before cataloging its partition manifest."""
+        key = dataset_key(instrument, timeframe)
+        with self.dataset_lease(instrument, timeframe, lease=lease):
+            metadata = self._catalog.get_dataset(key)
+            if metadata is None:
+                raise MarketDataInconsistencyError("O dataset RAW não existe no catálogo.")
+            _validate_manifest_dataset_identity(metadata, instrument, timeframe, self._store)
+            if metadata.partition_integrity is not None:
+                return PartitionIntegrityBackfillResult(
+                    action="NOOP",
+                    metadata=metadata,
+                    partition_count=len(metadata.partition_integrity.entries),
+                )
+
+            snapshot = self._store.partition_integrity_snapshot(
+                instrument.exchange,
+                instrument.market_type,
+                instrument.pair,
+                timeframe,
+            )
+            expected_version = (
+                snapshot.current_version
+                if metadata.version_algorithm == RAW_DATASET_VERSION_ALGORITHM
+                else (
+                    snapshot.legacy_version
+                    if metadata.version_algorithm == LEGACY_RAW_DATASET_VERSION_ALGORITHM
+                    else None
+                )
+            )
+            if expected_version is None or expected_version != metadata.version:
+                raise MarketDataInconsistencyError(
+                    "O conteúdo RAW atual diverge da versão catalogada; backfill recusado."
+                )
+            if (
+                snapshot.candle_count != metadata.candle_count
+                or _isoformat_or_none(snapshot.first_open_time) != metadata.first_open_time
+                or _isoformat_or_none(snapshot.last_open_time) != metadata.last_open_time
+            ):
+                raise MarketDataInconsistencyError(
+                    "A cobertura RAW atual diverge da metadata catalogada; backfill recusado."
+                )
+
+            manifest = build_raw_partition_integrity_manifest(
+                metadata.version,
+                snapshot.entries,
+            )
+            intended = replace(metadata, partition_integrity=manifest)
+            transaction_id = uuid4().hex
+            run_id: str | None = None
+            try:
+                with self._catalog.acquire_lease() as catalog_lease:
+                    current = self._catalog.get_dataset(key, lease=catalog_lease)
+                    if current != metadata:
+                        raise MarketDataInconsistencyError(
+                            "A metadata RAW mudou durante o backfill de integridade."
+                        )
+                    started = self._catalog.start_run(key, lease=catalog_lease)
+                    run_id = started.run_id
+                    finished_at = self._clock().astimezone(UTC).isoformat()
+                    parquet_plan = ParquetUpsertPlan(
+                        transaction_id=transaction_id,
+                        partitions=(),
+                        stored_count=0,
+                        duplicate_count=0,
+                        first_open_time=snapshot.first_open_time,
+                        last_open_time=snapshot.last_open_time,
+                        candle_count=snapshot.candle_count,
+                        checksum=metadata.version,
+                        version_algorithm=metadata.version_algorithm,
+                        partition_integrity_entries=snapshot.entries,
+                    )
+                    catalog_plan = self._catalog.prepare_completion(
+                        _completed_run(
+                            started.run_id,
+                            key,
+                            0,
+                            0,
+                            started_at=started.started_at,
+                            finished_at=finished_at,
+                        ),
+                        intended,
+                        transaction_id=transaction_id,
+                        lease=catalog_lease,
+                    )
+                    self._coordinator.execute(
+                        parquet_plan,
+                        catalog_plan,
+                        intended_version=metadata.version,
+                        catalog_lease=catalog_lease,
+                    )
+            except Exception as error:
+                if run_id is not None:
+                    error_code = (
+                        error.code if isinstance(error, MarketDataError) else "backfill_failed"
+                    )
+                    try:
+                        self._catalog.fail_run(run_id, key, error_code)
+                    except MarketDataError:
+                        pass
+                raise
+            return PartitionIntegrityBackfillResult(
+                action="CREATED",
+                metadata=intended,
+                partition_count=len(manifest.entries),
+            )
+
     def verify(
         self,
         instrument: Instrument,
@@ -359,6 +492,7 @@ class HistoricalMarketDataService:
         count: int | None = None,
         version: str | None = None,
         version_algorithm: str | None = None,
+        partition_integrity: RawPartitionIntegrityManifest | None = None,
         catalog_lease: CatalogLease | None = None,
     ) -> DatasetMetadata:
         if count is None:
@@ -383,6 +517,9 @@ class HistoricalMarketDataService:
         selected_algorithm = version_algorithm or (
             existing.version_algorithm if existing else RAW_DATASET_VERSION_ALGORITHM
         )
+        selected_integrity = partition_integrity or (
+            existing.partition_integrity if existing is not None else None
+        )
         if selected_version is None:
             selected_version = self._store.logical_version(
                 instrument.exchange,
@@ -404,6 +541,7 @@ class HistoricalMarketDataService:
             version=selected_version,
             updated_at=self._clock().astimezone(UTC).isoformat(),
             version_algorithm=selected_algorithm,
+            partition_integrity=selected_integrity,
         )
 
     @staticmethod
@@ -414,6 +552,59 @@ class HistoricalMarketDataService:
         if previous is not None and plan.stored_count == 0:
             return previous.version
         return plan.checksum
+
+
+def _manifest_from_current_plan(
+    version: str,
+    version_algorithm: str,
+    plan: ParquetUpsertPlan,
+) -> RawPartitionIntegrityManifest | None:
+    if version_algorithm != RAW_DATASET_VERSION_ALGORITHM:
+        return None
+    composed = compose_raw_dataset_version(
+        (entry.relative_path, entry.checksum) for entry in plan.partition_integrity_entries
+    )
+    if composed != plan.checksum or composed != version:
+        raise MarketDataInconsistencyError(
+            "O manifesto RAW planejado diverge da versão global do dataset."
+        )
+    return build_raw_partition_integrity_manifest(version, plan.partition_integrity_entries)
+
+
+def _validate_manifest_dataset_identity(
+    metadata: DatasetMetadata,
+    instrument: Instrument,
+    timeframe: Timeframe,
+    store: ParquetCandleStore,
+) -> None:
+    manifest = metadata.partition_integrity
+    if manifest is None:
+        return
+    expected_root = store.dataset_root(
+        instrument.exchange,
+        instrument.market_type,
+        instrument.pair,
+        timeframe,
+    ).relative_to(store.root)
+    expected_prefix = f"{expected_root.as_posix()}/"
+    if any(not entry.relative_path.startswith(expected_prefix) for entry in manifest.entries):
+        raise MarketDataInconsistencyError(
+            "O manifesto RAW referencia uma partição de outro dataset."
+        )
+    if metadata.version_algorithm == RAW_DATASET_VERSION_ALGORITHM:
+        composed = compose_raw_dataset_version(
+            (entry.relative_path, entry.checksum) for entry in manifest.entries
+        )
+        if composed != metadata.version:
+            raise MarketDataInconsistencyError(
+                "O manifesto RAW completo diverge da versão catalogada."
+            )
+    elif metadata.version_algorithm != LEGACY_RAW_DATASET_VERSION_ALGORITHM:
+        raise MarketDataInconsistencyError("O algoritmo de versão RAW não é suportado.")
+
+
+def _isoformat_or_none(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
 
 
 def default_local_services(

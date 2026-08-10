@@ -21,7 +21,12 @@ from app.api.routes import admin_paper_journal
 from app.main import app
 from app.paper_trading.journal_export import PaperTradeJournalExportService
 from app.paper_trading.journal_query import PaperTradeJournalReadService
-from tests.test_paper_trading_journal_query import _populated_repository
+from app.paper_trading.repository import PaperTradingRepository
+from tests.test_paper_trading_journal_query import (
+    _persist_resigned_state,
+    _populated_repository,
+    _state_verifier,
+)
 
 
 @pytest_asyncio.fixture
@@ -29,8 +34,9 @@ async def journal_api_client(
     tmp_path: Path,
 ) -> AsyncIterator[tuple[httpx.AsyncClient, str]]:
     repository, session_id = _populated_repository(tmp_path)
-    reader = PaperTradeJournalReadService(repository)
-    exporter = PaperTradeJournalExportService(repository)
+    verifier = _state_verifier(tmp_path)
+    reader = PaperTradeJournalReadService(repository, verifier)
+    exporter = PaperTradeJournalExportService(repository, verifier)
 
     app.dependency_overrides[get_paper_trade_journal_read_service] = lambda: reader
     app.dependency_overrides[get_paper_trade_journal_export_service] = lambda: exporter
@@ -180,6 +186,32 @@ async def test_journal_api_rejects_unbounded_pagination(
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_journal_api_rejects_resigned_state_with_safe_conflict(
+    journal_api_client: tuple[httpx.AsyncClient, str],
+    tmp_path: Path,
+) -> None:
+    client, session_id = journal_api_client
+    _persist_resigned_state(
+        tmp_path,
+        PaperTradingRepository(tmp_path),
+        session_id,
+        source_checksum="d" * 64,
+    )
+    app.dependency_overrides[require_administrator] = lambda: UUID(int=1)
+
+    response = await client.get(
+        "/api/v1/admin/paper-trading/journal",
+        params={"session_id": session_id},
+    )
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert response.json()["error"] == {
+        "code": "paper_session_verification_failed",
+        "message": "A sessão de paper trading não pôde ser verificada.",
+    }
 
 
 def test_journal_http_boundary_is_read_only_and_admin_scoped() -> None:

@@ -11,13 +11,17 @@ import pytest
 
 from app.backtesting.domain import OrderSide
 from app.paper_trading.domain import paper_session_id
-from app.paper_trading.errors import InvalidPaperSessionError
+from app.paper_trading.errors import InvalidPaperSessionError, PaperSessionVerificationError
 from app.paper_trading.period_metrics import (
     PaperPeriodGranularity,
     PaperPeriodMetricsFilter,
     PaperPeriodMetricsService,
     calendar_period_end,
     calendar_period_start,
+)
+from app.paper_trading.persisted_state import PaperPersistedStateVerifier
+from app.paper_trading.portfolio_timeline_artifacts import (
+    PaperPortfolioTimelineArtifactStore,
 )
 from app.paper_trading.repository import PaperTradingRepository
 from tests.test_paper_trading import FakeSource, _candle
@@ -26,6 +30,7 @@ from tests.test_paper_trading_journal import (
     _journal_config,
     _service,
 )
+from tests.test_paper_trading_journal_query import _persist_resigned_state, _reference_path
 
 
 def _populated_period_repository(
@@ -49,6 +54,13 @@ def _populated_period_repository(
         PaperTradingRepository(tmp_path),
         paper_session_id(config),
         state.portfolio.realized_pnl,
+    )
+
+
+def _period_service(tmp_path: Path) -> PaperPeriodMetricsService:
+    return PaperPeriodMetricsService(
+        PaperTradingRepository(tmp_path),
+        PaperPersistedStateVerifier(PaperPortfolioTimelineArtifactStore(tmp_path)),
     )
 
 
@@ -83,7 +95,10 @@ def test_period_metrics_allocate_partial_realizations_to_exit_calendar_days(
     tmp_path: Path,
 ) -> None:
     repository, session_id, realized_pnl = _populated_period_repository(tmp_path)
-    service = PaperPeriodMetricsService(repository)
+    service = PaperPeriodMetricsService(
+        repository,
+        PaperPersistedStateVerifier(PaperPortfolioTimelineArtifactStore(tmp_path)),
+    )
     filters = PaperPeriodMetricsFilter(
         quote_asset="usdt",
         period_from=datetime(2026, 8, 1, tzinfo=UTC),
@@ -139,7 +154,7 @@ def test_period_metrics_allocate_partial_realizations_to_exit_calendar_days(
 def test_period_metrics_empty_series_is_bounded_and_source_free(
     tmp_path: Path,
 ) -> None:
-    service = PaperPeriodMetricsService(PaperTradingRepository(tmp_path))
+    service = _period_service(tmp_path)
     filters = PaperPeriodMetricsFilter(
         quote_asset="USDT",
         period_from=datetime(2026, 8, 1, tzinfo=UTC),
@@ -185,7 +200,7 @@ def test_period_metrics_reject_noncanonical_or_unaligned_queries(
             period_before=datetime(2026, 8, 1, tzinfo=UTC),
         )
 
-    service = PaperPeriodMetricsService(PaperTradingRepository(tmp_path))
+    service = _period_service(tmp_path)
     unaligned = PaperPeriodMetricsFilter(
         quote_asset="USDT",
         period_from=datetime(2026, 8, 1, 0, 1, tzinfo=UTC),
@@ -210,7 +225,7 @@ def test_period_metrics_reject_noncanonical_or_unaligned_queries(
 
 
 def test_query_checksum_binds_granularity_and_quote_asset(tmp_path: Path) -> None:
-    service = PaperPeriodMetricsService(PaperTradingRepository(tmp_path))
+    service = _period_service(tmp_path)
     daily_filters = PaperPeriodMetricsFilter(
         quote_asset="USDT",
         period_from=datetime(2026, 8, 3, tzinfo=UTC),
@@ -233,3 +248,112 @@ def test_query_checksum_binds_granularity_and_quote_asset(tmp_path: Path) -> Non
     assert daily.content_checksum != weekly.content_checksum
     assert daily.query_checksum != other_quote.query_checksum
     assert daily.content_checksum != other_quote.content_checksum
+
+
+def test_period_metrics_reject_resigned_source_state_directly(tmp_path: Path) -> None:
+    repository, session_id, _ = _populated_period_repository(tmp_path)
+    _persist_resigned_state(
+        tmp_path,
+        repository,
+        session_id,
+        source_checksum="d" * 64,
+    )
+
+    with pytest.raises(PaperSessionVerificationError):
+        _period_service(tmp_path).build_series(
+            PaperPeriodMetricsFilter(
+                quote_asset="USDT",
+                period_from=datetime(2026, 8, 1, tzinfo=UTC),
+                period_before=datetime(2026, 8, 4, tzinfo=UTC),
+                session_id=session_id,
+            ),
+            granularity=PaperPeriodGranularity.DAILY,
+        )
+
+
+def test_period_metrics_reject_state_without_persisted_reference(tmp_path: Path) -> None:
+    repository, session_id, _ = _populated_period_repository(tmp_path)
+    state = repository.load_state(session_id)
+    assert state is not None
+    _reference_path(tmp_path, session_id, state.checksum).unlink()
+
+    with pytest.raises(PaperSessionVerificationError):
+        _period_service(tmp_path).build_series(
+            PaperPeriodMetricsFilter(
+                quote_asset="USDT",
+                period_from=datetime(2026, 8, 1, tzinfo=UTC),
+                period_before=datetime(2026, 8, 4, tzinfo=UTC),
+                session_id=session_id,
+            ),
+            granularity=PaperPeriodGranularity.DAILY,
+        )
+
+
+def test_period_metrics_exclude_other_quote_without_consuming_source_state(
+    tmp_path: Path,
+) -> None:
+    _populated_period_repository(tmp_path)
+    filters = PaperPeriodMetricsFilter(
+        quote_asset="BRL",
+        period_from=datetime(2026, 8, 1, tzinfo=UTC),
+        period_before=datetime(2026, 8, 4, tzinfo=UTC),
+    )
+
+    first = _period_service(tmp_path).build_series(
+        filters,
+        granularity=PaperPeriodGranularity.DAILY,
+    )
+    second = _period_service(tmp_path).build_series(
+        filters,
+        granularity=PaperPeriodGranularity.DAILY,
+    )
+
+    assert second == first
+    assert first.source_states == ()
+    assert first.totals.realizations_count == 0
+    assert first.totals.realized_pnl == 0
+
+
+def test_period_metrics_use_canonical_source_order_and_realized_only_totals(
+    tmp_path: Path,
+) -> None:
+    _populated_period_repository(tmp_path)
+    start = datetime(2026, 8, 1, 23, 55, tzinfo=UTC)
+    candles = tuple(
+        _candle(1_435 + index, close)
+        for index, close in enumerate(("100", "101", "110", "120", "130", "140", "150"))
+    )
+    schedule = (
+        (0, (_intent(OrderSide.BUY, "2", "entry"),)),
+        (2, (_intent(OrderSide.SELL, "1", "exit-day-one"),)),
+        (4, (_intent(OrderSide.SELL, "1", "exit-day-two"),)),
+    )
+    paper_service = _service(tmp_path, FakeSource(candles), schedule)
+    second_config = replace(
+        _journal_config(),
+        start_at=start,
+        initial_capital=Decimal("20000"),
+    )
+    paper_service.create(second_config)
+    paper_service.run_once(paper_session_id(second_config))
+    filters = PaperPeriodMetricsFilter(
+        quote_asset="USDT",
+        period_from=datetime(2026, 8, 1, tzinfo=UTC),
+        period_before=datetime(2026, 8, 4, tzinfo=UTC),
+    )
+    service = _period_service(tmp_path)
+
+    first = service.build_series(filters, granularity=PaperPeriodGranularity.DAILY)
+    second = service.build_series(filters, granularity=PaperPeriodGranularity.DAILY)
+
+    assert second == first
+    assert tuple(source.session_id for source in first.source_states) == tuple(
+        sorted(source.session_id for source in first.source_states)
+    )
+    assert len(first.source_states) == 2
+    assert first.totals.sessions_count == 2
+    assert first.totals.realizations_count == 4
+    assert first.totals.realized_pnl == sum(
+        (item.realized_pnl for item in first.items),
+        Decimal("0"),
+    )

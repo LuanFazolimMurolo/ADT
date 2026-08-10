@@ -14,6 +14,7 @@ export const PAGE_LIMIT = 1_000;
 export const MAX_LOADED_CANDLES = 5_000;
 const POLL_INTERVAL_MS = 30_000;
 const TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"] as const;
+const ASSET_PATTERN = String.raw`\s*[A-Za-z0-9][A-Za-z0-9._\-]{0,31}\s*`;
 const SAFE_ASSET_CODE = /^[A-Z0-9][A-Z0-9._-]{0,31}$/;
 const SAFE_LOAD_ERROR =
   "Não foi possível carregar os candles locais. Tente atualizar o gráfico.";
@@ -305,7 +306,7 @@ export function AppMarketChartPage() {
               }))
             }
             maxLength={32}
-            pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,31}"
+            pattern={ASSET_PATTERN}
             autoComplete="off"
             required
           />
@@ -322,7 +323,7 @@ export function AppMarketChartPage() {
               }))
             }
             maxLength={32}
-            pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,31}"
+            pattern={ASSET_PATTERN}
             autoComplete="off"
             required
           />

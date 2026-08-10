@@ -41,6 +41,7 @@ class PaperSessionCorruptError(PersistenceError):
 class PaperSessionVerificationError(PersistenceError):
     code = "paper_session_verification_failed"
     default_message = "A sessão de paper trading não pôde ser verificada."
+    status_code = 409
 
 
 class PaperPortfolioTimelineNotFoundError(ResourceNotFoundError):

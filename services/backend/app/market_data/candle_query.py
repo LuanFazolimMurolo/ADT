@@ -27,7 +27,13 @@ from app.market_data.errors import (
 )
 from app.market_data.locks import DatasetLockManager
 from app.market_data.quality import MarketDataQualityValidator
-from app.market_data.storage import ParquetCandleStore, canonical_candle_bytes
+from app.market_data.storage import (
+    LEGACY_RAW_DATASET_VERSION_ALGORITHM,
+    RAW_DATASET_VERSION_ALGORITHM,
+    ParquetCandleStore,
+    canonical_candle_bytes,
+    compose_raw_dataset_version,
+)
 from app.market_data.transaction import MarketDataTransactionCoordinator
 
 MARKET_CANDLE_PAGE_SCHEMA_VERSION = 1
@@ -326,12 +332,48 @@ class LocalMarketCandleReadService:
                 selected_end - query.timeframe.duration * query.limit,
             )
             selected_range = DataRange(selected_start, selected_end)
-            candles = store.read(
+            manifest = metadata.partition_integrity
+            if manifest is None:
+                raise MarketDataInconsistencyError(
+                    "O dataset RAW não possui manifesto de integridade catalogado."
+                )
+            if metadata.version_algorithm not in {
+                RAW_DATASET_VERSION_ALGORITHM,
+                LEGACY_RAW_DATASET_VERSION_ALGORITHM,
+            }:
+                raise MarketDataInconsistencyError(
+                    "O algoritmo de versão RAW não é suportado para leitura."
+                )
+            dataset_root = store.dataset_root(
+                instrument.exchange,
+                instrument.market_type,
+                instrument.pair,
+                query.timeframe,
+            ).relative_to(store.root)
+            expected_prefix = f"{dataset_root.as_posix()}/"
+            if any(
+                not entry.relative_path.startswith(expected_prefix) for entry in manifest.entries
+            ):
+                raise MarketDataInconsistencyError(
+                    "O manifesto RAW referencia uma partição de outro dataset."
+                )
+            if metadata.version_algorithm == RAW_DATASET_VERSION_ALGORITHM and (
+                compose_raw_dataset_version(
+                    (entry.relative_path, entry.checksum) for entry in manifest.entries
+                )
+                != metadata.version
+            ):
+                raise MarketDataInconsistencyError(
+                    "O manifesto RAW completo diverge da versão catalogada."
+                )
+            expected_checksums = {entry.relative_path: entry.checksum for entry in manifest.entries}
+            candles = store.read_verified(
                 instrument.exchange,
                 instrument.market_type,
                 instrument.pair,
                 query.timeframe,
                 selected_range,
+                expected_checksums,
             )
             expected_count = (selected_range.end - selected_range.start) // query.timeframe.duration
             quality = MarketDataQualityValidator().validate(

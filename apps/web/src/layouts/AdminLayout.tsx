@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { apiClient } from "../http/client";
@@ -38,6 +38,12 @@ export function AdminLayout() {
   const { signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  const closeMenu = () => {
+    setMenuOpen(false);
+    menuButtonRef.current?.focus();
+  };
 
   useEffect(() => {
     void apiClient
@@ -48,7 +54,24 @@ export function AdminLayout() {
 
   return (
     <div className="admin-shell">
-      <aside className={menuOpen ? "sidebar sidebar--open" : "sidebar"}>
+      <button
+        ref={menuButtonRef}
+        className="menu-button"
+        type="button"
+        aria-label="Alternar navegação"
+        aria-controls="admin-navigation"
+        aria-expanded={menuOpen}
+        onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
+      >
+        <span />
+        <span />
+        <span />
+      </button>
+
+      <aside
+        id="admin-navigation"
+        className={menuOpen ? "sidebar sidebar--open" : "sidebar"}
+      >
         <div className="sidebar__brand">
           <span className="brand-mark" aria-hidden="true">
             A
@@ -64,7 +87,7 @@ export function AdminLayout() {
               key={item.to}
               to={item.to}
               end={item.end}
-              onClick={() => setMenuOpen(false)}
+              onClick={closeMenu}
               className={({ isActive }) =>
                 isActive
                   ? "sidebar__link sidebar__link--active"
@@ -94,17 +117,6 @@ export function AdminLayout() {
 
       <div className="admin-content">
         <header className="topbar">
-          <button
-            className="menu-button"
-            type="button"
-            aria-label="Alternar navegação"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((value) => !value)}
-          >
-            <span />
-            <span />
-            <span />
-          </button>
           <div className="topbar__identity">
             <span className="identity-avatar" aria-hidden="true">
               AD
@@ -130,7 +142,7 @@ export function AdminLayout() {
         <button
           className="sidebar-scrim"
           aria-label="Fechar navegação"
-          onClick={() => setMenuOpen(false)}
+          onClick={closeMenu}
         />
       )}
     </div>

@@ -10,6 +10,7 @@
     "typecheck:e2e": "tsc -p tsconfig.e2e.json --noEmit",
     "generate:api": "node scripts/generate-api.mjs",
     "check:api": "node scripts/generate-api.mjs --check",
+    "check:bundle-budget": "node scripts/check-bundle-budget.mjs",
     "test": "vitest src",
     "test:ui": "vitest --ui",
     "test:e2e": "playwright test",

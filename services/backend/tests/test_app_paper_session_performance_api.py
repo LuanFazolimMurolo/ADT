@@ -40,7 +40,11 @@ from app.paper_trading.portfolio_timeline_query import (
 )
 from app.paper_trading.query import PaperSessionView, PaperTradingReadService
 from app.paper_trading.repository import PaperTradingRepository
-from tests.test_paper_trading_period_metrics import _populated_period_repository
+from tests.test_paper_trading_journal_query import _persist_resigned_state
+from tests.test_paper_trading_period_metrics import (
+    _period_service,
+    _populated_period_repository,
+)
 from tests.test_paper_trading_portfolio_timeline_service import _running_session
 
 MISSING_SESSION_ID = "f" * 64
@@ -126,7 +130,7 @@ async def period_client(
 ) -> AsyncIterator[tuple[httpx.AsyncClient, str, RecordingSessionService, RecordingPeriodService]]:
     repository, session_id, _ = _populated_period_repository(tmp_path)
     session_service = RecordingSessionService(PaperTradingReadService(repository))
-    period_service = RecordingPeriodService(PaperPeriodMetricsService(repository))
+    period_service = RecordingPeriodService(_period_service(tmp_path))
     app.dependency_overrides[require_app_paper_session_reader] = lambda: UUID(int=1)
     app.dependency_overrides[get_paper_trading_read_service] = lambda: session_service
     app.dependency_overrides[get_paper_period_metrics_service] = lambda: period_service
@@ -321,6 +325,38 @@ async def test_period_metrics_propagate_range_granularity_and_missing_session(
     assert filters.period_before == datetime.fromisoformat("2026-09-01T00:00:00+00:00")
     assert granularity is PaperPeriodGranularity.MONTHLY
     assert missing.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_authorized_app_period_metrics_reject_resigned_source_state_with_safe_conflict(
+    period_client: tuple[
+        httpx.AsyncClient,
+        str,
+        RecordingSessionService,
+        RecordingPeriodService,
+    ],
+    tmp_path: Path,
+) -> None:
+    client, session_id, session_service, period_service = period_client
+    _persist_resigned_state(
+        tmp_path,
+        PaperTradingRepository(tmp_path),
+        session_id,
+        source_checksum="d" * 64,
+    )
+
+    response = await client.get(
+        f"/api/v1/app/paper-trading/sessions/{session_id}/period-metrics",
+        params=PERIOD_PARAMS,
+    )
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert response.json()["error"] == {
+        "code": "paper_session_verification_failed",
+        "message": "A sessão de paper trading não pôde ser verificada.",
+    }
+    assert session_service.session_ids == [session_id]
+    assert len(period_service.calls) == 1
 
 
 def test_app_performance_boundary_is_get_only_without_cross_session_or_export() -> None:

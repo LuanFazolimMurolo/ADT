@@ -4,15 +4,17 @@
 
 - **Phase**: 6
 - **Delivery**: 6-01
-- **Status**: approved in Phase 6-01 and reconciled through Phase 6-06
+- **Status**: approved in Phase 6-01 and reconciled through the Phase 6-07E
+  candidate audit; Phase 6-07F remains pending
 - **Base release**: annotated tag `phase-5`
 - **Base commit**: `f50d8f087375158112f8d3f43dd25e45a5f83b05`
 - **Scope authority**: this document and the Phase 6 section of `docs/ROADMAP.md`
 
-Phase 6 begins only after the complete Phase 5 deterministic paper-trading
-boundary. This delivery changes documentation only. It does not install a chart
-library, add endpoints, create migrations, alter financial calculations or
-start any remote operation.
+Phase 6 builds on the complete Phase 5 deterministic paper-trading boundary.
+Its implemented surfaces remain bounded and read-only; formal Phase 6 completion
+still depends on the Phase 6-07F final gate and integration. The operational
+closure evidence and remaining conditions are recorded in
+[`PHASE6_CLOSURE.md`](./PHASE6_CLOSURE.md).
 
 ## 2. Goal
 
