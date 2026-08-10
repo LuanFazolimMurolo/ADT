@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI
@@ -15,6 +17,7 @@ from app.api.exceptions import setup_exception_handlers
 from app.api.routes import (
     admin,
     admin_market_candles,
+    admin_market_operations,
     admin_paper_chart_annotations,
     admin_paper_dashboard,
     admin_paper_journal,
@@ -41,8 +44,15 @@ from app.database import Database
 from app.market_data.asset_catalog import AssetMarketService
 from app.market_data.binance import BINANCE_MARKET_DATA_BASE_URL, BinanceSpotAdapter
 from app.market_data.candle_query import LocalMarketCandleReadService
+from app.market_data.catalog import JsonMarketDataCatalog
 from app.market_data.continuous import ContinuousCollectionStateStore
 from app.market_data.http import PublicMarketHttpClient
+from app.market_data.locks import DatasetLockManager
+from app.market_data.planning import MarketDataPlanner
+from app.market_data.quality import MarketDataQualityValidator
+from app.market_data.services import HistoricalMarketDataService
+from app.market_data.storage import ParquetCandleStore
+from app.market_data.transaction import MarketDataTransactionCoordinator
 from app.middleware import RequestContextMiddleware
 from app.paper_trading.chart_annotations import PaperChartAnnotationReadService
 from app.paper_trading.continuous import PaperRunnerStateStore
@@ -59,6 +69,8 @@ from app.paper_trading.portfolio_timeline_query import (
 )
 from app.paper_trading.query import PaperTradingReadService
 from app.paper_trading.repository import PaperTradingRepository
+from app.repositories import PostgresMarketOperationRepository
+from app.services import MarketOperationService
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +128,9 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        def market_operation_clock() -> datetime:
+            return datetime.now(UTC)
+
         database = Database(app_settings.supabase_database_url.get_secret_value())
         async with (
             httpx.AsyncClient(follow_redirects=False) as http_client,
@@ -134,14 +149,59 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
                 issuer=app_settings.supabase_issuer,
                 http_client=http_client,
             )
+            binance_adapter = BinanceSpotAdapter(
+                market_http_client,
+                allow_open_candles=app_settings.market_allow_open_candles,
+            )
             application.state.asset_market_service = AssetMarketService(
-                BinanceSpotAdapter(
-                    market_http_client,
-                    allow_open_candles=app_settings.market_allow_open_candles,
-                ),
+                binance_adapter,
                 catalog_ttl_seconds=app_settings.market_asset_catalog_ttl_seconds,
                 max_instruments=app_settings.market_asset_catalog_max_instruments,
             )
+
+            market_operation_store = ParquetCandleStore(app_settings.data_dir)
+            market_operation_catalog = JsonMarketDataCatalog(
+                app_settings.data_dir,
+                clock=market_operation_clock,
+            )
+            market_operation_lock_manager = DatasetLockManager(
+                app_settings.data_dir,
+                timeout_seconds=app_settings.market_job_lock_timeout,
+                stale_after_seconds=app_settings.market_job_stale_after,
+                clock=market_operation_clock,
+            )
+            market_operation_coordinator = MarketDataTransactionCoordinator(
+                market_operation_store,
+                market_operation_catalog,
+                lock_manager=market_operation_lock_manager,
+            )
+            market_operation_planning_leases = HistoricalMarketDataService(
+                adapter=binance_adapter,
+                store=market_operation_store,
+                catalog=market_operation_catalog,
+                validator=MarketDataQualityValidator(clock=market_operation_clock),
+                max_fetch_candles=app_settings.market_max_fetch_candles,
+                coordinator=market_operation_coordinator,
+                clock=market_operation_clock,
+                lock_manager=market_operation_lock_manager,
+            )
+            market_operation_planner = MarketDataPlanner(
+                adapter_request_limit=binance_adapter.limits.max_candles_per_request,
+                max_fetch_candles=app_settings.market_max_fetch_candles,
+                chunk_candles=app_settings.market_backfill_chunk_candles,
+                max_total_candles=app_settings.market_backfill_max_total_candles,
+                max_chunks=app_settings.market_job_max_chunks,
+                clock=market_operation_clock,
+            )
+            application.state.market_operation_service = MarketOperationService(
+                repository=PostgresMarketOperationRepository(database),
+                planner=market_operation_planner,
+                store=market_operation_store,
+                planning_leases=market_operation_planning_leases,
+                clock=market_operation_clock,
+                id_generator=uuid4,
+            )
+
             application.state.continuous_collection_state_store = ContinuousCollectionStateStore(
                 app_settings.data_dir
             )
@@ -260,6 +320,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(paper_trading.router)
     application.include_router(admin.router)
     application.include_router(admin_market_candles.router)
+    application.include_router(admin_market_operations.router)
     application.include_router(admin_paper_chart_annotations.router)
     application.include_router(admin_paper_dashboard.router)
     application.include_router(admin_paper_journal.router)

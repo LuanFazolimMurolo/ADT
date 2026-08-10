@@ -30,6 +30,7 @@ from app.repositories import (
 from app.services import (
     AdminService,
     CapitalMovementService,
+    MarketOperationService,
     PublicSimulationService,
     SettingsService,
     SimulationService,
@@ -53,6 +54,11 @@ def get_market_candle_read_service(request: Request) -> LocalMarketCandleReadSer
         LocalMarketCandleReadService,
         request.app.state.market_candle_read_service,
     )
+
+
+def get_market_operation_service(request: Request) -> MarketOperationService:
+    """Return the application-owned market-data operation control service."""
+    return cast(MarketOperationService, request.app.state.market_operation_service)
 
 
 def get_continuous_collection_state_store(

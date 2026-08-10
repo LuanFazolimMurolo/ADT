@@ -18,6 +18,16 @@ from app.api.schemas.common import (
     PositiveFinancialDecimalStringInput,
 )
 from app.api.schemas.errors import ErrorDetail, ErrorPayload, ErrorResponse
+from app.api.schemas.market_operations import (
+    IncrementalMarketOperationPlanPreviewResponse,
+    MarketOperationBackfillPreviewRequest,
+    MarketOperationControlRequest,
+    MarketOperationIncrementalPreviewRequest,
+    MarketOperationListResponse,
+    MarketOperationPlanPreviewResponse,
+    MarketOperationResponse,
+    MarketOperationSubmitRequest,
+)
 from app.api.schemas.movements import (
     CapitalMovementResponse,
     CapitalMovementType,
@@ -88,6 +98,14 @@ __all__ = [
     "FinancialDecimal",
     "FinancialDecimalStringInput",
     "JsonObject",
+    "IncrementalMarketOperationPlanPreviewResponse",
+    "MarketOperationBackfillPreviewRequest",
+    "MarketOperationControlRequest",
+    "MarketOperationIncrementalPreviewRequest",
+    "MarketOperationListResponse",
+    "MarketOperationPlanPreviewResponse",
+    "MarketOperationResponse",
+    "MarketOperationSubmitRequest",
     "MovementCreateRequest",
     "MovementCreateType",
     "MovementListResponse",
