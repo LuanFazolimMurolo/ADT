@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 from time import monotonic
+from typing import Protocol
 from uuid import UUID
 
 from app.market_data.catalog import ChunkCommitReceipt, ChunkOperationContext
@@ -27,6 +29,30 @@ from app.market_data.timeframes import get_timeframe
 
 logger = logging.getLogger(__name__)
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+
+class BackfillControl(StrEnum):
+    """Cooperative action requested at a safe chunk boundary."""
+
+    CONTINUE = "CONTINUE"
+    PAUSE = "PAUSE"
+    CANCEL = "CANCEL"
+
+
+class BackfillExecutionObserver(Protocol):
+    """Observe durable execution without coupling the executor to PostgreSQL."""
+
+    async def before_chunk(
+        self,
+        record: MarketJobRecord,
+        chunk: BackfillChunk,
+    ) -> BackfillControl: ...
+
+    async def after_checkpoint(
+        self,
+        record: MarketJobRecord,
+        chunk: BackfillChunk,
+    ) -> None: ...
 
 
 class BackfillExecutor:
@@ -55,6 +81,7 @@ class BackfillExecutor:
         pair: TradingPair,
         *,
         dry_run: bool = False,
+        observer: BackfillExecutionObserver | None = None,
     ) -> BackfillResult:
         if not plan.chunks:
             raise MarketDataInconsistencyError("Um job executável deve possuir chunks.")
@@ -72,22 +99,40 @@ class BackfillExecutor:
         record = self._jobs.create(plan)
         if record.status is MarketJobStatus.COMPLETED:
             return _result(record, 0)
-        return await self._execute(record, plan, pair)
+        return await self._execute(
+            record,
+            plan,
+            pair,
+            observer=observer,
+        )
 
-    async def resume(self, job_id: str, pair: TradingPair) -> BackfillResult:
+    async def resume(
+        self,
+        job_id: str,
+        pair: TradingPair,
+        *,
+        observer: BackfillExecutionObserver | None = None,
+    ) -> BackfillResult:
         record = self._jobs.get(job_id)
         if record.status not in {MarketJobStatus.PAUSED, MarketJobStatus.FAILED}:
             raise MarketDataInconsistencyError("Somente job pausado ou falho pode ser retomado.")
         plan = _record_plan(record)
         if record.dataset_key != _dataset_key(pair, plan.timeframe.code):
             raise MarketDataInconsistencyError("O símbolo informado diverge do job persistido.")
-        return await self._execute(record, plan, pair)
+        return await self._execute(
+            record,
+            plan,
+            pair,
+            observer=observer,
+        )
 
     async def _execute(
         self,
         record: MarketJobRecord,
         plan: BackfillPlan,
         pair: TradingPair,
+        *,
+        observer: BackfillExecutionObserver | None,
     ) -> BackfillResult:
         requests = 0
         if record.dataset_key != _dataset_key(pair, plan.timeframe.code):
@@ -104,7 +149,10 @@ class BackfillExecutor:
             try:
                 for chunk in plan.chunks[record.next_chunk_index :]:
                     current = self._jobs.get(record.job_id)
-                    if current.status in {MarketJobStatus.PAUSED, MarketJobStatus.CANCELLED}:
+                    if current.status in {
+                        MarketJobStatus.PAUSED,
+                        MarketJobStatus.CANCELLED,
+                    }:
                         logger.info(
                             "Market-data job interrupted cooperatively",
                             extra={
@@ -114,6 +162,37 @@ class BackfillExecutor:
                             },
                         )
                         return _result(current, requests)
+
+                    if observer is not None:
+                        control = await observer.before_chunk(current, chunk)
+                        if not isinstance(control, BackfillControl):
+                            raise MarketDataInconsistencyError(
+                                "O observer retornou controle de execução inválido."
+                            )
+
+                        if control is BackfillControl.PAUSE:
+                            current = self._jobs.pause(record.job_id)
+                            logger.info(
+                                "Market-data job paused by execution observer",
+                                extra={
+                                    "job_id": current.job_id,
+                                    "dataset_key": current.dataset_key,
+                                    "chunk_index": chunk.index,
+                                },
+                            )
+                            return _result(current, requests)
+
+                        if control is BackfillControl.CANCEL:
+                            current = self._jobs.cancel(record.job_id)
+                            logger.info(
+                                "Market-data job cancelled by execution observer",
+                                extra={
+                                    "job_id": current.job_id,
+                                    "dataset_key": current.dataset_key,
+                                    "chunk_index": chunk.index,
+                                },
+                            )
+                            return _result(current, requests)
                     existing = self._history.verify(
                         instrument,
                         plan.timeframe,
@@ -134,6 +213,8 @@ class BackfillExecutor:
                             ):
                                 self._verify_repair(instrument, plan, lease)
                             record = self._advance_with_receipt(record, receipt)
+                            if observer is not None:
+                                await observer.after_checkpoint(record, chunk)
                             logger.info(
                                 "Market-data confirmed chunk recovered from receipt",
                                 extra={
@@ -183,6 +264,8 @@ class BackfillExecutor:
                         duplicates=receipt.duplicate_count,
                         requests=receipt.request_count,
                     )
+                    if observer is not None:
+                        await observer.after_checkpoint(record, chunk)
                     logger.info(
                         "Market-data chunk completed",
                         extra={
