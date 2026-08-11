@@ -10,8 +10,14 @@ from uuid import UUID
 import pytest
 
 from app.market_data.domain import DataRange, Exchange, MarketType, TradingPair
+from app.market_data.errors import MarketOperationPlanConflictError
+from app.market_data.jobs import MarketJobRecord
 from app.market_data.operation_ports import MarketOperationRepository
-from app.market_data.operation_worker import MarketOperationWorkerSession
+from app.market_data.operation_worker import (
+    MarketOperationExecutionObserver,
+    MarketOperationWorkerSession,
+    build_operation_backfill_plan,
+)
 from app.market_data.operations import (
     MarketDatasetSelector,
     MarketOperationFailureCode,
@@ -24,7 +30,18 @@ from app.market_data.operations import (
     SanitizedOperationFailure,
     WorkerLease,
 )
-from app.market_data.orchestration import BackfillControl
+from app.market_data.orchestration import (
+    BackfillControl,
+    BackfillExecutionObserver,
+)
+from app.market_data.planning import (
+    BackfillChunk,
+    BackfillPlan,
+    MarketDataPlanner,
+    MarketJobStatus,
+    MarketJobType,
+    backfill_plan_checksum,
+)
 from app.market_data.timeframes import get_timeframe
 
 OWNER = UUID("10000000-0000-4000-8000-000000000001")
@@ -317,3 +334,326 @@ async def test_wrong_owner_is_rejected_before_repository_mutation() -> None:
 
     assert repository.state_calls == []
     assert repository.renew_calls == []
+
+
+def _job_record(
+    *,
+    status: MarketJobStatus = MarketJobStatus.RUNNING,
+    chunks_completed: int = 1,
+    fetched: int = 1,
+    stored: int = 1,
+    requests: int = 1,
+) -> MarketJobRecord:
+    return MarketJobRecord(
+        job_id=str(OPERATION_ID),
+        dataset_key=_dataset().canonical_key,
+        job_type=MarketJobType.BACKFILL,
+        status=status,
+        timeframe="1h",
+        start=START.isoformat(),
+        end=END.isoformat(),
+        chunk_ranges=(
+            (START.isoformat(), (START + timedelta(hours=1)).isoformat()),
+            ((START + timedelta(hours=1)).isoformat(), END.isoformat()),
+        ),
+        plan_checksum="a" * 64,
+        next_chunk_index=chunks_completed,
+        chunks_completed=chunks_completed,
+        candles_expected=2,
+        chunk_candles=1,
+        candles_fetched=fetched,
+        candles_stored=stored,
+        duplicates=0,
+        request_count=requests,
+        started_at=NOW.isoformat(),
+        updated_at=NOW.isoformat(),
+        finished_at=None,
+        error_code=None,
+    )
+
+
+class ProgressFakeRepository(FakeRepository):
+    def __init__(self, operation: MarketOperationSnapshot) -> None:
+        super().__init__(operation)
+        self.progress_calls: list[tuple[int, OperationProgress, str | None]] = []
+
+    async def update_progress(
+        self,
+        *,
+        operation_id: UUID,
+        owner_id: UUID,
+        now: datetime,
+        progress: OperationProgress,
+        local_job_id: str | None,
+        expected_version: int,
+    ) -> MarketOperationSnapshot:
+        assert operation_id == OPERATION_ID
+        assert owner_id == OWNER
+        assert self.operation is not None
+        assert expected_version == self.operation.record_version
+
+        self.progress_calls.append((expected_version, progress, local_job_id))
+
+        self.operation = replace(
+            self.operation,
+            progress=progress,
+            local_job_id=local_job_id,
+            updated_at=now,
+            record_version=self.operation.record_version + 1,
+        )
+        return self.operation
+
+
+class StaticPlanner:
+    def __init__(self, plan: BackfillPlan) -> None:
+        self.plan = plan
+        self.call: dict[str, object] | None = None
+
+    def backfill(
+        self,
+        dataset_key: str,
+        timeframe: object,
+        data_range: DataRange,
+        *,
+        job_type: MarketJobType = MarketJobType.BACKFILL,
+        job_id: str | None = None,
+        latest_closed_at: datetime | None = None,
+    ) -> BackfillPlan:
+        self.call = {
+            "dataset_key": dataset_key,
+            "timeframe": timeframe,
+            "data_range": data_range,
+            "job_type": job_type,
+            "job_id": job_id,
+            "latest_closed_at": latest_closed_at,
+        }
+        return replace(
+            self.plan,
+            job_type=job_type,
+            job_id=self.plan.job_id if job_id is None else job_id,
+        )
+
+
+def _source_plan(
+    *,
+    job_type: MarketJobType = MarketJobType.BACKFILL,
+) -> BackfillPlan:
+    timeframe = get_timeframe("1h")
+    return BackfillPlan(
+        job_id="40000000-0000-4000-8000-000000000001",
+        dataset_key=_dataset().canonical_key,
+        timeframe=timeframe,
+        data_range=DataRange(START, END),
+        chunks=(
+            BackfillChunk(
+                0,
+                DataRange(START, START + timedelta(hours=1)),
+                1,
+            ),
+            BackfillChunk(
+                1,
+                DataRange(START + timedelta(hours=1), END),
+                1,
+            ),
+        ),
+        expected_candles=2,
+        chunk_candles=1,
+        job_type=job_type,
+    )
+
+
+def _operation_for_plan(
+    plan: BackfillPlan,
+) -> MarketOperationSnapshot:
+    base = _snapshot(state=MarketOperationState.CLAIMED)
+    checksum = backfill_plan_checksum(plan)
+
+    request = replace(
+        base.request,
+        plan_checksum=checksum,
+        operation_type=(
+            MarketOperationType.RAW_INCREMENTAL_UPDATE
+            if plan.job_type is MarketJobType.INCREMENTAL
+            else MarketOperationType.RAW_BACKFILL
+        ),
+    )
+
+    summary = OperationPlanSummary(
+        checksum=checksum,
+        chunks_planned=len(plan.chunks),
+        estimated_candles=plan.expected_candles,
+        estimated_requests=len(plan.chunks),
+        created_at=NOW,
+    )
+
+    progress = OperationProgress(
+        chunks_planned=len(plan.chunks),
+        chunks_completed=0,
+        chunks_failed=0,
+        candles_estimated=plan.expected_candles,
+        candles_received=0,
+        candles_persisted=0,
+        requests_completed=0,
+        updated_at=NOW,
+    )
+
+    return replace(
+        base,
+        request=request,
+        plan=summary,
+        progress=progress,
+    )
+
+
+def _require_execution_observer(
+    observer: BackfillExecutionObserver,
+) -> BackfillExecutionObserver:
+    return observer
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "state",
+    [
+        MarketOperationState.PAUSE_REQUESTED,
+        MarketOperationState.CANCEL_REQUESTED,
+    ],
+)
+async def test_heartbeat_keeps_control_requested_lease_alive_until_safe_boundary(
+    state: MarketOperationState,
+) -> None:
+    clock = ManualClock(NOW + timedelta(seconds=30))
+    repository = FakeRepository(_snapshot(state=state))
+    session = _session(repository, clock)
+
+    renewed = await session.heartbeat(repository.operation)
+
+    assert renewed.state is state
+    assert renewed.lease is not None
+    assert renewed.lease.heartbeat_at == clock.current
+    assert renewed.lease.lease_expires_at == (clock.current + timedelta(minutes=2))
+    assert len(repository.renew_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_projects_durable_local_counters_and_job_identity() -> None:
+    clock = ManualClock(NOW + timedelta(seconds=20))
+    operation = _snapshot(state=MarketOperationState.RUNNING)
+    repository = ProgressFakeRepository(operation)
+    session = _session(repository, clock)
+    record = _job_record(
+        chunks_completed=1,
+        fetched=1,
+        stored=1,
+        requests=1,
+    )
+
+    updated = await session.checkpoint(operation, record)
+
+    assert updated.local_job_id == str(OPERATION_ID)
+    assert updated.progress.chunks_completed == 1
+    assert updated.progress.candles_received == 1
+    assert updated.progress.candles_persisted == 1
+    assert updated.progress.requests_completed == 1
+    assert updated.progress.updated_at == clock.current
+    assert repository.progress_calls == [
+        (
+            2,
+            updated.progress,
+            str(OPERATION_ID),
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_execution_observer_serializes_boundary_checkpoint_and_heartbeat() -> None:
+    clock = ManualClock(NOW + timedelta(seconds=10))
+    operation = _snapshot(state=MarketOperationState.RUNNING)
+    repository = ProgressFakeRepository(operation)
+    session = _session(repository, clock)
+    observer = MarketOperationExecutionObserver(
+        session=session,
+        operation=operation,
+    )
+
+    assert _require_execution_observer(observer) is observer
+
+    initial = _job_record(
+        chunks_completed=0,
+        fetched=0,
+        stored=0,
+        requests=0,
+    )
+    chunk = BackfillChunk(
+        0,
+        DataRange(START, START + timedelta(hours=1)),
+        1,
+    )
+
+    control = await observer.before_chunk(initial, chunk)
+    assert control is BackfillControl.CONTINUE
+
+    clock.current += timedelta(seconds=10)
+    confirmed = _job_record(
+        chunks_completed=1,
+        fetched=1,
+        stored=1,
+        requests=1,
+    )
+
+    await observer.after_checkpoint(confirmed, chunk)
+
+    assert observer.operation.progress.chunks_completed == 1
+    checkpoint_version = observer.operation.record_version
+
+    clock.current += timedelta(seconds=10)
+    heartbeat = await observer.heartbeat()
+
+    assert heartbeat.record_version == checkpoint_version + 1
+    assert heartbeat.progress.chunks_completed == 1
+
+
+def test_operation_plan_is_reconstructed_with_deterministic_local_job_id() -> None:
+    source = _source_plan()
+    operation = _operation_for_plan(source)
+    planner = StaticPlanner(source)
+
+    rebuilt = build_operation_backfill_plan(
+        operation,
+        planner=cast(MarketDataPlanner, planner),
+        now=NOW,
+    )
+
+    assert rebuilt.job_id == str(OPERATION_ID)
+    assert backfill_plan_checksum(rebuilt) == operation.plan.checksum
+    assert planner.call is not None
+    assert planner.call["job_id"] == str(OPERATION_ID)
+    assert planner.call["job_type"] is MarketJobType.BACKFILL
+    assert planner.call["latest_closed_at"] == NOW
+
+
+def test_operation_plan_reconstruction_rejects_checksum_drift() -> None:
+    source = _source_plan()
+    operation = _operation_for_plan(source)
+
+    drifted_checksum = "b" * 64
+    operation = replace(
+        operation,
+        request=replace(
+            operation.request,
+            plan_checksum=drifted_checksum,
+        ),
+        plan=replace(
+            operation.plan,
+            checksum=drifted_checksum,
+        ),
+    )
+
+    planner = StaticPlanner(source)
+
+    with pytest.raises(MarketOperationPlanConflictError):
+        build_operation_backfill_plan(
+            operation,
+            planner=cast(MarketDataPlanner, planner),
+            now=NOW,
+        )
