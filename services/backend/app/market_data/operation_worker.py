@@ -2,32 +2,49 @@
 
 from __future__ import annotations
 
+import asyncio
 from asyncio import Lock
 from datetime import datetime, timedelta
 from uuid import UUID
 
 from app.market_data.errors import (
     InvalidMarketOperationRequestError,
+    InvalidMarketResponseError,
+    InvalidOperationLeaseError,
     MarketDataInconsistencyError,
+    MarketDataStorageError,
+    MarketDataUnavailableError,
+    MarketJobLockTimeoutError,
+    MarketJobNotFoundError,
     MarketOperationPlanConflictError,
+    MarketRateLimitError,
+    OperationVersionConflictError,
+    UnknownInstrumentError,
+    UnsupportedTimeframeError,
 )
-from app.market_data.jobs import MarketJobRecord
+from app.market_data.jobs import MarketJobCatalog, MarketJobRecord
 from app.market_data.operation_ports import MarketOperationRepository, OperationClock
 from app.market_data.operations import (
+    MarketOperationFailureCode,
     MarketOperationSnapshot,
     MarketOperationState,
     MarketOperationType,
     OperationProgress,
+    OperationResult,
+    SanitizedOperationFailure,
     renew_lease,
 )
-from app.market_data.orchestration import BackfillControl
+from app.market_data.orchestration import BackfillControl, BackfillExecutor
 from app.market_data.planning import (
     BackfillChunk,
     BackfillPlan,
+    BackfillResult,
     MarketDataPlanner,
+    MarketJobStatus,
     MarketJobType,
     backfill_plan_checksum,
 )
+from app.market_data.services import HistoricalMarketDataService
 
 
 class MarketOperationWorkerSession:
@@ -176,21 +193,86 @@ class MarketOperationWorkerSession:
         operation: MarketOperationSnapshot,
         record: MarketJobRecord,
     ) -> MarketOperationSnapshot:
-        """Publish one durable local checkpoint into PostgreSQL progress."""
-        self._require_owned(operation)
+        """Publish one durable local checkpoint using the latest owned version."""
+        self._require_same_operation(operation)
+
+        current = await self._repository.get(operation.operation_id)
+        if current is None:
+            raise ValueError("claimed operation disappeared")
+
+        self._require_owned(current)
+
+        if current.state not in {
+            MarketOperationState.CLAIMED,
+            MarketOperationState.RUNNING,
+            MarketOperationState.PAUSE_REQUESTED,
+            MarketOperationState.CANCEL_REQUESTED,
+        }:
+            raise ValueError("operation does not accept checkpoint progress")
+
         now = self._clock()
         progress = _operation_progress_from_record(
-            operation,
+            current,
             record,
             updated_at=now,
         )
 
         return await self._repository.update_progress(
-            operation_id=operation.operation_id,
+            operation_id=current.operation_id,
             owner_id=self._owner_id,
             now=now,
             progress=progress,
             local_job_id=record.job_id,
+            expected_version=current.record_version,
+        )
+
+    async def finish_success(
+        self,
+        operation: MarketOperationSnapshot,
+        *,
+        dataset_version: str,
+        dataset_checksum: str,
+    ) -> MarketOperationSnapshot:
+        """Persist a sanitized successful terminal result."""
+        self._require_owned(operation)
+        now = self._clock()
+
+        result = OperationResult(
+            dataset_version=dataset_version,
+            dataset_checksum=dataset_checksum,
+            completed_at=now,
+        )
+
+        return await self._repository.complete(
+            operation_id=operation.operation_id,
+            owner_id=self._owner_id,
+            now=now,
+            result=result,
+            progress=operation.progress,
+            expected_version=operation.record_version,
+        )
+
+    async def finish_failure(
+        self,
+        operation: MarketOperationSnapshot,
+        *,
+        code: MarketOperationFailureCode,
+    ) -> MarketOperationSnapshot:
+        """Persist only the closed failure taxonomy, never arbitrary text."""
+        self._require_owned(operation)
+        now = self._clock()
+
+        failure = SanitizedOperationFailure(
+            code=code,
+            failed_at=now,
+        )
+
+        return await self._repository.fail(
+            operation_id=operation.operation_id,
+            owner_id=self._owner_id,
+            now=now,
+            failure=failure,
+            progress=operation.progress,
             expected_version=operation.record_version,
         )
 
@@ -407,3 +489,334 @@ def _operation_progress_from_record(
         requests_completed=record.request_count,
         updated_at=updated_at,
     )
+
+
+class MarketOperationWorker:
+    """Execute at most one claimed market-data operation per iteration."""
+
+    def __init__(
+        self,
+        *,
+        session: MarketOperationWorkerSession,
+        planner: MarketDataPlanner,
+        executor: BackfillExecutor,
+        jobs: MarketJobCatalog,
+        history: HistoricalMarketDataService,
+        clock: OperationClock,
+        heartbeat_interval_seconds: float,
+    ) -> None:
+        if heartbeat_interval_seconds <= 0:
+            raise ValueError("heartbeat_interval_seconds must be positive")
+
+        self._session = session
+        self._planner = planner
+        self._executor = executor
+        self._jobs = jobs
+        self._history = history
+        self._clock = clock
+        self._heartbeat_interval_seconds = heartbeat_interval_seconds
+
+    async def run_once(self) -> MarketOperationSnapshot | None:
+        """Claim and settle one operation without polling indefinitely."""
+        self._jobs.recover_abandoned()
+
+        claimed = await self._session.claim_next()
+        if claimed is None:
+            return None
+
+        operation = await self._session.start(claimed)
+        observer: MarketOperationExecutionObserver | None = None
+
+        try:
+            plan = build_operation_backfill_plan(
+                operation,
+                planner=self._planner,
+                now=self._clock(),
+            )
+
+            observer = MarketOperationExecutionObserver(
+                session=self._session,
+                operation=operation,
+            )
+
+            execution = await self._execute_operation(
+                operation,
+                plan,
+                observer,
+            )
+
+            return await self._settle_execution(
+                observer.operation,
+                plan,
+                execution,
+            )
+        except (InvalidOperationLeaseError, OperationVersionConflictError):
+            # Ownership/version loss cannot be safely rewritten by this worker.
+            raise
+        except Exception as error:
+            current = observer.operation if observer is not None else operation
+            return await self._settle_failure(current, error)
+
+    async def _execute_operation(
+        self,
+        operation: MarketOperationSnapshot,
+        plan: BackfillPlan,
+        observer: MarketOperationExecutionObserver,
+    ) -> BackfillResult:
+        local = _local_job_or_none(self._jobs, plan.job_id)
+
+        if local is None or local.status is MarketJobStatus.PLANNED:
+            return await self._execute_with_heartbeat(
+                plan,
+                operation,
+                observer,
+                resume=False,
+            )
+
+        _require_bound_record(operation, local)
+
+        if local.status in {
+            MarketJobStatus.PAUSED,
+            MarketJobStatus.FAILED,
+        }:
+            return await self._execute_with_heartbeat(
+                plan,
+                operation,
+                observer,
+                resume=True,
+            )
+
+        if local.status is MarketJobStatus.COMPLETED:
+            return _backfill_result_from_record(local)
+
+        raise MarketDataInconsistencyError("O estado do job local não permite execução segura.")
+
+    async def _execute_with_heartbeat(
+        self,
+        plan: BackfillPlan,
+        operation: MarketOperationSnapshot,
+        observer: MarketOperationExecutionObserver,
+        *,
+        resume: bool,
+    ) -> BackfillResult:
+        pair = operation.request.dataset.pair
+
+        if resume:
+            execution_task = asyncio.create_task(
+                self._executor.resume(
+                    plan.job_id,
+                    pair,
+                    observer=observer,
+                )
+            )
+        else:
+            execution_task = asyncio.create_task(
+                self._executor.run(
+                    plan,
+                    pair,
+                    observer=observer,
+                )
+            )
+
+        stop = asyncio.Event()
+        heartbeat_task = asyncio.create_task(self._heartbeat_loop(observer, stop))
+
+        done, _pending = await asyncio.wait(
+            {execution_task, heartbeat_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        if execution_task in done:
+            stop.set()
+            await heartbeat_task
+            return execution_task.result()
+
+        execution_task.cancel()
+        await asyncio.gather(
+            execution_task,
+            return_exceptions=True,
+        )
+
+        # result() intentionally re-raises the heartbeat ownership failure.
+        heartbeat_task.result()
+        raise AssertionError("heartbeat task completed without a result")
+
+    async def _heartbeat_loop(
+        self,
+        observer: MarketOperationExecutionObserver,
+        stop: asyncio.Event,
+    ) -> None:
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(
+                    stop.wait(),
+                    timeout=self._heartbeat_interval_seconds,
+                )
+            except TimeoutError:
+                await observer.heartbeat()
+
+    async def _settle_execution(
+        self,
+        operation: MarketOperationSnapshot,
+        plan: BackfillPlan,
+        execution: BackfillResult,
+    ) -> MarketOperationSnapshot:
+        if execution.status in {
+            MarketJobStatus.PAUSED,
+            MarketJobStatus.CANCELLED,
+        }:
+            return await self._settle_interruption(
+                operation,
+                execution.status,
+            )
+
+        if execution.status is not MarketJobStatus.COMPLETED:
+            raise MarketDataInconsistencyError("O executor retornou um estado local não terminal.")
+
+        record = self._jobs.get(plan.job_id)
+        _require_bound_record(operation, record)
+
+        if record.status is not MarketJobStatus.COMPLETED:
+            raise MarketDataInconsistencyError("O resultado COMPLETED divergiu do catálogo local.")
+
+        current = await self._session.checkpoint(
+            operation,
+            record,
+        )
+
+        # Final chunk completion is another safe control boundary.
+        current, control = await self._session.poll_control(current)
+
+        if control is BackfillControl.PAUSE:
+            return await self._session.finish_pause(current)
+
+        if control is BackfillControl.CANCEL:
+            return await self._session.finish_cancel(current)
+
+        last_chunk_index = len(plan.chunks) - 1
+        receipt = self._history.get_chunk_receipt(
+            plan.job_id,
+            last_chunk_index,
+        )
+
+        if receipt is None:
+            raise MarketDataInconsistencyError("O receipt durável final não foi encontrado.")
+
+        if (
+            receipt.job_id != plan.job_id
+            or receipt.chunk_index != last_chunk_index
+            or receipt.dataset_key != plan.dataset_key
+        ):
+            raise MarketDataInconsistencyError("O receipt final divergiu da operação.")
+
+        return await self._session.finish_success(
+            current,
+            dataset_version=receipt.version,
+            dataset_checksum=receipt.checksum,
+        )
+
+    async def _settle_interruption(
+        self,
+        operation: MarketOperationSnapshot,
+        status: MarketJobStatus,
+    ) -> MarketOperationSnapshot:
+        current, control = await self._session.poll_control(operation)
+
+        if status is MarketJobStatus.PAUSED and control is BackfillControl.PAUSE:
+            return await self._session.finish_pause(current)
+
+        if status is MarketJobStatus.CANCELLED and control is BackfillControl.CANCEL:
+            return await self._session.finish_cancel(current)
+
+        raise MarketDataInconsistencyError(
+            "O estado local interrompido divergiu do controle persistido."
+        )
+
+    async def _settle_failure(
+        self,
+        operation: MarketOperationSnapshot,
+        error: Exception,
+    ) -> MarketOperationSnapshot:
+        current, control = await self._session.poll_control(operation)
+
+        if control is BackfillControl.PAUSE:
+            return await self._session.finish_pause(current)
+
+        if control is BackfillControl.CANCEL:
+            return await self._session.finish_cancel(current)
+
+        return await self._session.finish_failure(
+            current,
+            code=_operation_failure_code(error),
+        )
+
+
+def _local_job_or_none(
+    jobs: MarketJobCatalog,
+    job_id: str,
+) -> MarketJobRecord | None:
+    try:
+        return jobs.get(job_id)
+    except MarketJobNotFoundError:
+        return None
+
+
+def _backfill_result_from_record(
+    record: MarketJobRecord,
+) -> BackfillResult:
+    return BackfillResult(
+        job_id=record.job_id,
+        status=record.status,
+        chunks_completed=record.chunks_completed,
+        total_chunks=len(record.chunk_ranges),
+        fetched_count=record.candles_fetched,
+        stored_count=record.candles_stored,
+        duplicate_count=record.duplicates,
+        request_count=record.request_count,
+    )
+
+
+def _operation_failure_code(
+    error: Exception,
+) -> MarketOperationFailureCode:
+    if isinstance(error, MarketOperationPlanConflictError):
+        return MarketOperationFailureCode.PLAN_CONFLICT
+
+    if isinstance(
+        error,
+        (
+            InvalidMarketOperationRequestError,
+            UnknownInstrumentError,
+            UnsupportedTimeframeError,
+        ),
+    ):
+        return MarketOperationFailureCode.INVALID_REQUEST
+
+    if isinstance(error, MarketJobLockTimeoutError):
+        return MarketOperationFailureCode.DATASET_BUSY
+
+    if isinstance(error, MarketRateLimitError):
+        return MarketOperationFailureCode.RATE_LIMITED
+
+    if isinstance(
+        error,
+        (
+            InvalidMarketResponseError,
+            MarketDataUnavailableError,
+        ),
+    ):
+        return MarketOperationFailureCode.NETWORK_FAILURE
+
+    if isinstance(
+        error,
+        (
+            MarketDataInconsistencyError,
+            MarketJobNotFoundError,
+        ),
+    ):
+        return MarketOperationFailureCode.LOCAL_STATE_INVALID
+
+    if isinstance(error, MarketDataStorageError):
+        return MarketOperationFailureCode.INTERNAL_ERROR
+
+    return MarketOperationFailureCode.INTERNAL_ERROR
