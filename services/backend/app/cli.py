@@ -14,7 +14,12 @@ from typing import TextIO
 import httpx
 
 from app.backtesting.commands import configure_backtest_parser, run_backtest_command
-from app.core.config import MarketDataSettings, get_market_data_settings
+from app.core.config import (
+    MarketDataSettings,
+    Settings,
+    get_market_data_settings,
+    get_settings,
+)
 from app.domain.errors import DomainError
 from app.market_data.advanced_quality import (
     AdvancedMarketDataQualityScanner,
@@ -50,6 +55,10 @@ from app.market_data.filesystem import ensure_safe_path
 from app.market_data.http import PublicMarketHttpClient
 from app.market_data.jobs import MarketJobCatalog
 from app.market_data.locks import DatasetLockManager
+from app.market_data.operation_worker_runtime import (
+    run_market_operation_worker_once,
+)
+from app.market_data.operations import MarketOperationSnapshot
 from app.market_data.orchestration import BackfillExecutor
 from app.market_data.planning import BackfillPlan, BackfillResult, MarketDataPlanner
 from app.market_data.services import default_local_services
@@ -165,6 +174,19 @@ def build_parser() -> argparse.ArgumentParser:
             command.add_argument("--max-cycles", type=int)
     collect_commands.add_parser("status")
 
+    worker = commands.add_parser(
+        "worker",
+        help="Execute queued PostgreSQL-backed market-data operations.",
+    )
+    worker_commands = worker.add_subparsers(
+        dest="worker_command",
+        required=True,
+    )
+    worker_commands.add_parser(
+        "run-once",
+        help="Claim and process at most one queued market-data operation.",
+    )
+
     quality = commands.add_parser("quality", help="Audit persisted datasets.")
     quality_commands = quality.add_subparsers(dest="quality_command", required=True)
     for name in ("scan", "report"):
@@ -215,6 +237,17 @@ def main(
     """Parse, execute and return a predictable process exit code."""
     args = build_parser().parse_args(argv)
     try:
+        if args.group == "market-data" and args.command == "worker":
+            worker_settings = app_settings if isinstance(app_settings, Settings) else get_settings()
+            return asyncio.run(
+                _run_market_operation_worker_command(
+                    args,
+                    app_settings=worker_settings,
+                    transport=transport,
+                    stdout=stdout,
+                )
+            )
+
         resolved_settings = app_settings or get_market_data_settings()
         if args.group == "backtest":
             return run_backtest_command(
@@ -250,6 +283,25 @@ def main(
             file=stderr,
         )
         return EXIT_UNEXPECTED_FAILURE
+
+
+async def _run_market_operation_worker_command(
+    args: argparse.Namespace,
+    *,
+    app_settings: Settings,
+    transport: httpx.AsyncBaseTransport | None,
+    stdout: TextIO,
+) -> int:
+    """Execute one PostgreSQL-backed market-operation worker iteration."""
+    if args.worker_command != "run-once":
+        raise ValueError("unknown market-operation worker command")
+
+    operation = await run_market_operation_worker_once(
+        app_settings,
+        transport=transport,
+    )
+    _print(_market_operation_worker_payload(operation), stdout)
+    return EXIT_OK
 
 
 async def _run_market_command(
@@ -821,6 +873,53 @@ def _collection_state_payload(state: ContinuousCollectionState) -> dict[str, obj
             }
             for result in state.results
         ],
+    }
+
+
+def _market_operation_worker_payload(
+    operation: MarketOperationSnapshot | None,
+) -> dict[str, object]:
+    """Serialize only operational identifiers and sanitized durable state."""
+    if operation is None:
+        return {
+            "status": "IDLE",
+            "operation": None,
+        }
+
+    result: dict[str, object] | None = None
+    if operation.result is not None:
+        result = {
+            "dataset_version": operation.result.dataset_version,
+            "dataset_checksum": operation.result.dataset_checksum,
+            "completed_at": operation.result.completed_at.isoformat(),
+        }
+
+    failure_code = operation.failure.code.value if operation.failure is not None else None
+
+    return {
+        "status": "PROCESSED",
+        "operation_id": str(operation.operation_id),
+        "state": operation.state.value,
+        "record_version": operation.record_version,
+        "local_job_id": operation.local_job_id,
+        "progress": {
+            "chunks_planned": operation.progress.chunks_planned,
+            "chunks_completed": operation.progress.chunks_completed,
+            "chunks_failed": operation.progress.chunks_failed,
+            "candles_estimated": operation.progress.candles_estimated,
+            "candles_received": operation.progress.candles_received,
+            "candles_persisted": operation.progress.candles_persisted,
+            "requests_completed": operation.progress.requests_completed,
+            "updated_at": operation.progress.updated_at.isoformat(),
+        },
+        "result": result,
+        "failure_code": failure_code,
+        "started_at": (
+            operation.started_at.isoformat() if operation.started_at is not None else None
+        ),
+        "finished_at": (
+            operation.finished_at.isoformat() if operation.finished_at is not None else None
+        ),
     }
 
 
