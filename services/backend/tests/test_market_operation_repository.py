@@ -29,6 +29,7 @@ from app.market_data.operation_ports import MarketOperationRepository
 from app.market_data.operations import (
     MarketDatasetSelector,
     MarketOperationFailureCode,
+    MarketOperationRecoveryClaim,
     MarketOperationRequest,
     MarketOperationSnapshot,
     MarketOperationState,
@@ -126,6 +127,111 @@ async def _claim(
     )
     assert claimed is not None
     return claimed
+
+
+async def _leased_operation(
+    repository: PostgresMarketOperationRepository,
+    admin_user_id: UUID,
+    *,
+    state: MarketOperationState,
+    duration: timedelta = timedelta(seconds=1),
+    operation_id: UUID | None = None,
+    idempotency_key: str = "phase-2d-recovery",
+    symbol: str = "BTC/USDT",
+    owner_id: UUID | None = None,
+) -> MarketOperationSnapshot:
+    await _create(
+        repository,
+        admin_user_id,
+        operation_id=operation_id,
+        idempotency_key=idempotency_key,
+        symbol=symbol,
+    )
+    operation = await _claim(
+        repository,
+        duration=duration,
+        owner_id=owner_id,
+    )
+    if state is MarketOperationState.RUNNING:
+        operation = await repository.request_state(
+            operation_id=operation.operation_id,
+            target=state,
+            expected_version=operation.record_version,
+            now=BASE_TIME + timedelta(milliseconds=1250),
+            owner_id=_owner(operation),
+        )
+        operation = await repository.update_progress(
+            operation_id=operation.operation_id,
+            owner_id=_owner(operation),
+            now=BASE_TIME + timedelta(milliseconds=1500),
+            progress=_progress(
+                operation,
+                now=BASE_TIME + timedelta(milliseconds=1500),
+            ),
+            local_job_id="recovery-job",
+            expected_version=operation.record_version,
+        )
+    elif state is MarketOperationState.PAUSE_REQUESTED:
+        operation = await repository.request_pause(
+            operation_id=operation.operation_id,
+            expected_version=operation.record_version,
+            now=BASE_TIME + timedelta(milliseconds=1250),
+        )
+    elif state is MarketOperationState.CANCEL_REQUESTED:
+        operation = await repository.request_cancel(
+            operation_id=operation.operation_id,
+            expected_version=operation.record_version,
+            now=BASE_TIME + timedelta(milliseconds=1250),
+        )
+    else:
+        assert state is MarketOperationState.CLAIMED
+    return operation
+
+
+async def _claim_recovery(
+    repository: PostgresMarketOperationRepository,
+    *,
+    owner_id: UUID | None = None,
+    now: datetime = BASE_TIME + timedelta(seconds=3),
+    duration: timedelta = timedelta(seconds=30),
+) -> MarketOperationRecoveryClaim:
+    claim = await repository.claim_next_expired(
+        owner_id=owner_id or uuid4(),
+        now=now,
+        lease_expires_at=now + duration,
+    )
+    assert claim is not None
+    return claim
+
+
+async def _leave_recovering_unleased(
+    database: Database,
+    repository: PostgresMarketOperationRepository,
+    operation: MarketOperationSnapshot,
+    *,
+    now: datetime,
+) -> MarketOperationSnapshot:
+    """Emulate one legacy/crash-era RECOVERING row with no assigned lease."""
+    async with database.transaction() as connection:
+        await connection.execute(
+            """
+            update public.market_data_operations
+            set status = 'RECOVERING',
+                lease_owner = null,
+                lease_claimed_at = null,
+                lease_heartbeat_at = null,
+                lease_expires_at = null,
+                updated_at = %s,
+                version = version + 1
+            where id = %s and version = %s
+            """,
+            (now, operation.operation_id, operation.record_version),
+        )
+    recovering = await repository.get(operation.operation_id)
+    assert recovering is not None
+    assert recovering.state is MarketOperationState.RECOVERING
+    assert recovering.lease is None
+    return recovering
 
 
 def _owner(operation: MarketOperationSnapshot) -> UUID:
@@ -959,64 +1065,192 @@ async def test_wrong_owner_cannot_run_progress_complete_or_fail(
     assert updated.record_version == running.record_version + 1
 
 
-async def test_recovery_can_transfer_ownership_and_rejects_the_old_owner(
+async def test_concurrent_recovery_claims_never_return_the_same_operation(
     database: Database,
     admin_user_id: UUID,
 ) -> None:
     repository = PostgresMarketOperationRepository(database)
-    await _create(repository, admin_user_id)
-    first_claim = await _claim(repository, duration=timedelta(seconds=1))
-    old_owner = _owner(first_claim)
-    recovering = await repository.recover_expired(
-        operation_id=first_claim.operation_id,
-        expected_version=first_claim.record_version,
-        now=BASE_TIME + timedelta(seconds=3),
+    expired = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.CLAIMED,
     )
-    paused = await repository.reconcile(
-        operation=replace(
-            recovering,
-            state=MarketOperationState.PAUSED,
-            updated_at=BASE_TIME + timedelta(seconds=4),
-            record_version=recovering.record_version + 1,
+    first_owner, second_owner = uuid4(), uuid4()
+
+    claims = await asyncio.gather(
+        repository.claim_next_expired(
+            owner_id=first_owner,
+            now=BASE_TIME + timedelta(seconds=3),
+            lease_expires_at=BASE_TIME + timedelta(seconds=33),
         ),
-        expected_version=recovering.record_version,
+        repository.claim_next_expired(
+            owner_id=second_owner,
+            now=BASE_TIME + timedelta(seconds=3),
+            lease_expires_at=BASE_TIME + timedelta(seconds=33),
+        ),
     )
-    pending = await repository.resume(
-        operation_id=paused.operation_id,
-        expected_version=paused.record_version,
-        now=BASE_TIME + timedelta(seconds=5),
+
+    winners = [claim for claim in claims if claim is not None]
+    assert len(winners) == 1
+    winner = winners[0]
+    assert winner.operation.operation_id == expired.operation_id
+    assert winner.recovered_from is MarketOperationState.CLAIMED
+    assert winner.operation.lease is not None
+    assert winner.operation.lease.owner_id in {first_owner, second_owner}
+    assert await repository.get(expired.operation_id) == winner.operation
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        MarketOperationState.CLAIMED,
+        MarketOperationState.RUNNING,
+        MarketOperationState.PAUSE_REQUESTED,
+        MarketOperationState.CANCEL_REQUESTED,
+    ],
+)
+async def test_healthy_active_lease_is_not_recovered(
+    database: Database,
+    admin_user_id: UUID,
+    state: MarketOperationState,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    healthy = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=state,
+        duration=timedelta(seconds=30),
+    )
+
+    claim = await repository.claim_next_expired(
+        owner_id=uuid4(),
+        now=BASE_TIME + timedelta(seconds=3),
+        lease_expires_at=BASE_TIME + timedelta(seconds=33),
+    )
+
+    assert claim is None
+    assert await repository.get(healthy.operation_id) == healthy
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        MarketOperationState.CLAIMED,
+        MarketOperationState.RUNNING,
+        MarketOperationState.PAUSE_REQUESTED,
+        MarketOperationState.CANCEL_REQUESTED,
+    ],
+)
+async def test_expired_active_state_gets_atomic_recovery_owner(
+    database: Database,
+    admin_user_id: UUID,
+    state: MarketOperationState,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    expired = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=state,
+    )
+    old_lease = expired.lease
+    assert old_lease is not None
+    new_owner = uuid4()
+
+    claim = await _claim_recovery(repository, owner_id=new_owner)
+
+    assert claim.recovered_from is state
+    assert claim.operation.state is MarketOperationState.RECOVERING
+    assert claim.operation.record_version == expired.record_version + 2
+    assert claim.operation.started_at == expired.started_at
+    assert claim.operation.progress == expired.progress
+    assert claim.operation.local_job_id == expired.local_job_id
+    assert claim.operation.lease == WorkerLease(
+        operation_id=expired.operation_id,
+        owner_id=new_owner,
+        claimed_at=BASE_TIME + timedelta(seconds=3),
+        heartbeat_at=BASE_TIME + timedelta(seconds=3),
+        lease_expires_at=BASE_TIME + timedelta(seconds=33),
+    )
+    assert claim.operation.lease != old_lease
+
+
+async def test_healthy_recovery_lease_is_not_stolen(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.CLAIMED,
+    )
+    recovery = await _claim_recovery(repository)
+
+    stolen = await repository.claim_next_expired(
+        owner_id=uuid4(),
+        now=BASE_TIME + timedelta(seconds=4),
+        lease_expires_at=BASE_TIME + timedelta(seconds=34),
+    )
+
+    assert stolen is None
+    assert await repository.get(recovery.operation.operation_id) == recovery.operation
+
+
+async def test_expired_recovery_is_reassigned_to_a_new_owner(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.CLAIMED,
+    )
+    first_owner = uuid4()
+    first = await _claim_recovery(
+        repository,
+        owner_id=first_owner,
+        duration=timedelta(seconds=1),
     )
     new_owner = uuid4()
-    second_claim = await repository.claim_next(
+    second = await repository.claim_next_expired(
         owner_id=new_owner,
-        now=BASE_TIME + timedelta(seconds=6),
-        lease_expires_at=BASE_TIME + timedelta(seconds=36),
+        now=BASE_TIME + timedelta(seconds=5),
+        lease_expires_at=BASE_TIME + timedelta(seconds=35),
     )
-    assert second_claim is not None
-    assert second_claim.operation_id == pending.operation_id
-    assert _owner(second_claim) == new_owner
 
-    progress = _progress(second_claim, now=BASE_TIME + timedelta(seconds=7))
-    with pytest.raises(InvalidOperationLeaseError):
-        await repository.update_progress(
-            operation_id=second_claim.operation_id,
-            owner_id=old_owner,
-            now=progress.updated_at,
-            progress=progress,
-            local_job_id=None,
-            expected_version=second_claim.record_version,
-        )
-    assert await repository.get(second_claim.operation_id) == second_claim
+    assert second is not None
+    assert second.recovered_from is MarketOperationState.RECOVERING
+    assert second.operation.record_version == first.operation.record_version + 2
+    assert second.operation.lease is not None
+    assert second.operation.lease.owner_id == new_owner
 
-    updated = await repository.update_progress(
-        operation_id=second_claim.operation_id,
-        owner_id=new_owner,
-        now=progress.updated_at,
-        progress=progress,
-        local_job_id=None,
-        expected_version=second_claim.record_version,
+
+async def test_unleased_recovery_gets_one_update_claim(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    expired = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.CLAIMED,
     )
-    assert updated.record_version == second_claim.record_version + 1
+    unleased = await _leave_recovering_unleased(
+        database,
+        repository,
+        expired,
+        now=BASE_TIME + timedelta(seconds=3),
+    )
+    claim = await _claim_recovery(
+        repository,
+        owner_id=uuid4(),
+        now=BASE_TIME + timedelta(seconds=4),
+    )
+
+    assert claim.recovered_from is MarketOperationState.RECOVERING
+    assert claim.operation.record_version == unleased.record_version + 1
+    assert claim.operation.lease is not None
 
 
 @pytest.mark.parametrize(
@@ -1047,45 +1281,563 @@ async def test_invalid_owner_is_sanitized_and_cannot_mutate(
     assert await repository.get(created.operation_id) == created
 
 
-async def test_expired_lease_recovery_and_explicit_reconciliation(
+async def test_recovery_owner_cannot_hold_a_second_lease(
     database: Database,
     admin_user_id: UUID,
 ) -> None:
     repository = PostgresMarketOperationRepository(database)
-    await _create(repository, admin_user_id)
-    claimed = await _claim(repository, duration=timedelta(seconds=1))
-    with pytest.raises(InvalidOperationLeaseError):
-        await repository.recover_expired(
-            operation_id=claimed.operation_id,
-            expected_version=claimed.record_version,
-            now=BASE_TIME + timedelta(seconds=1, milliseconds=500),
-        )
-
-    recovering = await repository.recover_expired(
-        operation_id=claimed.operation_id,
-        expected_version=claimed.record_version,
-        now=BASE_TIME + timedelta(seconds=3),
+    await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.CLAIMED,
+        idempotency_key="recovery-owner-1",
+        symbol="BTC/USDT",
     )
-    assert recovering.state is MarketOperationState.RECOVERING
-    assert recovering.lease is None
+    await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.CLAIMED,
+        idempotency_key="recovery-owner-2",
+        symbol="ETH/USDT",
+    )
+    owner_id = uuid4()
+    first = await _claim_recovery(repository, owner_id=owner_id)
 
+    second = await repository.claim_next_expired(
+        owner_id=owner_id,
+        now=BASE_TIME + timedelta(seconds=4),
+        lease_expires_at=BASE_TIME + timedelta(seconds=34),
+    )
+
+    assert second is None
+    assert first.operation.lease is not None
+    assert first.operation.lease.owner_id == owner_id
+
+
+async def test_concurrent_recovery_distributes_two_expired_datasets(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    first = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.CLAIMED,
+        idempotency_key="recovery-dataset-1",
+        symbol="BTC/USDT",
+    )
+    second = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.CLAIMED,
+        idempotency_key="recovery-dataset-2",
+        symbol="ETH/USDT",
+    )
+    owners = (uuid4(), uuid4())
+
+    claims = await asyncio.gather(
+        *(
+            repository.claim_next_expired(
+                owner_id=owner,
+                now=BASE_TIME + timedelta(seconds=3),
+                lease_expires_at=BASE_TIME + timedelta(seconds=33),
+            )
+            for owner in owners
+        )
+    )
+
+    assert all(claim is not None for claim in claims)
+    claimed_operations = {claim.operation.operation_id for claim in claims if claim is not None}
+    claimed_owners = {
+        claim.operation.lease.owner_id
+        for claim in claims
+        if claim is not None and claim.operation.lease is not None
+    }
+    assert claimed_operations == {first.operation_id, second.operation_id}
+    assert claimed_owners == set(owners)
+
+
+async def test_recovery_ordering_prioritizes_abandoned_then_expiry_then_stable_id(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    latest = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.CLAIMED,
+        duration=timedelta(seconds=7),
+        idempotency_key="order-latest",
+        symbol="BTC/USDT",
+    )
+    oldest = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.CLAIMED,
+        duration=timedelta(seconds=3),
+        idempotency_key="order-oldest",
+        symbol="ETH/USDT",
+    )
+    smaller_id = UUID(int=100)
+    larger_id = UUID(int=101)
+    tied_smaller = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.CLAIMED,
+        duration=timedelta(seconds=5),
+        operation_id=smaller_id,
+        idempotency_key="order-tied-smaller",
+        symbol="SOL/USDT",
+    )
+    tied_larger = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.CLAIMED,
+        duration=timedelta(seconds=5),
+        operation_id=larger_id,
+        idempotency_key="order-tied-larger",
+        symbol="ADA/USDT",
+    )
+    abandoned_source = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.CLAIMED,
+        duration=timedelta(seconds=2),
+        idempotency_key="order-abandoned",
+        symbol="XRP/USDT",
+    )
+    abandoned = await _leave_recovering_unleased(
+        database,
+        repository,
+        abandoned_source,
+        now=BASE_TIME + timedelta(seconds=9),
+    )
+
+    claimed_ids: list[UUID] = []
+    recovered_states: list[MarketOperationState] = []
+    for second in range(10, 15):
+        claim = await _claim_recovery(
+            repository,
+            now=BASE_TIME + timedelta(seconds=second),
+        )
+        claimed_ids.append(claim.operation.operation_id)
+        recovered_states.append(claim.recovered_from)
+
+    assert claimed_ids == [
+        abandoned.operation_id,
+        oldest.operation_id,
+        tied_smaller.operation_id,
+        tied_larger.operation_id,
+        latest.operation_id,
+    ]
+    assert recovered_states[0] is MarketOperationState.RECOVERING
+    assert recovered_states[1:] == [MarketOperationState.CLAIMED] * 4
+
+
+async def test_old_owner_is_stale_for_every_worker_mutation_after_recovery(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    expired = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.RUNNING,
+    )
+    old_owner = _owner(expired)
+    new_owner = uuid4()
+    recovery = await _claim_recovery(repository, owner_id=new_owner)
+    recovered = recovery.operation
+    running = await repository.reconcile(
+        operation=replace(
+            recovered,
+            state=MarketOperationState.RUNNING,
+            updated_at=BASE_TIME + timedelta(seconds=4),
+            record_version=recovered.record_version + 1,
+        ),
+        owner_id=new_owner,
+        now=BASE_TIME + timedelta(seconds=4),
+        expected_version=recovered.record_version,
+    )
+    assert running.lease is not None
+    forward_lease = replace(
+        running.lease,
+        heartbeat_at=BASE_TIME + timedelta(seconds=5),
+        lease_expires_at=BASE_TIME + timedelta(seconds=40),
+    )
+    progress = replace(
+        running.progress,
+        updated_at=BASE_TIME + timedelta(seconds=5),
+    )
+    result = OperationResult(
+        dataset_version=DATASET_VERSION,
+        dataset_checksum=DATASET_CHECKSUM,
+        completed_at=BASE_TIME + timedelta(seconds=5),
+    )
     failure = SanitizedOperationFailure(
         code=MarketOperationFailureCode.LEASE_LOST,
-        failed_at=BASE_TIME + timedelta(seconds=4),
+        failed_at=BASE_TIME + timedelta(seconds=5),
     )
+    mutations = (
+        repository.renew_lease(
+            operation_id=running.operation_id,
+            owner_id=old_owner,
+            now=BASE_TIME + timedelta(seconds=5),
+            lease=forward_lease,
+            expected_version=running.record_version,
+        ),
+        repository.update_progress(
+            operation_id=running.operation_id,
+            owner_id=old_owner,
+            now=BASE_TIME + timedelta(seconds=5),
+            progress=progress,
+            local_job_id=running.local_job_id,
+            expected_version=running.record_version,
+        ),
+        repository.complete(
+            operation_id=running.operation_id,
+            owner_id=old_owner,
+            now=BASE_TIME + timedelta(seconds=5),
+            result=result,
+            progress=progress,
+            expected_version=running.record_version,
+        ),
+        repository.fail(
+            operation_id=running.operation_id,
+            owner_id=old_owner,
+            now=BASE_TIME + timedelta(seconds=5),
+            failure=failure,
+            progress=progress,
+            expected_version=running.record_version,
+        ),
+    )
+    for mutation in mutations:
+        with pytest.raises(InvalidOperationLeaseError):
+            await mutation
+        assert await repository.get(running.operation_id) == running
+
+
+async def test_reconcile_correct_owner_preserves_recovery_lease(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.RUNNING,
+    )
+    owner_id = uuid4()
+    recovery = await _claim_recovery(repository, owner_id=owner_id)
+    recovered = recovery.operation
+
     reconciled = await repository.reconcile(
         operation=replace(
-            recovering,
-            state=MarketOperationState.FAILED,
-            failure=failure,
-            finished_at=failure.failed_at,
-            updated_at=failure.failed_at,
-            record_version=recovering.record_version + 1,
+            recovered,
+            state=MarketOperationState.RUNNING,
+            updated_at=BASE_TIME + timedelta(seconds=4),
+            record_version=recovered.record_version + 1,
         ),
-        expected_version=recovering.record_version,
+        owner_id=owner_id,
+        now=BASE_TIME + timedelta(seconds=4),
+        expected_version=recovered.record_version,
     )
-    assert reconciled.state is MarketOperationState.FAILED
-    assert reconciled.failure == failure
+
+    assert reconciled.state is MarketOperationState.RUNNING
+    assert reconciled.lease == recovered.lease
+    assert reconciled.record_version == recovered.record_version + 1
+
+
+async def test_reconcile_terminal_clears_recovery_lease(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.RUNNING,
+    )
+    owner_id = uuid4()
+    recovery = await _claim_recovery(repository, owner_id=owner_id)
+    recovered = recovery.operation
+    finished_at = BASE_TIME + timedelta(seconds=4)
+    result = OperationResult(
+        dataset_version=DATASET_VERSION,
+        dataset_checksum=DATASET_CHECKSUM,
+        completed_at=finished_at,
+    )
+
+    reconciled = await repository.reconcile(
+        operation=replace(
+            recovered,
+            state=MarketOperationState.COMPLETED,
+            lease=None,
+            result=result,
+            finished_at=finished_at,
+            updated_at=finished_at,
+            record_version=recovered.record_version + 1,
+        ),
+        owner_id=owner_id,
+        now=finished_at,
+        expected_version=recovered.record_version,
+    )
+
+    assert reconciled.state is MarketOperationState.COMPLETED
+    assert reconciled.result == result
+    assert reconciled.lease is None
+    assert reconciled.record_version == recovered.record_version + 1
+
+
+async def test_reconcile_wrong_owner_rejects_without_mutation(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.RUNNING,
+    )
+    recovery = await _claim_recovery(repository)
+    recovered = recovery.operation
+
+    with pytest.raises(InvalidOperationLeaseError):
+        await repository.reconcile(
+            operation=replace(
+                recovered,
+                state=MarketOperationState.RUNNING,
+                updated_at=BASE_TIME + timedelta(seconds=4),
+                record_version=recovered.record_version + 1,
+            ),
+            owner_id=uuid4(),
+            now=BASE_TIME + timedelta(seconds=4),
+            expected_version=recovered.record_version,
+        )
+
+    assert await repository.get(recovered.operation_id) == recovered
+
+
+async def test_reconcile_expired_lease_rejects_without_mutation(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.RUNNING,
+    )
+    owner_id = uuid4()
+    recovery = await _claim_recovery(
+        repository,
+        owner_id=owner_id,
+        duration=timedelta(seconds=1),
+    )
+    recovered = recovery.operation
+
+    with pytest.raises(InvalidOperationLeaseError):
+        await repository.reconcile(
+            operation=replace(
+                recovered,
+                state=MarketOperationState.RUNNING,
+                updated_at=BASE_TIME + timedelta(seconds=5),
+                record_version=recovered.record_version + 1,
+            ),
+            owner_id=owner_id,
+            now=BASE_TIME + timedelta(seconds=5),
+            expected_version=recovered.record_version,
+        )
+
+    assert await repository.get(recovered.operation_id) == recovered
+
+
+async def test_reconcile_stale_version_rejects_without_mutation(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.RUNNING,
+    )
+    recovery = await _claim_recovery(repository)
+    recovered = recovery.operation
+    assert recovered.lease is not None
+
+    with pytest.raises(OperationVersionConflictError):
+        await repository.reconcile(
+            operation=replace(
+                recovered,
+                state=MarketOperationState.RUNNING,
+                updated_at=BASE_TIME + timedelta(seconds=4),
+                record_version=recovered.record_version + 1,
+            ),
+            owner_id=recovered.lease.owner_id,
+            now=BASE_TIME + timedelta(seconds=4),
+            expected_version=recovered.record_version - 1,
+        )
+
+    assert await repository.get(recovered.operation_id) == recovered
+
+
+async def test_reconcile_cannot_clear_an_active_recovery_lease(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.RUNNING,
+    )
+    recovery = await _claim_recovery(repository)
+    recovered = recovery.operation
+    assert recovered.lease is not None
+
+    with pytest.raises(InvalidOperationLeaseError):
+        await repository.reconcile(
+            operation=replace(
+                recovered,
+                lease=None,
+                updated_at=BASE_TIME + timedelta(seconds=4),
+                record_version=recovered.record_version + 1,
+            ),
+            owner_id=recovered.lease.owner_id,
+            now=BASE_TIME + timedelta(seconds=4),
+            expected_version=recovered.record_version,
+        )
+
+    assert await repository.get(recovered.operation_id) == recovered
+
+
+async def test_direct_recovering_request_is_no_longer_a_public_path(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    expired = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.CLAIMED,
+    )
+
+    with pytest.raises(InvalidOperationTransitionError):
+        await repository.request_state(
+            operation_id=expired.operation_id,
+            target=MarketOperationState.RECOVERING,
+            expected_version=expired.record_version,
+            now=BASE_TIME + timedelta(seconds=3),
+        )
+
+    assert await repository.get(expired.operation_id) == expired
+
+
+async def test_pending_operation_is_not_a_recovery_candidate(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    pending = await _create(repository, admin_user_id)
+
+    claim = await repository.claim_next_expired(
+        owner_id=uuid4(),
+        now=BASE_TIME + timedelta(seconds=3),
+        lease_expires_at=BASE_TIME + timedelta(seconds=33),
+    )
+
+    assert claim is None
+    assert await repository.get(pending.operation_id) == pending
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        MarketOperationState.PAUSED,
+        MarketOperationState.CANCELLED,
+        MarketOperationState.COMPLETED,
+        MarketOperationState.FAILED,
+    ],
+)
+async def test_unleased_or_terminal_state_is_not_a_recovery_candidate(
+    database: Database,
+    admin_user_id: UUID,
+    state: MarketOperationState,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    created = await _create(repository, admin_user_id)
+    if state is MarketOperationState.CANCELLED:
+        cancel_requested = await repository.request_cancel(
+            operation_id=created.operation_id,
+            expected_version=created.record_version,
+            now=BASE_TIME + timedelta(seconds=1),
+        )
+        settled = await repository.request_state(
+            operation_id=created.operation_id,
+            target=state,
+            expected_version=cancel_requested.record_version,
+            now=BASE_TIME + timedelta(seconds=2),
+        )
+    else:
+        claimed = await _claim(repository, duration=timedelta(seconds=30))
+        if state is MarketOperationState.PAUSED:
+            pause_requested = await repository.request_pause(
+                operation_id=claimed.operation_id,
+                expected_version=claimed.record_version,
+                now=BASE_TIME + timedelta(seconds=2),
+            )
+            settled = await repository.request_state(
+                operation_id=claimed.operation_id,
+                target=state,
+                expected_version=pause_requested.record_version,
+                now=BASE_TIME + timedelta(seconds=3),
+                owner_id=_owner(claimed),
+            )
+        elif state is MarketOperationState.COMPLETED:
+            running = await repository.request_state(
+                operation_id=claimed.operation_id,
+                target=MarketOperationState.RUNNING,
+                expected_version=claimed.record_version,
+                now=BASE_TIME + timedelta(seconds=2),
+                owner_id=_owner(claimed),
+            )
+            completed_at = BASE_TIME + timedelta(seconds=3)
+            settled = await repository.complete(
+                operation_id=running.operation_id,
+                owner_id=_owner(claimed),
+                now=completed_at,
+                result=OperationResult(
+                    dataset_version=DATASET_VERSION,
+                    dataset_checksum=DATASET_CHECKSUM,
+                    completed_at=completed_at,
+                ),
+                progress=replace(running.progress, updated_at=completed_at),
+                expected_version=running.record_version,
+            )
+        else:
+            failed_at = BASE_TIME + timedelta(seconds=2)
+            settled = await repository.fail(
+                operation_id=claimed.operation_id,
+                owner_id=_owner(claimed),
+                now=failed_at,
+                failure=SanitizedOperationFailure(
+                    code=MarketOperationFailureCode.NETWORK_FAILURE,
+                    failed_at=failed_at,
+                ),
+                progress=replace(claimed.progress, updated_at=failed_at),
+                expected_version=claimed.record_version,
+            )
+
+    claim = await repository.claim_next_expired(
+        owner_id=uuid4(),
+        now=BASE_TIME + timedelta(seconds=10),
+        lease_expires_at=BASE_TIME + timedelta(seconds=40),
+    )
+
+    assert settled.state is state
+    assert claim is None
+    assert await repository.get(settled.operation_id) == settled
 
 
 async def test_invalid_transition_and_direct_terminal_or_immutable_update_are_rejected(
@@ -1332,6 +2084,22 @@ def test_repository_validates_before_opening_a_transaction() -> None:
                 target=MarketOperationState.PAUSE_REQUESTED,
                 expected_version=1,
                 now=non_utc,
+            )
+        )
+    with pytest.raises(InvalidOperationLeaseError):
+        asyncio.run(
+            repository.claim_next_expired(
+                owner_id=UUID(int=0),
+                now=BASE_TIME,
+                lease_expires_at=BASE_TIME + timedelta(seconds=30),
+            )
+        )
+    with pytest.raises(InvalidMarketOperationRequestError):
+        asyncio.run(
+            repository.claim_next_expired(
+                owner_id=uuid4(),
+                now=non_utc,
+                lease_expires_at=BASE_TIME + timedelta(seconds=30),
             )
         )
 

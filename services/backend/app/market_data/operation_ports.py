@@ -7,6 +7,7 @@ from typing import Protocol
 from uuid import UUID
 
 from app.market_data.operations import (
+    MarketOperationRecoveryClaim,
     MarketOperationRequest,
     MarketOperationSnapshot,
     MarketOperationState,
@@ -72,6 +73,14 @@ class MarketOperationRepository(Protocol):
         lease_expires_at: datetime,
     ) -> MarketOperationSnapshot | None: ...
 
+    async def claim_next_expired(
+        self,
+        *,
+        owner_id: UUID,
+        now: datetime,
+        lease_expires_at: datetime,
+    ) -> MarketOperationRecoveryClaim | None: ...
+
     async def renew_lease(
         self,
         *,
@@ -119,6 +128,8 @@ class MarketOperationRepository(Protocol):
         self,
         *,
         operation: MarketOperationSnapshot,
+        owner_id: UUID,
+        now: datetime,
         expected_version: int,
     ) -> MarketOperationSnapshot: ...
 

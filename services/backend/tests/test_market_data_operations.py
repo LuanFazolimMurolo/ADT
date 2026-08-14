@@ -26,6 +26,7 @@ from app.market_data.operations import (
     MAX_IDEMPOTENCY_KEY_LENGTH,
     MarketDatasetSelector,
     MarketOperationFailureCode,
+    MarketOperationRecoveryClaim,
     MarketOperationRequest,
     MarketOperationSnapshot,
     MarketOperationState,
@@ -282,6 +283,28 @@ def test_operation_enums_are_closed_to_the_approved_contract() -> None:
         "CANCELLED_BY_ADMIN",
         "INTERNAL_ERROR",
     }
+
+
+def test_recovery_claim_requires_a_leased_recovering_snapshot_and_valid_origin() -> None:
+    recovering = _snapshot(MarketOperationState.RECOVERING, lease=_lease())
+
+    claim = MarketOperationRecoveryClaim(
+        operation=recovering,
+        recovered_from=MarketOperationState.RUNNING,
+    )
+
+    assert claim.operation is recovering
+    assert claim.recovered_from is MarketOperationState.RUNNING
+    with pytest.raises(InvalidMarketOperationRequestError):
+        MarketOperationRecoveryClaim(
+            operation=replace(recovering, lease=None),
+            recovered_from=MarketOperationState.RUNNING,
+        )
+    with pytest.raises(InvalidMarketOperationRequestError):
+        MarketOperationRecoveryClaim(
+            operation=recovering,
+            recovered_from=MarketOperationState.PENDING,
+        )
 
 
 @pytest.mark.parametrize(("current", "target"), ALL_STATE_PAIRS)

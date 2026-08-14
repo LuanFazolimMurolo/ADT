@@ -33,6 +33,7 @@ from app.market_data.errors import (
 from app.market_data.operations import (
     MarketDatasetSelector,
     MarketOperationFailureCode,
+    MarketOperationRecoveryClaim,
     MarketOperationRequest,
     MarketOperationSnapshot,
     MarketOperationState,
@@ -46,7 +47,6 @@ from app.market_data.operations import (
     encode_dataset_id,
     operation_request_fingerprint,
     renew_lease,
-    request_lease_recovery,
     require_progress_not_regressed,
     require_transition,
     validate_operation_update,
@@ -115,7 +115,6 @@ _CLEAR_LEASE_STATES = frozenset(
         MarketOperationState.CANCELLED,
         MarketOperationState.COMPLETED,
         MarketOperationState.FAILED,
-        MarketOperationState.RECOVERING,
     }
 )
 
@@ -595,8 +594,10 @@ class PostgresMarketOperationRepository:
         now: datetime,
         owner_id: UUID | None = None,
     ) -> MarketOperationSnapshot:
-        """Apply one explicit normal or expired-lease recovery transition."""
+        """Apply one explicit normal lifecycle transition."""
         if not isinstance(target, MarketOperationState):
+            raise InvalidOperationTransitionError()
+        if target is MarketOperationState.RECOVERING:
             raise InvalidOperationTransitionError()
         now = _require_operation_timestamp(now)
         if owner_id is not None:
@@ -610,10 +611,7 @@ class PostgresMarketOperationRepository:
                 )
                 if current.state is target:
                     return current
-                if target is MarketOperationState.RECOVERING:
-                    request_lease_recovery(current, now=now)
-                else:
-                    require_transition(current.state, target)
+                require_transition(current.state, target)
                 worker_owned = (
                     target
                     in {
@@ -772,6 +770,140 @@ class PostgresMarketOperationRepository:
                     error.diag.constraint_name == "market_data_operations_one_active_dataset_uidx"
                     or error.diag.constraint_name == "market_data_operations_one_active_owner_uidx"
                 ) and attempt == 0:
+                    continue
+                _raise_operation_persistence_error(error)
+            except Error as error:
+                _raise_operation_persistence_error(error)
+        return None
+
+    async def claim_next_expired(
+        self,
+        *,
+        owner_id: UUID,
+        now: datetime,
+        lease_expires_at: datetime,
+    ) -> MarketOperationRecoveryClaim | None:
+        """Atomically transfer one expired operation to a fresh recovery lease."""
+        owner_id = _require_worker_owner_id(owner_id)
+        WorkerLease(
+            operation_id=UUID(int=0),
+            owner_id=owner_id,
+            claimed_at=now,
+            heartbeat_at=now,
+            lease_expires_at=lease_expires_at,
+        )
+        for attempt in range(2):
+            try:
+                async with self._database.transaction() as connection:
+                    candidate_cursor = await connection.execute(
+                        f"""
+                        select {_OPERATION_COLUMNS}
+                        from public.market_data_operations as operation
+                        where not exists (
+                            select 1
+                            from public.market_data_operations as owned
+                            where owned.lease_owner = %s
+                        )
+                          and (
+                              (
+                                  operation.status in (
+                                      'CLAIMED',
+                                      'RUNNING',
+                                      'PAUSE_REQUESTED',
+                                      'CANCEL_REQUESTED'
+                                  )
+                                  and operation.lease_expires_at <= %s
+                              )
+                              or (
+                                  operation.status = 'RECOVERING'
+                                  and (
+                                      operation.lease_owner is null
+                                      or operation.lease_expires_at <= %s
+                                  )
+                              )
+                          )
+                        order by
+                            (operation.status = 'RECOVERING') desc,
+                            operation.lease_expires_at asc nulls first,
+                            operation.created_at,
+                            operation.id
+                        for update skip locked
+                        limit 1
+                        """,
+                        (owner_id, now, now),
+                    )
+                    candidate_row = await candidate_cursor.fetchone()
+                    if candidate_row is None:
+                        return None
+                    candidate = market_operation_from_row(candidate_row)
+                    recovered_from = candidate.state
+
+                    if candidate.lease is not None:
+                        clear_cursor = await connection.execute(
+                            f"""
+                            update public.market_data_operations as operation
+                            set
+                                status = 'RECOVERING',
+                                lease_owner = null,
+                                lease_claimed_at = null,
+                                lease_heartbeat_at = null,
+                                lease_expires_at = null,
+                                updated_at = %s,
+                                version = operation.version + 1
+                            where operation.id = %s
+                              and operation.version = %s
+                            returning {_OPERATION_COLUMNS}
+                            """,
+                            (now, candidate.operation_id, candidate.record_version),
+                        )
+                        cleared_row = await clear_cursor.fetchone()
+                        if cleared_row is None:
+                            raise OperationVersionConflictError()
+                        candidate = market_operation_from_row(cleared_row)
+
+                    claim_cursor = await connection.execute(
+                        f"""
+                        update public.market_data_operations as operation
+                        set
+                            lease_owner = %s,
+                            lease_claimed_at = %s,
+                            lease_heartbeat_at = %s,
+                            lease_expires_at = %s,
+                            updated_at = %s,
+                            version = operation.version + 1
+                        where operation.id = %s
+                          and operation.version = %s
+                          and operation.status = 'RECOVERING'
+                          and operation.lease_owner is null
+                        returning {_OPERATION_COLUMNS}
+                        """,
+                        (
+                            owner_id,
+                            now,
+                            now,
+                            lease_expires_at,
+                            now,
+                            candidate.operation_id,
+                            candidate.record_version,
+                        ),
+                    )
+                    claimed_row = await claim_cursor.fetchone()
+                    if claimed_row is None:
+                        raise OperationVersionConflictError()
+                    claimed = market_operation_from_row(claimed_row)
+                return MarketOperationRecoveryClaim(
+                    operation=claimed,
+                    recovered_from=recovered_from,
+                )
+            except UniqueViolation as error:
+                if (
+                    error.diag.constraint_name
+                    in {
+                        "market_data_operations_one_active_dataset_uidx",
+                        "market_data_operations_one_active_owner_uidx",
+                    }
+                    and attempt == 0
+                ):
                     continue
                 _raise_operation_persistence_error(error)
             except Error as error:
@@ -1078,9 +1210,13 @@ class PostgresMarketOperationRepository:
         self,
         *,
         operation: MarketOperationSnapshot,
+        owner_id: UUID,
+        now: datetime,
         expected_version: int,
     ) -> MarketOperationSnapshot:
-        """Persist one fully validated recovery-only snapshot."""
+        """Persist recovery evidence only for the active recovery owner."""
+        owner_id = _require_worker_owner_id(owner_id)
+        now = _require_lease_timestamp(now)
         try:
             async with self._database.transaction() as connection:
                 current = await self._locked_operation(
@@ -1088,7 +1224,26 @@ class PostgresMarketOperationRepository:
                     operation.operation_id,
                     expected_version,
                 )
+                if current.state is not MarketOperationState.RECOVERING:
+                    raise InvalidOperationTransitionError()
+                current_lease = _require_owned_active_lease(
+                    current,
+                    owner_id=owner_id,
+                    now=now,
+                )
                 validate_operation_update(current, operation, reconciliation=True)
+                if operation.updated_at > now:
+                    raise OperationProgressRegressionError()
+                if (
+                    operation.state
+                    in {
+                        MarketOperationState.CLAIMED,
+                        MarketOperationState.RUNNING,
+                        MarketOperationState.RECOVERING,
+                    }
+                    and operation.lease != current_lease
+                ):
+                    raise InvalidOperationLeaseError()
                 result_version = (
                     operation.result.dataset_version if operation.result is not None else None
                 )
@@ -1128,6 +1283,9 @@ class PostgresMarketOperationRepository:
                         version = %s
                     where operation.id = %s
                       and operation.version = %s
+                      and operation.status = 'RECOVERING'
+                      and operation.lease_owner = %s
+                      and operation.lease_expires_at > %s
                     returning {_OPERATION_COLUMNS}
                     """,
                     (
@@ -1152,6 +1310,8 @@ class PostgresMarketOperationRepository:
                         operation.record_version,
                         operation.operation_id,
                         expected_version,
+                        owner_id,
+                        now,
                     ),
                 )
                 row = await cursor.fetchone()
@@ -1199,20 +1359,6 @@ class PostgresMarketOperationRepository:
         return await self.request_state(
             operation_id=operation_id,
             target=MarketOperationState.PENDING,
-            expected_version=expected_version,
-            now=now,
-        )
-
-    async def recover_expired(
-        self,
-        *,
-        operation_id: UUID,
-        expected_version: int,
-        now: datetime,
-    ) -> MarketOperationSnapshot:
-        return await self.request_state(
-            operation_id=operation_id,
-            target=MarketOperationState.RECOVERING,
             expected_version=expected_version,
             now=now,
         )

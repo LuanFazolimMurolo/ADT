@@ -505,6 +505,30 @@ class MarketOperationSnapshot:
             raise InvalidMarketOperationRequestError()
 
 
+@dataclass(frozen=True, slots=True)
+class MarketOperationRecoveryClaim:
+    """Committed recovery ownership plus the state observed under row lock."""
+
+    operation: MarketOperationSnapshot
+    recovered_from: MarketOperationState
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.operation, MarketOperationSnapshot)
+            or not isinstance(self.recovered_from, MarketOperationState)
+            or self.operation.state is not MarketOperationState.RECOVERING
+            or self.operation.lease is None
+            or (
+                self.recovered_from is not MarketOperationState.RECOVERING
+                and not can_reconcile_transition(
+                    self.recovered_from,
+                    MarketOperationState.RECOVERING,
+                )
+            )
+        ):
+            raise InvalidMarketOperationRequestError()
+
+
 def operation_request_fingerprint(request: MarketOperationRequest) -> str:
     """Hash the canonical contract fields independently of JSON formatting."""
     return hashlib.sha256(canonical_operation_request_bytes(request)).hexdigest()
