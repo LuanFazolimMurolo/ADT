@@ -56,6 +56,8 @@ from app.market_data.http import PublicMarketHttpClient
 from app.market_data.jobs import MarketJobCatalog
 from app.market_data.locks import DatasetLockManager
 from app.market_data.operation_worker_runtime import (
+    MarketOperationWorkerLoopResult,
+    run_market_operation_worker_loop,
     run_market_operation_worker_once,
 )
 from app.market_data.operations import MarketOperationSnapshot
@@ -186,6 +188,16 @@ def build_parser() -> argparse.ArgumentParser:
         "run-once",
         help="Claim and process at most one queued market-data operation.",
     )
+    worker_loop = worker_commands.add_parser(
+        "loop",
+        help="Continuously poll queued market-data operations.",
+    )
+    worker_loop.add_argument(
+        "--interval-seconds",
+        type=float,
+        required=True,
+    )
+    worker_loop.add_argument("--max-cycles", type=int)
 
     quality = commands.add_parser("quality", help="Audit persisted datasets.")
     quality_commands = quality.add_subparsers(dest="quality_command", required=True)
@@ -292,16 +304,32 @@ async def _run_market_operation_worker_command(
     transport: httpx.AsyncBaseTransport | None,
     stdout: TextIO,
 ) -> int:
-    """Execute one PostgreSQL-backed market-operation worker iteration."""
-    if args.worker_command != "run-once":
-        raise ValueError("unknown market-operation worker command")
+    """Execute PostgreSQL-backed market-operation worker commands."""
+    if args.worker_command == "run-once":
+        operation = await run_market_operation_worker_once(
+            app_settings,
+            transport=transport,
+        )
+        _print(
+            _market_operation_worker_payload(operation),
+            stdout,
+        )
+        return EXIT_OK
 
-    operation = await run_market_operation_worker_once(
-        app_settings,
-        transport=transport,
-    )
-    _print(_market_operation_worker_payload(operation), stdout)
-    return EXIT_OK
+    if args.worker_command == "loop":
+        result = await run_market_operation_worker_loop(
+            app_settings,
+            interval_seconds=args.interval_seconds,
+            max_cycles=args.max_cycles,
+            transport=transport,
+        )
+        _print(
+            _market_operation_worker_loop_payload(result),
+            stdout,
+        )
+        return EXIT_OK
+
+    raise ValueError("unknown market-operation worker command")
 
 
 async def _run_market_command(
@@ -873,6 +901,22 @@ def _collection_state_payload(state: ContinuousCollectionState) -> dict[str, obj
             }
             for result in state.results
         ],
+    }
+
+
+def _market_operation_worker_loop_payload(
+    result: MarketOperationWorkerLoopResult,
+) -> dict[str, object]:
+    """Serialize only the bounded runner summary."""
+    return {
+        "status": "COMPLETED",
+        "cycles_completed": result.cycles_completed,
+        "operations_processed": result.operations_processed,
+        "idle_cycles": result.idle_cycles,
+        "last_operation_id": (
+            str(result.last_operation_id) if result.last_operation_id is not None else None
+        ),
+        "last_state": (result.last_state.value if result.last_state is not None else None),
     }
 
 
