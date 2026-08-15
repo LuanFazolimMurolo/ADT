@@ -1,5 +1,13 @@
 # ADT Specification
 
+> **Authority note:** This document preserves foundational and historical ADT
+> product material, including an obsolete phase ordering. The current durable
+> product direction is [`PRODUCT_VISION.md`](./PRODUCT_VISION.md), and the
+> current authoritative phase plan is [`ROADMAP.md`](./ROADMAP.md). When phase
+> numbering or future scope conflicts, `PRODUCT_VISION.md` and `ROADMAP.md`
+> take precedence. See [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md) for the
+> current development handoff.
+
 ## What is ADT?
 
 **ADT** = **A**utomatic **D**ry **T**rade

@@ -4,9 +4,17 @@
 
 ## Status
 
-🟡 **Phase 5 paper-trading runtime in progress — 5-01 through 5-08 implemented locally**
+✅ **Phase 6 advanced frontend and financial-chart boundary complete**
+
+🟡 **Phase 7 Operational Control Plane active**
 
 ⏳ **Formal Phase 1 closure pending operational homologation**
+
+The exact current branch, completed delivery and next technical handoff are in
+[`docs/CHAT_CONTINUITY.md`](./docs/CHAT_CONTINUITY.md). The durable product
+direction, including the future ADT Official Portfolio, Confidence Score and
+distribution boundaries, is in
+[`docs/PRODUCT_VISION.md`](./docs/PRODUCT_VISION.md).
 
 The backend exposes a read-only Binance Spot asset catalog, can maintain an
 explicit bounded set of RAW Parquet candle datasets from a separate collector
@@ -14,7 +22,8 @@ process, can replay deterministic local paper sessions over those closed
 candles, can size simulated Spot entries and enforce fixed-percent protective
 stops deterministically, can classify closed candles as trend, range or volatile
 without look-ahead, and can aggregate verified backtest results by canonical asset.
-It still performs no permanent strategy scheduling, exchange-account
+Phase 7 is adding durable operational orchestration without moving long-running
+work into FastAPI requests. ADT still performs no exchange-account
 operation or real-capital trading. No migration or administrator bootstrap has
 been run against a remote Supabase project as part of this work.
 

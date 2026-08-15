@@ -6,13 +6,33 @@ This file instructs AI assistants (like GitHub Copilot, Claude, or ChatGPT) on h
 
 ## Before You Start
 
-**Always read:**
+**Always read in this order:**
 
-1. [docs/ADT_SPEC.md](./docs/ADT_SPEC.md) — Product vision and constraints
-2. [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — Technical design and boundaries
-3. [docs/ROADMAP.md](./docs/ROADMAP.md) — Planned phases
+1. [docs/PRODUCT_VISION.md](./docs/PRODUCT_VISION.md) — Durable product direction
+2. [docs/CHAT_CONTINUITY.md](./docs/CHAT_CONTINUITY.md) — Current branch, phase and handoff
+3. [docs/ROADMAP.md](./docs/ROADMAP.md) — Current authoritative phase plan
+4. [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — Technical design and boundaries
+5. Phase-specific documents referenced by the current handoff
 
-**Never assume** — Check documentation first.
+[docs/ADT_SPEC.md](./docs/ADT_SPEC.md) remains useful as foundational and
+historical specification context. Its obsolete phase numbering must not
+override `PRODUCT_VISION.md`, `CHAT_CONTINUITY.md` or `ROADMAP.md`.
+
+**Never assume** — Check documentation and repository evidence first.
+
+## Session-Start Protocol
+
+Before proposing implementation:
+
+1. Read the authoritative files above.
+2. Inspect the current local branch, HEAD, worktree and remote branch state.
+3. Reconcile documentation claims with Git and repository evidence.
+4. Report where the project stopped and which delivery is next.
+5. Only then continue with an approved scope.
+
+If `CHAT_CONTINUITY.md` and actual Git state differ, do not guess. Report the
+discrepancy, use repository evidence to determine the actual state, and decide
+whether the handoff needs a controlled update.
 
 ## Project Rules (Non-Negotiable)
 
@@ -50,7 +70,11 @@ This file instructs AI assistants (like GitHub Copilot, Claude, or ChatGPT) on h
 
 ### Phases
 
-Current Phase: **Phase 6 complete; Phase 7 has not started**
+Current Phase: **Phase 6 complete; Phase 7 active**
+
+Read the exact current branch, completed delivery and next delivery from
+[`docs/CHAT_CONTINUITY.md`](./docs/CHAT_CONTINUITY.md). Do not hardcode a commit
+SHA or task handoff in this universal guide.
 
 - ✅ Phase 4 is available as a stable boundary: finite deterministic search,
   temporal planning, bounded execution, walk-forward selection and explicit
@@ -65,9 +89,10 @@ Current Phase: **Phase 6 complete; Phase 7 has not started**
   machine learning
 
 Phase 6 remains a read-only presentation and analysis boundary. Operational
-session/worker controls remain Phase 7 work, and real-capital trading remains
-outside the current implementation scope. Phase 2D operational administration
-continues as a separate control-plane track.
+session/worker controls are active Phase 7 work, and real-capital trading
+remains outside the current implementation scope. The formerly named Phase 2D
+operational-administration scope continues inside the Phase 7 control-plane
+track.
 
 See [docs/BACKTESTING.md](./docs/BACKTESTING.md) and
 [docs/ROADMAP.md](./docs/ROADMAP.md).

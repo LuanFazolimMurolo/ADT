@@ -160,12 +160,14 @@ Telegram, machine learning and real-capital trading.
 
 ---
 
-## Phase 2: Market Data Collection 🚧 PHASE 2D PLANNED
+## Phase 2: Market Data Collection 🚧 PHASE 2D CONTINUES IN PHASE 7
 
 **Goal**: Fetch and store historical candlestick data.
 
-**Status**: Phases 2A–2C are implemented and operationally validated. Phase 2D
-is formally scoped and remains to be implemented before Phase 2 can close.
+**Status**: Phases 2A–2C are implemented and operationally validated. The
+approved Phase 2D operational-administration scope now continues as part of the
+active Phase 7 Operational Control Plane. See
+[`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md) for the exact current delivery.
 
 ### Phase 2A: local historical-data foundation 🟡 IMPLEMENTED LOCALLY
 
@@ -326,7 +328,9 @@ durability and dataset contracts established in Phases 2A–2C.
 **Architecture decision**:
 [`docs/adr/0001-phase-2d-operational-market-data-control-plane.md`](./adr/0001-phase-2d-operational-market-data-control-plane.md)
 
-**Status**: Scope and architecture approved; implementation has not started.
+**Status**: Scope and architecture approved. Implementation is active within
+the Phase 7 control-plane track; this historical section remains the contract
+for the market-data operational boundary rather than a claim of Phase 2 closure.
 
 **Deliverables**:
 - [x] Market data adapter interface
@@ -860,15 +864,27 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
+**Status**: Active. Track 7-01 is establishing the durable control-plane
+foundation. Expired-operation recovery (7-01D2C1) is closed; the exact current
+handoff and next delivery are maintained in
+[`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
+
 **Deliverables**:
+- [ ] Define administrator-approved operational mandates for assets, markets
+      and instruments
 - [ ] Create and validate paper-session configurations through the frontend
-- [ ] Select assets, timeframes, strategies, sizing, fees and risk policies
+- [ ] Configure timeframes and trading horizons as their contracts mature
+- [ ] Select strategies, sizing, fees and risk policies within explicit mandates
 - [ ] Submit and monitor bounded market-data synchronization operations
 - [ ] Start, pause, resume and stop durable collectors and paper runners
 - [ ] Reconcile abandoned work after restart
 - [ ] Integrate the administrative capital ledger with operational sessions
+- [ ] Establish the ledger and session foundations required by a future ADT
+      Official Portfolio and official paper capital without claiming that
+      portfolio is already implemented
 - [ ] Show worker health, leases, progress, errors and audit events
 - [ ] Preserve CLI workflows and explicit operator confirmation
+- [ ] Preserve auditable start, pause, resume, cancel and recovery transitions
 - [ ] Complete the previously approved Phase 2D operational administration scope
 
 **Dependencies**: Phase 6 complete
@@ -889,9 +905,19 @@ strategy and parameter selection without silently promoting a model to live use.
 - [ ] Performance and degradation prediction
 - [ ] Anomaly detection
 - [ ] Strategy and parameter recommendations
+- [ ] Strategy and parameter intelligence by asset, timeframe and regime
+- [ ] ADT Confidence Score contract, evidence model and calibrated presentation
+- [ ] Robustness, consistency and degradation evidence independent of return
 - [ ] Model registry, versioning, lineage and reproducibility
 - [ ] Walk-forward and holdout integration with the Phase 4 evidence
 - [ ] Human approval before any recommendation becomes an active paper session
+- [ ] Evaluate possible autonomous PAPER orchestration inside
+      administrator-approved mandates only after explicit safety and evaluation
+      gates
+
+The Confidence Score must not be presented as a probability of profit unless a
+future explicitly calibrated statistical contract supports that interpretation.
+Nothing in Phase 8 authorizes automatic real-capital execution.
 
 **Dependencies**: Phase 7 complete
 **Estimated Duration**: 4+ weeks
@@ -902,7 +928,9 @@ strategy and parameter selection without silently promoting a model to live use.
 ## Phase 9: Production Deployment
 
 **Goal**: Deploy the validated system to persistent infrastructure with
-reliable process supervision, backups, monitoring and secure delivery.
+reliable process supervision, backups, monitoring and secure delivery. The
+production topology must support a continuously available official paper trader
+and safe public read projections without moving execution into HTTP requests.
 
 **Deliverables**:
 - [ ] Production container and environment design
@@ -914,6 +942,8 @@ reliable process supervision, backups, monitoring and secure delivery.
 - [ ] Monitoring, alerting and error tracking
 - [ ] TLS, CORS, CSP, rate limits and secret management
 - [ ] Performance and cost profiling
+- [ ] Availability and freshness boundaries for the official paper trader
+- [ ] Safe, bounded public projections for implemented ADT Live capabilities
 - [ ] Kubernetes only if measured scale requires it
 
 **Dependencies**: Phase 8 complete
@@ -922,22 +952,42 @@ reliable process supervision, backups, monitoring and secure delivery.
 
 ---
 
-## Phase 10: Telegram-Assisted Manual Execution
+## Phase 10: Public Product and Telegram-Assisted Distribution
 
-**Goal**: Deliver audited trading signals through Telegram so the operator can
-decide and execute manually, without granting the bot exchange-account or
-capital-movement authority.
+**Goal**: Expose the validated official paper trader as a safe public product
+and distribute authorized signals for human manual execution, without granting
+the product exchange-account or subscriber-capital authority.
 
-**Deliverables**:
+### Phase 10A: ADT Live public product surface
+
+- [ ] Public official-paper capital, return, equity and drawdown projections
+- [ ] ADT Official Portfolio history and capital-era projections once implemented
+- [ ] ADT Confidence Score projection only after its Phase 8 contract is validated
+- [ ] Public operations, charts, freshness and health suitable for disclosure
+- [ ] Official Telegram entry point or link
+
+### Phase 10B: Telegram-assisted signal distribution
+
 - [ ] Secure Telegram bot and authorized-recipient configuration
 - [ ] Entry, exit, stop, invalidation and expiry notifications
 - [ ] Observed price, strategy, timeframe, rationale and risk context
+- [ ] Signal-specific confidence/evidence only where authoritative
 - [ ] Estimated targets or horizons only when backed by an explicit model
 - [ ] Signal acknowledgement and optional manual-execution recording
 - [ ] Follow-up exit notifications and daily summaries
 - [ ] Error, stale-data and runner-health alerts
 - [ ] Idempotent delivery, retry, deduplication and audit history
-- [ ] No exchange API key and no automatic real order execution
+
+### Phase 10C: Subscription and entitlement layer
+
+- [ ] Subscriber accounts, plans, lifecycle and entitlement state
+- [ ] Account-to-Telegram association and premium-signal authorization
+- [ ] Price-agnostic payment-provider and billing integration
+- [ ] Auditable access changes, revocation and delivery authorization
+
+Manual execution remains the initial real-money boundary. Subscriber capital is
+independent of the ADT Official Portfolio. Phase 10 uses no exchange API key and
+does not automatically place real orders.
 
 **Dependencies**: Phase 9 complete
 **Estimated Duration**: 1–2 weeks
@@ -956,6 +1006,10 @@ assessment.
 - [ ] Signal-delivery and operator-response analysis
 - [ ] Simulated-versus-manual execution comparison
 - [ ] Strategy stability and regime analysis
+- [ ] ADT Official Portfolio track-record assessment across immutable capital eras
+- [ ] Confidence Score calibration and usefulness assessment
+- [ ] Subscriber-signal reliability assessment where distribution is implemented
+- [ ] Compare official paper results with optional manually replicated execution
 - [ ] Failure, restart, stale-data and alert reliability review
 - [ ] Bug fixes, performance improvements and documentation updates
 - [ ] Strategy-library and market-coverage expansion
