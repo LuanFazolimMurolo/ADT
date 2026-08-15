@@ -22,45 +22,49 @@ Phase 6 is complete and versioned. Phase 7 is active.
 
 ## Last completed delivery
 
-**7-01D2C1 — Expired Operation Recovery — CLOSED**
+**7-01D2C2 — Pre-claim Control Settlement — CLOSED**
 
-- C1A — Atomic Recovery Claim & Ownership Hardening — COMPLETE
-- C1B — Worker Recovery & Crash-Window Convergence — COMPLETE
+**7-01D2C1 — Expired Operation Recovery — CLOSED** remains the protected
+recovery foundation consumed by C2.
+
+C2 atomically settles never-started Category A controls. Previously-started
+Category B controls acquire settlement-only ownership and reconcile durable
+local state. Both categories use one globally ordered C2 path, their crash
+windows compose with C1 recovery, and no executor or fetch runs during C2
+settlement.
 
 Last validated **code milestone** commit:
 
-`496da983f9f69b02151ddf51913e81d27c902c97`
+`b7815996443286a6663a2e08903b15726c3d2e96`
 
 This is not a permanent assertion about the feature branch HEAD. The
 documentation continuity commit and later deliveries naturally make the branch
 newer. Verify the current local and remote SHAs at session start.
 
-## Accepted C1B evidence
+## Accepted C2 evidence
 
 - Gate 1: PASS
-- Gate 2 Retry: PASS
-- Full Local Gate Retry: PASS
-- Backend suite: 2353 passed, 1 skipped, 87% coverage
-- Staged Semantic Audit: PASS
+- Category B Gate 1 Retry: PASS
+- Semantic Gate 2: PASS
+- Full Local: PASS
+- Backend suite: 2389 passed, 1 skipped, 87% coverage
 - Protected patch SHA:
-  `7ce9051a056c01d45416dccfea6325e258f240d8aab003b74b0df323bbdba125`
+  `2a65c25a59dae81fa1aea42d4b8051c42ef81b2158f607c5517fba58e2a9af2a`
 - Protected code commit:
-  `496da983f9f69b02151ddf51913e81d27c902c97`
+  `b7815996443286a6663a2e08903b15726c3d2e96`
 
 ## Next technical delivery
 
-**7-01D2C2 — Pre-claim Control Settlement**
+**7-01D2C3 — Structured Cancellation & Graceful Shutdown**
 
-Known objective: resolve administrative `PAUSE_REQUESTED` and
-`CANCEL_REQUESTED` states that can occur before the first worker claim, without
-fabricating execution ownership, `started_at` or local work.
+Known objective: structured cooperative cancellation of active execution tasks,
+with no orphan child tasks, graceful `SIGTERM`/drain in the continuous runtime,
+and no stale settlement after cancellation or lease loss.
 
 The exact implementation must be reconfirmed against the current repository,
 state-machine contracts and tests before code changes begin.
 
-## Remaining D2 closure
-
-After C2:
+## Remaining 7-01 closure
 
 1. **7-01D2C3 — Structured Cancellation & Graceful Shutdown**
 2. final **7-01 closure audit**
