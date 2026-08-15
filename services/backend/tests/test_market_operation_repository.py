@@ -139,6 +139,7 @@ async def _leased_operation(
     idempotency_key: str = "phase-2d-recovery",
     symbol: str = "BTC/USDT",
     owner_id: UUID | None = None,
+    local_job_id: str = "recovery-job",
 ) -> MarketOperationSnapshot:
     await _create(
         repository,
@@ -168,7 +169,7 @@ async def _leased_operation(
                 operation,
                 now=BASE_TIME + timedelta(milliseconds=1500),
             ),
-            local_job_id="recovery-job",
+            local_job_id=local_job_id,
             expected_version=operation.record_version,
         )
     elif state is MarketOperationState.PAUSE_REQUESTED:
@@ -258,6 +259,65 @@ def _progress(
         candles_persisted=candles_persisted,
         requests_completed=requests_completed,
         updated_at=now,
+    )
+
+
+async def _category_b_control(
+    repository: PostgresMarketOperationRepository,
+    admin_user_id: UUID,
+    *,
+    requested_state: MarketOperationState,
+    operation_id: UUID | None = None,
+    idempotency_key: str = "phase-2d-recovery",
+    symbol: str = "BTC/USDT",
+) -> MarketOperationSnapshot:
+    resolved_operation_id = operation_id or uuid4()
+    running = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.RUNNING,
+        duration=timedelta(seconds=30),
+        operation_id=resolved_operation_id,
+        idempotency_key=idempotency_key,
+        symbol=symbol,
+        local_job_id=str(resolved_operation_id),
+    )
+    pause_requested = await repository.request_pause(
+        operation_id=running.operation_id,
+        expected_version=running.record_version,
+        now=BASE_TIME + timedelta(seconds=2),
+    )
+    paused = await repository.request_state(
+        operation_id=running.operation_id,
+        target=MarketOperationState.PAUSED,
+        expected_version=pause_requested.record_version,
+        now=BASE_TIME + timedelta(seconds=3),
+        owner_id=_owner(pause_requested),
+    )
+    pending = await repository.resume(
+        operation_id=paused.operation_id,
+        expected_version=paused.record_version,
+        now=BASE_TIME + timedelta(seconds=4),
+    )
+    return await repository.request_state(
+        operation_id=pending.operation_id,
+        target=requested_state,
+        expected_version=pending.record_version,
+        now=BASE_TIME + timedelta(seconds=5),
+    )
+
+
+async def _settle_or_claim_control(
+    repository: PostgresMarketOperationRepository,
+    *,
+    now: datetime,
+    owner_id: UUID | None = None,
+    lease_duration: timedelta = timedelta(seconds=30),
+) -> MarketOperationSnapshot | None:
+    return await repository.settle_or_claim_next_unclaimed_control(
+        owner_id=owner_id or uuid4(),
+        now=now,
+        lease_expires_at=now + lease_duration,
     )
 
 
@@ -687,6 +747,430 @@ async def test_ineligible_operation_is_not_claimed(
         )
         is None
     )
+
+
+@pytest.mark.parametrize(
+    ("requested_state", "settled_state"),
+    [
+        (MarketOperationState.PAUSE_REQUESTED, MarketOperationState.PAUSED),
+        (MarketOperationState.CANCEL_REQUESTED, MarketOperationState.CANCELLED),
+    ],
+)
+async def test_never_started_control_is_settled_without_execution_evidence(
+    database: Database,
+    admin_user_id: UUID,
+    requested_state: MarketOperationState,
+    settled_state: MarketOperationState,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    created = await _create(repository, admin_user_id)
+    requested = await repository.request_state(
+        operation_id=created.operation_id,
+        target=requested_state,
+        expected_version=created.record_version,
+        now=BASE_TIME + timedelta(seconds=1),
+    )
+    settlement_time = BASE_TIME + timedelta(seconds=2)
+
+    settled = await _settle_or_claim_control(repository, now=settlement_time)
+
+    assert settled is not None
+    assert settled.operation_id == requested.operation_id
+    assert settled.state is settled_state
+    assert settled.record_version == requested.record_version + 1 == created.record_version + 2
+    assert settled.updated_at == settlement_time
+    assert settled.lease is None
+    assert settled.started_at is None
+    assert settled.local_job_id is None
+    assert settled.progress == requested.progress
+    assert settled.result is None
+    if settled_state is MarketOperationState.PAUSED:
+        assert settled.failure is None
+        assert settled.finished_at is None
+    else:
+        assert settled.failure == SanitizedOperationFailure(
+            code=MarketOperationFailureCode.CANCELLED_BY_ADMIN,
+            failed_at=settlement_time,
+        )
+        assert settled.finished_at == settlement_time
+
+    assert (
+        await _settle_or_claim_control(
+            repository,
+            now=settlement_time + timedelta(seconds=1),
+        )
+        is None
+    )
+    assert await repository.get(settled.operation_id) == settled
+
+
+async def test_unclaimed_control_settlement_is_oldest_first_with_stable_id_tiebreak(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    first = await _create(
+        repository,
+        admin_user_id,
+        operation_id=UUID(int=1),
+        idempotency_key="phase7-c2-order-first",
+    )
+    second = await _create(
+        repository,
+        admin_user_id,
+        operation_id=UUID(int=2),
+        idempotency_key="phase7-c2-order-second",
+    )
+    for operation in (second, first):
+        await repository.request_pause(
+            operation_id=operation.operation_id,
+            expected_version=operation.record_version,
+            now=BASE_TIME + timedelta(seconds=1),
+        )
+
+    first_settled = await _settle_or_claim_control(
+        repository,
+        now=BASE_TIME + timedelta(seconds=2),
+    )
+    second_settled = await _settle_or_claim_control(
+        repository,
+        now=BASE_TIME + timedelta(seconds=3),
+    )
+
+    assert first_settled is not None
+    assert second_settled is not None
+    assert (first_settled.operation_id, second_settled.operation_id) == (
+        first.operation_id,
+        second.operation_id,
+    )
+
+
+async def test_concurrent_workers_settle_one_control_at_most_once(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    created = await _create(repository, admin_user_id)
+    requested = await repository.request_cancel(
+        operation_id=created.operation_id,
+        expected_version=created.record_version,
+        now=BASE_TIME + timedelta(seconds=1),
+    )
+    settlement_time = BASE_TIME + timedelta(seconds=2)
+
+    results = await asyncio.gather(
+        _settle_or_claim_control(repository, now=settlement_time),
+        _settle_or_claim_control(repository, now=settlement_time),
+    )
+
+    settled = [result for result in results if result is not None]
+    assert len(settled) == 1
+    assert settled[0].state is MarketOperationState.CANCELLED
+    assert settled[0].record_version == requested.record_version + 1
+    assert settled[0].lease is None
+    stored = await repository.get(created.operation_id)
+    assert stored == settled[0]
+
+
+@pytest.mark.parametrize(
+    "requested_state",
+    [MarketOperationState.PAUSE_REQUESTED, MarketOperationState.CANCEL_REQUESTED],
+)
+async def test_previously_started_unleased_control_gets_settlement_ownership(
+    database: Database,
+    admin_user_id: UUID,
+    requested_state: MarketOperationState,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    requested = await _category_b_control(
+        repository,
+        admin_user_id,
+        requested_state=requested_state,
+    )
+    owner_id = uuid4()
+
+    claimed = await repository.settle_or_claim_next_unclaimed_control(
+        owner_id=owner_id,
+        now=BASE_TIME + timedelta(seconds=6),
+        lease_expires_at=BASE_TIME + timedelta(seconds=36),
+    )
+
+    assert requested.lease is None
+    assert requested.started_at is not None
+    assert requested.local_job_id == str(requested.operation_id)
+    assert claimed is not None
+    assert claimed.state is requested_state
+    assert claimed.lease is not None
+    assert claimed.lease.owner_id == owner_id
+    assert claimed.started_at == requested.started_at
+    assert claimed.local_job_id == requested.local_job_id
+    assert claimed.progress == requested.progress
+    assert claimed.record_version == requested.record_version + 1
+    assert claimed.result is None
+    assert claimed.failure is None
+    assert claimed.finished_at is None
+    assert (
+        await repository.settle_or_claim_next_unclaimed_control(
+            owner_id=uuid4(),
+            now=BASE_TIME + timedelta(seconds=7),
+            lease_expires_at=BASE_TIME + timedelta(seconds=37),
+        )
+        is None
+    )
+
+
+async def test_stale_admin_version_cannot_race_unclaimed_control_settlement(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    created = await _create(repository, admin_user_id)
+    requested = await repository.request_pause(
+        operation_id=created.operation_id,
+        expected_version=created.record_version,
+        now=BASE_TIME + timedelta(seconds=1),
+    )
+
+    with pytest.raises(OperationVersionConflictError):
+        await repository.request_pause(
+            operation_id=created.operation_id,
+            expected_version=created.record_version,
+            now=BASE_TIME + timedelta(seconds=2),
+        )
+
+    assert await repository.get(created.operation_id) == requested
+    settled = await _settle_or_claim_control(
+        repository,
+        now=BASE_TIME + timedelta(seconds=3),
+    )
+    assert settled is not None
+    assert settled.state is MarketOperationState.PAUSED
+    assert settled.record_version == requested.record_version + 1
+
+
+async def test_concurrent_category_b_claims_grant_exactly_one_settlement_lease(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    requested = await _category_b_control(
+        repository,
+        admin_user_id,
+        requested_state=MarketOperationState.CANCEL_REQUESTED,
+    )
+    owners = (uuid4(), uuid4())
+
+    results = await asyncio.gather(
+        *(
+            repository.settle_or_claim_next_unclaimed_control(
+                owner_id=owner_id,
+                now=BASE_TIME + timedelta(seconds=6),
+                lease_expires_at=BASE_TIME + timedelta(seconds=36),
+            )
+            for owner_id in owners
+        )
+    )
+
+    claimed = [result for result in results if result is not None]
+    assert len(claimed) == 1
+    assert claimed[0].lease is not None
+    assert claimed[0].lease.owner_id in owners
+    assert claimed[0].record_version == requested.record_version + 1
+    stored = await repository.get(requested.operation_id)
+    assert stored == claimed[0]
+
+
+async def test_category_b_claim_excludes_noncanonical_local_job_reference(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    running = await _leased_operation(
+        repository,
+        admin_user_id,
+        state=MarketOperationState.RUNNING,
+        duration=timedelta(seconds=30),
+    )
+    pause_requested = await repository.request_pause(
+        operation_id=running.operation_id,
+        expected_version=running.record_version,
+        now=BASE_TIME + timedelta(seconds=2),
+    )
+    paused = await repository.request_state(
+        operation_id=running.operation_id,
+        target=MarketOperationState.PAUSED,
+        expected_version=pause_requested.record_version,
+        now=BASE_TIME + timedelta(seconds=3),
+        owner_id=_owner(pause_requested),
+    )
+    pending = await repository.resume(
+        operation_id=paused.operation_id,
+        expected_version=paused.record_version,
+        now=BASE_TIME + timedelta(seconds=4),
+    )
+    requested = await repository.request_cancel(
+        operation_id=pending.operation_id,
+        expected_version=pending.record_version,
+        now=BASE_TIME + timedelta(seconds=5),
+    )
+
+    assert requested.local_job_id == "recovery-job"
+    assert (
+        await repository.settle_or_claim_next_unclaimed_control(
+            owner_id=uuid4(),
+            now=BASE_TIME + timedelta(seconds=6),
+            lease_expires_at=BASE_TIME + timedelta(seconds=36),
+        )
+        is None
+    )
+    assert await repository.get(requested.operation_id) == requested
+
+
+@pytest.mark.parametrize(
+    "requested_state",
+    [MarketOperationState.PAUSE_REQUESTED, MarketOperationState.CANCEL_REQUESTED],
+)
+async def test_expired_category_b_settlement_lease_enters_existing_c1_recovery(
+    database: Database,
+    admin_user_id: UUID,
+    requested_state: MarketOperationState,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    requested = await _category_b_control(
+        repository,
+        admin_user_id,
+        requested_state=requested_state,
+    )
+    claimed = await repository.settle_or_claim_next_unclaimed_control(
+        owner_id=uuid4(),
+        now=BASE_TIME + timedelta(seconds=6),
+        lease_expires_at=BASE_TIME + timedelta(seconds=7),
+    )
+    assert claimed is not None
+
+    recovery = await repository.claim_next_expired(
+        owner_id=uuid4(),
+        now=BASE_TIME + timedelta(seconds=8),
+        lease_expires_at=BASE_TIME + timedelta(seconds=38),
+    )
+
+    assert recovery is not None
+    assert recovery.recovered_from is requested_state
+    assert recovery.operation.state is MarketOperationState.RECOVERING
+    assert recovery.operation.lease is not None
+    assert recovery.operation.started_at == requested.started_at
+    assert recovery.operation.local_job_id == requested.local_job_id
+    assert recovery.operation.progress == requested.progress
+    assert recovery.operation.record_version == claimed.record_version + 2
+
+
+async def test_category_b_settlement_claim_is_oldest_first_with_stable_id_tiebreak(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    first = await _category_b_control(
+        repository,
+        admin_user_id,
+        requested_state=MarketOperationState.PAUSE_REQUESTED,
+        operation_id=UUID(int=1),
+        idempotency_key="phase7-c2b-order-first",
+        symbol="BTC/USDT",
+    )
+    second = await _category_b_control(
+        repository,
+        admin_user_id,
+        requested_state=MarketOperationState.CANCEL_REQUESTED,
+        operation_id=UUID(int=2),
+        idempotency_key="phase7-c2b-order-second",
+        symbol="ETH/USDT",
+    )
+
+    claimed = await repository.settle_or_claim_next_unclaimed_control(
+        owner_id=uuid4(),
+        now=BASE_TIME + timedelta(seconds=6),
+        lease_expires_at=BASE_TIME + timedelta(seconds=36),
+    )
+
+    assert claimed is not None
+    assert claimed.operation_id == first.operation_id
+    assert claimed.operation_id != second.operation_id
+
+
+async def test_global_control_order_prevents_new_category_a_from_starving_category_b(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    older_category_b = await _category_b_control(
+        repository,
+        admin_user_id,
+        requested_state=MarketOperationState.PAUSE_REQUESTED,
+        idempotency_key="phase7-c2-global-order-b",
+        symbol="BTC/USDT",
+    )
+    newer_category_a = await _create(
+        repository,
+        admin_user_id,
+        idempotency_key="phase7-c2-global-order-a",
+        symbol="ETH/USDT",
+        now=BASE_TIME + timedelta(seconds=1),
+    )
+    await repository.request_cancel(
+        operation_id=newer_category_a.operation_id,
+        expected_version=newer_category_a.record_version,
+        now=BASE_TIME + timedelta(seconds=6),
+    )
+
+    selected = await _settle_or_claim_control(
+        repository,
+        now=BASE_TIME + timedelta(seconds=7),
+    )
+
+    assert selected is not None
+    assert selected.operation_id == older_category_b.operation_id
+    assert selected.state is MarketOperationState.PAUSE_REQUESTED
+    assert selected.lease is not None
+
+
+async def test_normal_pending_claim_remains_available_after_control_settlement(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    controlled = await _create(
+        repository,
+        admin_user_id,
+        idempotency_key="phase7-c2-controlled",
+    )
+    pending = await _create(
+        repository,
+        admin_user_id,
+        idempotency_key="phase7-c2-pending",
+        symbol="ETH/USDT",
+        now=BASE_TIME + timedelta(seconds=1),
+    )
+    await repository.request_cancel(
+        operation_id=controlled.operation_id,
+        expected_version=controlled.record_version,
+        now=BASE_TIME + timedelta(seconds=2),
+    )
+
+    settled = await _settle_or_claim_control(
+        repository,
+        now=BASE_TIME + timedelta(seconds=3),
+    )
+    claimed = await repository.claim_next(
+        owner_id=uuid4(),
+        now=BASE_TIME + timedelta(seconds=4),
+        lease_expires_at=BASE_TIME + timedelta(seconds=34),
+    )
+
+    assert settled is not None
+    assert settled.operation_id == controlled.operation_id
+    assert claimed is not None
+    assert claimed.operation_id == pending.operation_id
+    assert claimed.state is MarketOperationState.CLAIMED
 
 
 async def test_lease_renewal_rejects_wrong_owner_expiry_and_regression(

@@ -910,6 +910,165 @@ class PostgresMarketOperationRepository:
                 _raise_operation_persistence_error(error)
         return None
 
+    async def settle_or_claim_next_unclaimed_control(
+        self,
+        *,
+        owner_id: UUID,
+        now: datetime,
+        lease_expires_at: datetime,
+    ) -> MarketOperationSnapshot | None:
+        """Atomically settle or own the globally oldest unclaimed control."""
+        owner_id = _require_worker_owner_id(owner_id)
+        WorkerLease(
+            operation_id=UUID(int=0),
+            owner_id=owner_id,
+            claimed_at=now,
+            heartbeat_at=now,
+            lease_expires_at=lease_expires_at,
+        )
+        for attempt in range(2):
+            try:
+                async with self._database.transaction() as connection:
+                    cursor = await connection.execute(
+                        f"""
+                        with candidate as (
+                            select
+                                operation.id,
+                                operation.status,
+                                operation.version,
+                                operation.started_at is null as never_started
+                            from public.market_data_operations as operation
+                            where operation.status in (
+                                'PAUSE_REQUESTED',
+                                'CANCEL_REQUESTED'
+                            )
+                              and operation.lease_owner is null
+                              and operation.lease_claimed_at is null
+                              and operation.lease_heartbeat_at is null
+                              and operation.lease_expires_at is null
+                              and operation.result_dataset_version is null
+                              and operation.result_dataset_checksum is null
+                              and operation.failure_code is null
+                              and operation.failure_message is null
+                              and operation.finished_at is null
+                              and (
+                                  (
+                                      operation.started_at is null
+                                      and operation.local_job_id is null
+                                      and operation.chunks_completed = 0
+                                      and operation.chunks_failed = 0
+                                      and operation.candles_received = 0
+                                      and operation.candles_persisted = 0
+                                      and operation.requests_completed = 0
+                                  )
+                                  or (
+                                      operation.started_at is not null
+                                      and operation.local_job_id = operation.id::text
+                                      and not exists (
+                                          select 1
+                                          from public.market_data_operations as owned
+                                          where owned.lease_owner = %s
+                                      )
+                                      and not exists (
+                                          select 1
+                                          from public.market_data_operations as active
+                                          where active.dataset_id = operation.dataset_id
+                                            and (
+                                                active.status in (
+                                                    'CLAIMED', 'RUNNING', 'RECOVERING'
+                                                )
+                                                or (
+                                                    active.status in (
+                                                        'PAUSE_REQUESTED',
+                                                        'CANCEL_REQUESTED'
+                                                    )
+                                                    and active.lease_owner is not null
+                                                )
+                                            )
+                                      )
+                                  )
+                              )
+                            order by operation.created_at, operation.id
+                            for update skip locked
+                            limit 1
+                        )
+                        update public.market_data_operations as operation
+                        set
+                            status = case
+                                when candidate.never_started then case candidate.status
+                                    when 'PAUSE_REQUESTED' then 'PAUSED'
+                                    else 'CANCELLED'
+                                end
+                                else candidate.status
+                            end,
+                            lease_owner = case
+                                when candidate.never_started then null else %s
+                            end,
+                            lease_claimed_at = case
+                                when candidate.never_started then null else %s
+                            end,
+                            lease_heartbeat_at = case
+                                when candidate.never_started then null else %s
+                            end,
+                            lease_expires_at = case
+                                when candidate.never_started then null else %s
+                            end,
+                            failure_code = case
+                                when candidate.never_started
+                                     and candidate.status = 'CANCEL_REQUESTED'
+                                    then %s
+                                else operation.failure_code
+                            end,
+                            failure_message = case
+                                when candidate.never_started
+                                     and candidate.status = 'CANCEL_REQUESTED'
+                                    then %s
+                                else operation.failure_message
+                            end,
+                            finished_at = case
+                                when candidate.never_started
+                                     and candidate.status = 'CANCEL_REQUESTED'
+                                    then %s
+                                else operation.finished_at
+                            end,
+                            updated_at = %s,
+                            version = operation.version + 1
+                        from candidate
+                        where operation.id = candidate.id
+                          and operation.status = candidate.status
+                          and operation.version = candidate.version
+                          and operation.lease_owner is null
+                        returning {_OPERATION_COLUMNS}
+                        """,
+                        (
+                            owner_id,
+                            owner_id,
+                            now,
+                            now,
+                            lease_expires_at,
+                            MarketOperationFailureCode.CANCELLED_BY_ADMIN.value,
+                            failure_message_for(MarketOperationFailureCode.CANCELLED_BY_ADMIN),
+                            now,
+                            now,
+                        ),
+                    )
+                    row = await cursor.fetchone()
+                return None if row is None else market_operation_from_row(row)
+            except UniqueViolation as error:
+                if (
+                    error.diag.constraint_name
+                    in {
+                        "market_data_operations_one_active_dataset_uidx",
+                        "market_data_operations_one_active_owner_uidx",
+                    }
+                    and attempt == 0
+                ):
+                    continue
+                _raise_operation_persistence_error(error)
+            except Error as error:
+                _raise_operation_persistence_error(error)
+        return None
+
     async def renew_lease(
         self,
         *,

@@ -7,10 +7,11 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
+from app.database import Database
 from app.market_data.catalog import ChunkCommitReceipt, ChunkOperationContext
 from app.market_data.errors import (
     InvalidOperationLeaseError,
@@ -45,6 +46,7 @@ from app.market_data.planning import (
     MarketJobStatus,
 )
 from app.market_data.services import HistoricalMarketDataService
+from app.repositories.market_operation_repository import PostgresMarketOperationRepository
 from tests.market_data_helpers import PAIR
 from tests.test_market_data_phase2b import RangeAdapter, _service
 from tests.test_market_operation_worker_control import (
@@ -71,16 +73,41 @@ class TickClock:
         return self.current
 
 
+class SimulatedWorkerCrash(BaseException):
+    """Test-only process boundary that bypasses normal exception settlement."""
+
+
+class CrashAfterDurableCancelCatalog(MarketJobCatalog):
+    """Crash only after the real catalog has durably persisted cancellation."""
+
+    crash_after_cancel = True
+
+    def __init__(self, data_dir: Path, *, clock: TickClock) -> None:
+        super().__init__(data_dir, clock=clock)
+        self.cancel_calls = 0
+
+    def cancel(self, job_id: str) -> MarketJobRecord:
+        record = super().cancel(job_id)
+        self.cancel_calls += 1
+        if self.crash_after_cancel:
+            raise SimulatedWorkerCrash()
+        return record
+
+
 class TerminalRepository(ProgressFakeRepository):
     def __init__(
         self,
         operation: MarketOperationSnapshot,
         *,
         recovery_claim: MarketOperationRecoveryClaim | None = None,
+        control_candidate: MarketOperationSnapshot | None = None,
         renew_error: Exception | None = None,
         events: list[str] | None = None,
     ) -> None:
-        super().__init__(operation)
+        super().__init__(
+            operation,
+            control_candidate=control_candidate,
+        )
         self.recovery_claim = recovery_claim
         self.renew_error = renew_error
         self.events = events
@@ -156,6 +183,29 @@ class TerminalRepository(ProgressFakeRepository):
         return failed
 
 
+class PauseCrashRepository(TerminalRepository):
+    crash_before_pause = True
+
+    async def request_state(
+        self,
+        *,
+        operation_id: UUID,
+        target: MarketOperationState,
+        expected_version: int,
+        now: datetime,
+        owner_id: UUID | None = None,
+    ) -> MarketOperationSnapshot:
+        if self.crash_before_pause and target is MarketOperationState.PAUSED:
+            raise SimulatedWorkerCrash()
+        return await super().request_state(
+            operation_id=operation_id,
+            target=target,
+            expected_version=expected_version,
+            now=now,
+            owner_id=owner_id,
+        )
+
+
 class EmptyClaimRepository(FakeRepository):
     def __init__(self) -> None:
         super().__init__(None)
@@ -167,11 +217,13 @@ class FakeJobs:
         record: MarketJobRecord | None = None,
         *,
         events: list[str] | None = None,
+        crash_after_cancel: bool = False,
     ) -> None:
         self.record = record
         self.events = events
         self.recoveries = 0
         self.cancel_calls = 0
+        self.crash_after_cancel = crash_after_cancel
 
     def recover_abandoned(self) -> int:
         if self.events is not None:
@@ -200,6 +252,8 @@ class FakeJobs:
             updated_at=NOW.isoformat(),
             finished_at=NOW.isoformat(),
         )
+        if self.crash_after_cancel:
+            raise SimulatedWorkerCrash()
         return self.record
 
 
@@ -354,6 +408,26 @@ def _recovery_claim(
     )
 
 
+def _category_b_claim(
+    plan: BackfillPlan,
+    state: MarketOperationState,
+) -> MarketOperationSnapshot:
+    operation = _operation_for_plan(plan)
+    return replace(
+        operation,
+        state=state,
+        progress=replace(
+            operation.progress,
+            chunks_completed=1,
+            candles_received=1,
+            candles_persisted=1,
+            requests_completed=1,
+        ),
+        local_job_id=str(OPERATION_ID),
+        record_version=8,
+    )
+
+
 def _result(record: MarketJobRecord) -> BackfillResult:
     return BackfillResult(
         job_id=record.job_id,
@@ -419,6 +493,103 @@ def _worker(
         history=cast(HistoricalMarketDataService, history),
         clock=clock,
         heartbeat_interval_seconds=heartbeat_interval_seconds,
+    )
+
+
+def _real_worker(
+    *,
+    repository: PostgresMarketOperationRepository,
+    owner_id: UUID,
+    jobs: MarketJobCatalog,
+    executor: FakeExecutor,
+    history: FakeHistory,
+    clock: TickClock,
+) -> MarketOperationWorker:
+    return MarketOperationWorker(
+        session=MarketOperationWorkerSession(
+            repository=repository,
+            owner_id=owner_id,
+            clock=clock,
+            lease_duration=timedelta(minutes=2),
+        ),
+        planner=cast(MarketDataPlanner, StaticPlanner(_source_plan())),
+        executor=cast(BackfillExecutor, executor),
+        jobs=jobs,
+        history=cast(HistoricalMarketDataService, history),
+        clock=clock,
+        heartbeat_interval_seconds=60,
+    )
+
+
+async def _persist_real_category_b_control(
+    *,
+    repository: PostgresMarketOperationRepository,
+    admin_user_id: UUID,
+    jobs: MarketJobCatalog,
+    clock: TickClock,
+    requested_state: MarketOperationState,
+) -> MarketOperationSnapshot:
+    source = replace(_source_plan(), job_id=str(OPERATION_ID))
+    template = _operation_for_plan(source)
+    created = await repository.create_idempotently(
+        operation_id=OPERATION_ID,
+        request=replace(
+            template.request,
+            requested_by=admin_user_id,
+            idempotency_key=f"phase7-c2-real-{requested_state.value.lower()}",
+        ),
+        plan=template.plan,
+        now=clock(),
+    )
+    claimed = await repository.claim_next(
+        owner_id=OWNER,
+        now=clock(),
+        lease_expires_at=clock.current + timedelta(minutes=2),
+    )
+    assert claimed is not None
+    assert claimed.operation_id == created.operation_id
+    running = await repository.request_state(
+        operation_id=claimed.operation_id,
+        target=MarketOperationState.RUNNING,
+        expected_version=claimed.record_version,
+        now=clock(),
+        owner_id=OWNER,
+    )
+
+    jobs.create(source)
+    jobs.start(source.job_id)
+    jobs.advance(
+        source.job_id,
+        chunk_index=0,
+        fetched=1,
+        stored=1,
+        duplicates=0,
+        requests=1,
+    )
+    local_paused = jobs.pause(source.job_id)
+    session = MarketOperationWorkerSession(
+        repository=repository,
+        owner_id=OWNER,
+        clock=clock,
+        lease_duration=timedelta(minutes=2),
+    )
+    checkpointed = await session.checkpoint(running, local_paused)
+    pause_requested = await repository.request_pause(
+        operation_id=checkpointed.operation_id,
+        expected_version=checkpointed.record_version,
+        now=clock(),
+    )
+    paused = await session.finish_pause(pause_requested)
+    pending = await repository.resume(
+        operation_id=paused.operation_id,
+        expected_version=paused.record_version,
+        now=clock(),
+    )
+    return await repository.request_state(
+        operation_id=pending.operation_id,
+        target=requested_state,
+        expected_version=pending.record_version,
+        now=clock(),
     )
 
 
@@ -695,11 +866,549 @@ async def test_run_once_prioritizes_recovery_before_normal_claim() -> None:
     assert result.state is MarketOperationState.COMPLETED
     assert repository.recovery_claim_call is not None
     assert events[:2] == ["recover_abandoned", "claim_next_expired"]
+    assert "settle_or_claim_next_unclaimed_control" not in events
     assert "claim_next" not in events
     assert executor.run_calls == 1
     assert executor.resume_calls == 0
     assert repository.reconcile_calls[0][1] == OWNER
     assert repository.reconcile_calls[0][3] == claim.operation.record_version
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("requested_state", "settled_state"),
+    [
+        (MarketOperationState.PAUSE_REQUESTED, MarketOperationState.PAUSED),
+        (MarketOperationState.CANCEL_REQUESTED, MarketOperationState.CANCELLED),
+    ],
+)
+async def test_run_once_settles_never_started_control_before_normal_claim_without_work(
+    requested_state: MarketOperationState,
+    settled_state: MarketOperationState,
+) -> None:
+    source = _source_plan()
+    requested = replace(
+        _operation_for_plan(source),
+        state=requested_state,
+        lease=None,
+        started_at=None,
+    )
+    settlement_time = NOW + timedelta(seconds=2)
+    failure = None
+    finished_at = None
+    if settled_state is MarketOperationState.CANCELLED:
+        failure = SanitizedOperationFailure(
+            code=MarketOperationFailureCode.CANCELLED_BY_ADMIN,
+            failed_at=settlement_time,
+        )
+        finished_at = settlement_time
+    settled = replace(
+        requested,
+        state=settled_state,
+        failure=failure,
+        finished_at=finished_at,
+        updated_at=settlement_time,
+        record_version=requested.record_version + 1,
+    )
+    events: list[str] = []
+    clock = TickClock(NOW)
+    repository = TerminalRepository(
+        requested,
+        control_candidate=settled,
+        events=events,
+    )
+    jobs = FakeJobs(events=events)
+    executor = FakeExecutor(jobs=jobs)
+    history = FakeHistory(None)
+
+    result = await _worker(
+        operation=requested,
+        repository=repository,
+        jobs=jobs,
+        executor=executor,
+        history=history,
+        clock=clock,
+    ).run_once()
+
+    assert result == settled
+    assert result.lease is None
+    assert result.started_at is None
+    assert result.local_job_id is None
+    assert result.progress == requested.progress
+    assert result.record_version == requested.record_version + 1
+    assert events == [
+        "recover_abandoned",
+        "claim_next_expired",
+        "settle_or_claim_next_unclaimed_control",
+    ]
+    assert repository.claim_call is None
+    assert executor.run_calls == executor.resume_calls == 0
+    assert jobs.record is None
+    assert jobs.cancel_calls == 0
+    assert history.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("requested_state", "local_status", "settled_state", "expected_cancel_calls"),
+    [
+        (
+            MarketOperationState.PAUSE_REQUESTED,
+            MarketJobStatus.PLANNED,
+            MarketOperationState.PAUSED,
+            0,
+        ),
+        (
+            MarketOperationState.PAUSE_REQUESTED,
+            MarketJobStatus.PAUSED,
+            MarketOperationState.PAUSED,
+            0,
+        ),
+        (
+            MarketOperationState.PAUSE_REQUESTED,
+            MarketJobStatus.FAILED,
+            MarketOperationState.PAUSED,
+            0,
+        ),
+        (
+            MarketOperationState.CANCEL_REQUESTED,
+            MarketJobStatus.PLANNED,
+            MarketOperationState.CANCELLED,
+            1,
+        ),
+        (
+            MarketOperationState.CANCEL_REQUESTED,
+            MarketJobStatus.PAUSED,
+            MarketOperationState.CANCELLED,
+            1,
+        ),
+        (
+            MarketOperationState.CANCEL_REQUESTED,
+            MarketJobStatus.FAILED,
+            MarketOperationState.CANCELLED,
+            1,
+        ),
+        (
+            MarketOperationState.CANCEL_REQUESTED,
+            MarketJobStatus.CANCELLED,
+            MarketOperationState.CANCELLED,
+            0,
+        ),
+    ],
+)
+async def test_run_once_settles_category_b_without_executor_or_fetch(
+    requested_state: MarketOperationState,
+    local_status: MarketJobStatus,
+    settled_state: MarketOperationState,
+    expected_cancel_calls: int,
+) -> None:
+    source = _source_plan()
+    claim = _category_b_claim(source, requested_state)
+    if local_status is MarketJobStatus.PLANNED:
+        claim = replace(
+            claim,
+            progress=replace(
+                claim.progress,
+                chunks_completed=0,
+                candles_received=0,
+                candles_persisted=0,
+                requests_completed=0,
+            ),
+        )
+    original_started_at = claim.started_at
+    original_job_id = claim.local_job_id
+    events: list[str] = []
+    clock = TickClock(NOW)
+    repository = TerminalRepository(claim, control_candidate=claim, events=events)
+    jobs = FakeJobs(_record(claim, local_status), events=events)
+    executor = FakeExecutor(jobs=jobs)
+    history = FakeHistory(None)
+
+    result = await _worker(
+        operation=claim,
+        repository=repository,
+        jobs=jobs,
+        executor=executor,
+        history=history,
+        clock=clock,
+    ).run_once()
+
+    assert result is not None
+    assert result.state is settled_state
+    assert result.started_at == original_started_at
+    assert result.local_job_id == original_job_id
+    assert result.progress.chunks_completed == claim.progress.chunks_completed
+    assert result.progress.candles_received == claim.progress.candles_received
+    assert result.progress.candles_persisted == claim.progress.candles_persisted
+    assert result.progress.requests_completed == claim.progress.requests_completed
+    assert result.record_version == claim.record_version + 2
+    assert result.lease is None
+    assert executor.run_calls == executor.resume_calls == 0
+    assert history.calls == []
+    assert jobs.cancel_calls == expected_cancel_calls
+    assert events[:4] == [
+        "recover_abandoned",
+        "claim_next_expired",
+        "settle_or_claim_next_unclaimed_control",
+    ]
+    assert "claim_next" not in events
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("requested_state", "local_status", "failure_code"),
+    [
+        (
+            MarketOperationState.PAUSE_REQUESTED,
+            None,
+            MarketOperationFailureCode.LOCAL_STATE_INVALID,
+        ),
+        (
+            MarketOperationState.CANCEL_REQUESTED,
+            None,
+            MarketOperationFailureCode.LOCAL_STATE_INVALID,
+        ),
+        (
+            MarketOperationState.PAUSE_REQUESTED,
+            MarketJobStatus.RUNNING,
+            MarketOperationFailureCode.DATASET_BUSY,
+        ),
+        (
+            MarketOperationState.CANCEL_REQUESTED,
+            MarketJobStatus.RUNNING,
+            MarketOperationFailureCode.DATASET_BUSY,
+        ),
+        (
+            MarketOperationState.PAUSE_REQUESTED,
+            MarketJobStatus.CANCELLED,
+            MarketOperationFailureCode.LOCAL_STATE_INVALID,
+        ),
+    ],
+)
+async def test_category_b_ambiguous_local_state_fails_closed_without_execution(
+    requested_state: MarketOperationState,
+    local_status: MarketJobStatus | None,
+    failure_code: MarketOperationFailureCode,
+) -> None:
+    source = _source_plan()
+    claim = _category_b_claim(source, requested_state)
+    clock = TickClock(NOW)
+    repository = TerminalRepository(claim, control_candidate=claim)
+    jobs = FakeJobs(None if local_status is None else _record(claim, local_status))
+    executor = FakeExecutor(jobs=jobs)
+
+    result = await _worker(
+        operation=claim,
+        repository=repository,
+        jobs=jobs,
+        executor=executor,
+        history=FakeHistory(None),
+        clock=clock,
+    ).run_once()
+
+    assert result is not None
+    assert result.state is MarketOperationState.FAILED
+    assert result.failure is not None
+    assert result.failure.code is failure_code
+    assert result.lease is None
+    assert executor.run_calls == executor.resume_calls == 0
+    assert jobs.cancel_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_category_b_validates_progress_before_local_cancellation() -> None:
+    source = _source_plan()
+    claim = _category_b_claim(source, MarketOperationState.CANCEL_REQUESTED)
+    local = _record(claim, MarketJobStatus.PAUSED)
+    local = replace(
+        local,
+        next_chunk_index=0,
+        chunks_completed=0,
+        candles_fetched=0,
+        candles_stored=0,
+        request_count=0,
+    )
+    clock = TickClock(NOW)
+    repository = TerminalRepository(claim, control_candidate=claim)
+    jobs = FakeJobs(local)
+    executor = FakeExecutor(jobs=jobs)
+
+    result = await _worker(
+        operation=claim,
+        repository=repository,
+        jobs=jobs,
+        executor=executor,
+        history=FakeHistory(None),
+        clock=clock,
+    ).run_once()
+
+    assert result is not None
+    assert result.state is MarketOperationState.FAILED
+    assert result.failure is not None
+    assert result.failure.code is MarketOperationFailureCode.LOCAL_STATE_INVALID
+    assert jobs.cancel_calls == 0
+    assert jobs.record is not None
+    assert jobs.record.status is MarketJobStatus.PAUSED
+    assert executor.run_calls == executor.resume_calls == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "requested_state",
+    [MarketOperationState.PAUSE_REQUESTED, MarketOperationState.CANCEL_REQUESTED],
+)
+async def test_category_b_durable_completion_wins_control_without_refetch(
+    requested_state: MarketOperationState,
+) -> None:
+    source = _source_plan()
+    claim = _category_b_claim(source, requested_state)
+    clock = TickClock(NOW)
+    repository = TerminalRepository(claim, control_candidate=claim)
+    jobs = FakeJobs(_record(claim, MarketJobStatus.COMPLETED))
+    executor = FakeExecutor(jobs=jobs)
+    history = FakeHistory(_receipt(claim))
+
+    result = await _worker(
+        operation=claim,
+        repository=repository,
+        jobs=jobs,
+        executor=executor,
+        history=history,
+        clock=clock,
+    ).run_once()
+
+    assert result is not None
+    assert result.state is MarketOperationState.COMPLETED
+    assert result.result is not None
+    assert result.lease is None
+    assert executor.run_calls == executor.resume_calls == 0
+    assert jobs.cancel_calls == 0
+    assert history.calls == [(str(OPERATION_ID), 1)]
+
+
+@pytest.mark.asyncio
+async def test_category_b_cancel_crash_after_local_cancel_converges_through_c1() -> None:
+    source = _source_plan()
+    claim = _category_b_claim(source, MarketOperationState.CANCEL_REQUESTED)
+    clock = TickClock(NOW)
+    repository = TerminalRepository(claim, control_candidate=claim)
+    jobs = FakeJobs(
+        _record(claim, MarketJobStatus.PAUSED),
+        crash_after_cancel=True,
+    )
+    executor = FakeExecutor(jobs=jobs)
+    history = FakeHistory(None)
+    worker = _worker(
+        operation=claim,
+        repository=repository,
+        jobs=jobs,
+        executor=executor,
+        history=history,
+        clock=clock,
+    )
+
+    with pytest.raises(SimulatedWorkerCrash):
+        await worker.run_once()
+
+    assert jobs.record is not None
+    assert jobs.record.status is MarketJobStatus.CANCELLED
+    assert repository.operation is not None
+    assert repository.operation.state is MarketOperationState.CANCEL_REQUESTED
+    assert repository.operation.lease is not None
+
+    recovering = replace(
+        repository.operation,
+        state=MarketOperationState.RECOVERING,
+        record_version=repository.operation.record_version + 2,
+    )
+    repository.operation = recovering
+    repository.recovery_claim = MarketOperationRecoveryClaim(
+        operation=recovering,
+        recovered_from=MarketOperationState.CANCEL_REQUESTED,
+    )
+    repository.control_candidate = None
+    jobs.crash_after_cancel = False
+
+    result = await worker.run_once()
+
+    assert result is not None
+    assert result.state is MarketOperationState.CANCELLED
+    assert result.failure is not None
+    assert result.failure.code is MarketOperationFailureCode.CANCELLED_BY_ADMIN
+    assert result.lease is None
+    assert jobs.cancel_calls == 1
+    assert executor.run_calls == executor.resume_calls == 0
+    assert history.calls == []
+
+
+@pytest.mark.asyncio
+async def test_category_b_pause_crash_after_ownership_converges_through_c1() -> None:
+    source = _source_plan()
+    claim = _category_b_claim(source, MarketOperationState.PAUSE_REQUESTED)
+    clock = TickClock(NOW)
+    repository = PauseCrashRepository(claim, control_candidate=claim)
+    jobs = FakeJobs(_record(claim, MarketJobStatus.PAUSED))
+    executor = FakeExecutor(jobs=jobs)
+    history = FakeHistory(None)
+    worker = _worker(
+        operation=claim,
+        repository=repository,
+        jobs=jobs,
+        executor=executor,
+        history=history,
+        clock=clock,
+    )
+
+    with pytest.raises(SimulatedWorkerCrash):
+        await worker.run_once()
+
+    assert repository.operation is not None
+    assert repository.operation.state is MarketOperationState.PAUSE_REQUESTED
+    assert repository.operation.lease is not None
+
+    recovering = replace(
+        repository.operation,
+        state=MarketOperationState.RECOVERING,
+        record_version=repository.operation.record_version + 2,
+    )
+    repository.operation = recovering
+    repository.recovery_claim = MarketOperationRecoveryClaim(
+        operation=recovering,
+        recovered_from=MarketOperationState.PAUSE_REQUESTED,
+    )
+    repository.control_candidate = None
+    repository.crash_before_pause = False
+
+    result = await worker.run_once()
+
+    assert result is not None
+    assert result.state is MarketOperationState.PAUSED
+    assert result.failure is None
+    assert result.finished_at is None
+    assert result.lease is None
+    assert jobs.cancel_calls == 0
+    assert executor.run_calls == executor.resume_calls == 0
+    assert history.calls == []
+
+
+@pytest.mark.asyncio
+async def test_real_category_b_cancel_crash_converges_through_postgres_and_c1(
+    database: Database,
+    admin_user_id: UUID,
+    tmp_path: Path,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    clock = TickClock(NOW)
+    jobs = CrashAfterDurableCancelCatalog(tmp_path, clock=clock)
+    requested = await _persist_real_category_b_control(
+        repository=repository,
+        admin_user_id=admin_user_id,
+        jobs=jobs,
+        clock=clock,
+        requested_state=MarketOperationState.CANCEL_REQUESTED,
+    )
+    executor = FakeExecutor(jobs=FakeJobs())
+    history = FakeHistory(None)
+    worker = _real_worker(
+        repository=repository,
+        owner_id=OWNER,
+        jobs=jobs,
+        executor=executor,
+        history=history,
+        clock=clock,
+    )
+
+    with pytest.raises(SimulatedWorkerCrash):
+        await worker.run_once()
+
+    interrupted = await repository.get(requested.operation_id)
+    assert interrupted is not None
+    assert interrupted.state is MarketOperationState.CANCEL_REQUESTED
+    assert interrupted.lease is not None
+    assert jobs.get(str(requested.operation_id)).status is MarketJobStatus.CANCELLED
+
+    clock.current = interrupted.lease.lease_expires_at + timedelta(seconds=1)
+    jobs.crash_after_cancel = False
+    recovered = await _real_worker(
+        repository=repository,
+        owner_id=uuid4(),
+        jobs=jobs,
+        executor=executor,
+        history=history,
+        clock=clock,
+    ).run_once()
+
+    assert recovered is not None
+    assert recovered.state is MarketOperationState.CANCELLED
+    assert recovered.failure is not None
+    assert recovered.failure.code is MarketOperationFailureCode.CANCELLED_BY_ADMIN
+    assert recovered.lease is None
+    assert recovered.started_at == requested.started_at
+    assert recovered.local_job_id == requested.local_job_id
+    assert recovered.progress == replace(
+        requested.progress,
+        updated_at=recovered.progress.updated_at,
+    )
+    assert recovered.progress.updated_at > requested.progress.updated_at
+    assert jobs.cancel_calls == 1
+    assert executor.run_calls == executor.resume_calls == 0
+    assert history.calls == []
+    assert await repository.get(requested.operation_id) == recovered
+
+
+@pytest.mark.asyncio
+async def test_real_category_b_pause_ownership_crash_converges_through_c1(
+    database: Database,
+    admin_user_id: UUID,
+    tmp_path: Path,
+) -> None:
+    repository = PostgresMarketOperationRepository(database)
+    clock = TickClock(NOW)
+    jobs = MarketJobCatalog(tmp_path, clock=clock)
+    requested = await _persist_real_category_b_control(
+        repository=repository,
+        admin_user_id=admin_user_id,
+        jobs=jobs,
+        clock=clock,
+        requested_state=MarketOperationState.PAUSE_REQUESTED,
+    )
+    ownership = await repository.settle_or_claim_next_unclaimed_control(
+        owner_id=OWNER,
+        now=clock(),
+        lease_expires_at=clock.current + timedelta(minutes=2),
+    )
+    assert ownership is not None
+    assert ownership.state is MarketOperationState.PAUSE_REQUESTED
+    assert ownership.lease is not None
+
+    clock.current = ownership.lease.lease_expires_at + timedelta(seconds=1)
+    executor = FakeExecutor(jobs=FakeJobs())
+    history = FakeHistory(None)
+    recovered = await _real_worker(
+        repository=repository,
+        owner_id=uuid4(),
+        jobs=jobs,
+        executor=executor,
+        history=history,
+        clock=clock,
+    ).run_once()
+
+    assert recovered is not None
+    assert recovered.state is MarketOperationState.PAUSED
+    assert recovered.failure is None
+    assert recovered.finished_at is None
+    assert recovered.lease is None
+    assert recovered.started_at == requested.started_at
+    assert recovered.local_job_id == requested.local_job_id
+    assert recovered.progress == replace(
+        requested.progress,
+        updated_at=recovered.progress.updated_at,
+    )
+    assert recovered.progress.updated_at > requested.progress.updated_at
+    assert jobs.get(str(requested.operation_id)).status is MarketJobStatus.PAUSED
+    assert executor.run_calls == executor.resume_calls == 0
+    assert history.calls == []
+    assert await repository.get(requested.operation_id) == recovered
 
 
 @pytest.mark.asyncio
@@ -765,7 +1474,12 @@ async def test_run_once_uses_normal_claim_when_recovery_is_absent() -> None:
 
     assert result is not None
     assert result.state is MarketOperationState.COMPLETED
-    assert events[:3] == ["recover_abandoned", "claim_next_expired", "claim_next"]
+    assert events[:5] == [
+        "recover_abandoned",
+        "claim_next_expired",
+        "settle_or_claim_next_unclaimed_control",
+        "claim_next",
+    ]
     assert repository.reconcile_calls == []
 
 

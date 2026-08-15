@@ -81,6 +81,14 @@ class MarketOperationRepository(Protocol):
         lease_expires_at: datetime,
     ) -> MarketOperationRecoveryClaim | None: ...
 
+    async def settle_or_claim_next_unclaimed_control(
+        self,
+        *,
+        owner_id: UUID,
+        now: datetime,
+        lease_expires_at: datetime,
+    ) -> MarketOperationSnapshot | None: ...
+
     async def renew_lease(
         self,
         *,

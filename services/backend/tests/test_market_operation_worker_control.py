@@ -141,17 +141,20 @@ class FakeRepository:
         operation: MarketOperationSnapshot | None,
         *,
         recovery_claim: MarketOperationRecoveryClaim | None = None,
+        control_candidate: MarketOperationSnapshot | None = None,
         reconcile_error: Exception | None = None,
         renew_error: Exception | None = None,
         events: list[str] | None = None,
     ) -> None:
         self.operation = operation
         self.recovery_claim = recovery_claim
+        self.control_candidate = control_candidate
         self.reconcile_error = reconcile_error
         self.renew_error = renew_error
         self.events = events
         self.claim_call: tuple[UUID, datetime, datetime] | None = None
         self.recovery_claim_call: tuple[UUID, datetime, datetime] | None = None
+        self.control_candidate_call: tuple[UUID, datetime, datetime] | None = None
         self.state_calls: list[tuple[MarketOperationState, int, UUID | None]] = []
         self.renew_calls: list[tuple[int, WorkerLease]] = []
         self.reconcile_calls: list[tuple[MarketOperationSnapshot, UUID, datetime, int]] = []
@@ -179,6 +182,20 @@ class FakeRepository:
             self.events.append("claim_next_expired")
         self.recovery_claim_call = (owner_id, now, lease_expires_at)
         return self.recovery_claim
+
+    async def settle_or_claim_next_unclaimed_control(
+        self,
+        *,
+        owner_id: UUID,
+        now: datetime,
+        lease_expires_at: datetime,
+    ) -> MarketOperationSnapshot | None:
+        if self.events is not None:
+            self.events.append("settle_or_claim_next_unclaimed_control")
+        self.control_candidate_call = (owner_id, now, lease_expires_at)
+        if self.control_candidate is not None:
+            self.operation = self.control_candidate
+        return self.control_candidate
 
     async def get(
         self,
@@ -360,6 +377,23 @@ async def test_claim_next_expired_uses_current_owner_clock_and_lease_bound() -> 
 
 
 @pytest.mark.asyncio
+async def test_unclaimed_control_selection_uses_owner_clock_and_lease_bound() -> None:
+    clock = ManualClock(NOW)
+    claimed = _snapshot(state=MarketOperationState.PAUSE_REQUESTED)
+    repository = FakeRepository(claimed, control_candidate=claimed)
+    session = _session(repository, clock)
+
+    result = await session.settle_or_claim_next_unclaimed_control()
+
+    assert result is claimed
+    assert repository.control_candidate_call == (
+        OWNER,
+        NOW,
+        NOW + timedelta(minutes=2),
+    )
+
+
+@pytest.mark.asyncio
 async def test_start_requires_owned_claim_and_transitions_to_running() -> None:
     clock = ManualClock(NOW + timedelta(seconds=1))
     repository = FakeRepository(_snapshot())
@@ -493,8 +527,16 @@ def _job_record(
 
 
 class ProgressFakeRepository(FakeRepository):
-    def __init__(self, operation: MarketOperationSnapshot) -> None:
-        super().__init__(operation)
+    def __init__(
+        self,
+        operation: MarketOperationSnapshot,
+        *,
+        control_candidate: MarketOperationSnapshot | None = None,
+    ) -> None:
+        super().__init__(
+            operation,
+            control_candidate=control_candidate,
+        )
         self.progress_calls: list[tuple[int, OperationProgress, str | None]] = []
 
     async def update_progress(

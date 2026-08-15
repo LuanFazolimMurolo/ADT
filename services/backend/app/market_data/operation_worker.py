@@ -95,6 +95,17 @@ class MarketOperationWorkerSession:
             lease_expires_at=now + self._lease_duration,
         )
 
+    async def settle_or_claim_next_unclaimed_control(
+        self,
+    ) -> MarketOperationSnapshot | None:
+        """Settle or own the globally oldest eligible unclaimed control."""
+        now = self._clock()
+        return await self._repository.settle_or_claim_next_unclaimed_control(
+            owner_id=self._owner_id,
+            now=now,
+            lease_expires_at=now + self._lease_duration,
+        )
+
     async def start(
         self,
         operation: MarketOperationSnapshot,
@@ -627,12 +638,90 @@ class MarketOperationWorker:
         if recovery is not None:
             return await self._recover_operation(recovery)
 
+        control = await self._session.settle_or_claim_next_unclaimed_control()
+        if control is not None:
+            if control.state in {
+                MarketOperationState.PAUSED,
+                MarketOperationState.CANCELLED,
+            }:
+                return control
+            return await self._settle_claimed_unleased_control(control)
+
         claimed = await self._session.claim_next()
         if claimed is None:
             return None
 
         operation = await self._session.start(claimed)
         return await self._run_running_operation(operation)
+
+    async def _settle_claimed_unleased_control(
+        self,
+        operation: MarketOperationSnapshot,
+    ) -> MarketOperationSnapshot:
+        """Reconcile one Category B control lease without invoking execution."""
+        current = operation
+        try:
+            if operation.state not in {
+                MarketOperationState.PAUSE_REQUESTED,
+                MarketOperationState.CANCEL_REQUESTED,
+            }:
+                raise MarketDataInconsistencyError(
+                    "O settlement possui estado de controle incompatível."
+                )
+
+            plan = build_operation_backfill_plan(
+                operation,
+                planner=self._planner,
+                now=self._clock(),
+            )
+            local = _local_job_or_none(self._jobs, plan.job_id)
+            if local is None:
+                raise MarketDataInconsistencyError(
+                    "A operação retomada perdeu o job local vinculado."
+                )
+            _require_record_matches_plan(operation, local, plan)
+            _recovery_progress_from_record(
+                operation,
+                local,
+                plan=plan,
+                updated_at=self._clock(),
+            )
+
+            if local.status is MarketJobStatus.COMPLETED:
+                current = await self._session.checkpoint(current, local)
+                receipt = self._final_receipt(plan)
+                return await self._session.finish_success(
+                    current,
+                    dataset_version=receipt.version,
+                    dataset_checksum=receipt.checksum,
+                )
+
+            if local.status is MarketJobStatus.RUNNING:
+                return await self._session.finish_failure(
+                    current,
+                    code=MarketOperationFailureCode.DATASET_BUSY,
+                )
+
+            if operation.state is MarketOperationState.PAUSE_REQUESTED:
+                if local.status is MarketJobStatus.CANCELLED:
+                    raise MarketDataInconsistencyError(
+                        "O job local cancelado contradiz o pedido de pausa."
+                    )
+                current = await self._session.checkpoint(current, local)
+                return await self._session.finish_pause(current)
+
+            if local.status is not MarketJobStatus.CANCELLED:
+                local = self._jobs.cancel(local.job_id)
+                _require_record_matches_plan(operation, local, plan)
+            current = await self._session.checkpoint(current, local)
+            return await self._session.finish_cancel(current)
+        except (InvalidOperationLeaseError, OperationVersionConflictError):
+            raise
+        except Exception as error:
+            return await self._session.finish_failure(
+                current,
+                code=_operation_failure_code(error),
+            )
 
     async def _run_running_operation(
         self,
