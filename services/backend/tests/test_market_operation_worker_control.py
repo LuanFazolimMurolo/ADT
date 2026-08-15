@@ -10,7 +10,11 @@ from uuid import UUID
 import pytest
 
 from app.market_data.domain import DataRange, Exchange, MarketType, TradingPair
-from app.market_data.errors import MarketOperationPlanConflictError
+from app.market_data.errors import (
+    InvalidOperationLeaseError,
+    MarketOperationPlanConflictError,
+    OperationVersionConflictError,
+)
 from app.market_data.jobs import MarketJobRecord
 from app.market_data.operation_ports import MarketOperationRepository
 from app.market_data.operation_worker import (
@@ -21,6 +25,7 @@ from app.market_data.operation_worker import (
 from app.market_data.operations import (
     MarketDatasetSelector,
     MarketOperationFailureCode,
+    MarketOperationRecoveryClaim,
     MarketOperationRequest,
     MarketOperationSnapshot,
     MarketOperationState,
@@ -29,6 +34,9 @@ from app.market_data.operations import (
     OperationProgress,
     SanitizedOperationFailure,
     WorkerLease,
+    require_progress_not_regressed,
+    require_transition,
+    validate_operation_update,
 )
 from app.market_data.orchestration import (
     BackfillControl,
@@ -128,11 +136,25 @@ def _snapshot(
 
 
 class FakeRepository:
-    def __init__(self, operation: MarketOperationSnapshot | None) -> None:
+    def __init__(
+        self,
+        operation: MarketOperationSnapshot | None,
+        *,
+        recovery_claim: MarketOperationRecoveryClaim | None = None,
+        reconcile_error: Exception | None = None,
+        renew_error: Exception | None = None,
+        events: list[str] | None = None,
+    ) -> None:
         self.operation = operation
+        self.recovery_claim = recovery_claim
+        self.reconcile_error = reconcile_error
+        self.renew_error = renew_error
+        self.events = events
         self.claim_call: tuple[UUID, datetime, datetime] | None = None
+        self.recovery_claim_call: tuple[UUID, datetime, datetime] | None = None
         self.state_calls: list[tuple[MarketOperationState, int, UUID | None]] = []
         self.renew_calls: list[tuple[int, WorkerLease]] = []
+        self.reconcile_calls: list[tuple[MarketOperationSnapshot, UUID, datetime, int]] = []
 
     async def claim_next(
         self,
@@ -141,8 +163,22 @@ class FakeRepository:
         now: datetime,
         lease_expires_at: datetime,
     ) -> MarketOperationSnapshot | None:
+        if self.events is not None:
+            self.events.append("claim_next")
         self.claim_call = (owner_id, now, lease_expires_at)
         return self.operation
+
+    async def claim_next_expired(
+        self,
+        *,
+        owner_id: UUID,
+        now: datetime,
+        lease_expires_at: datetime,
+    ) -> MarketOperationRecoveryClaim | None:
+        if self.events is not None:
+            self.events.append("claim_next_expired")
+        self.recovery_claim_call = (owner_id, now, lease_expires_at)
+        return self.recovery_claim
 
     async def get(
         self,
@@ -163,6 +199,11 @@ class FakeRepository:
         assert operation_id == OPERATION_ID
         assert self.operation is not None
         assert expected_version == self.operation.record_version
+        require_transition(self.operation.state, target)
+        if owner_id is not None:
+            assert owner_id == OWNER
+            assert self.operation.lease is not None
+            assert self.operation.lease.owner_id == owner_id
         self.state_calls.append((target, expected_version, owner_id))
 
         lease = self.operation.lease
@@ -182,7 +223,7 @@ class FakeRepository:
             )
             finished_at = now
 
-        self.operation = replace(
+        updated = replace(
             self.operation,
             state=target,
             lease=lease,
@@ -192,7 +233,9 @@ class FakeRepository:
             updated_at=now,
             record_version=self.operation.record_version + 1,
         )
-        return self.operation
+        validate_operation_update(self.operation, updated)
+        self.operation = updated
+        return updated
 
     async def renew_lease(
         self,
@@ -207,14 +250,64 @@ class FakeRepository:
         assert owner_id == OWNER
         assert self.operation is not None
         assert expected_version == self.operation.record_version
+        assert self.operation.state in {
+            MarketOperationState.CLAIMED,
+            MarketOperationState.RUNNING,
+            MarketOperationState.PAUSE_REQUESTED,
+            MarketOperationState.CANCEL_REQUESTED,
+            MarketOperationState.RECOVERING,
+        }
+        assert self.operation.lease is not None
+        assert self.operation.lease.owner_id == owner_id
+        assert lease.operation_id == operation_id
+        assert lease.owner_id == owner_id
+        assert lease.claimed_at == self.operation.lease.claimed_at
         self.renew_calls.append((expected_version, lease))
-        self.operation = replace(
+        if self.renew_error is not None:
+            raise self.renew_error
+        updated = replace(
             self.operation,
             lease=lease,
             updated_at=now,
             record_version=self.operation.record_version + 1,
         )
-        return self.operation
+        validate_operation_update(self.operation, updated)
+        self.operation = updated
+        return updated
+
+    async def reconcile(
+        self,
+        *,
+        operation: MarketOperationSnapshot,
+        owner_id: UUID,
+        now: datetime,
+        expected_version: int,
+    ) -> MarketOperationSnapshot:
+        if self.events is not None:
+            self.events.append("reconcile")
+        assert owner_id == OWNER
+        assert self.operation is not None
+        assert self.operation.state is MarketOperationState.RECOVERING
+        assert self.operation.lease is not None
+        assert self.operation.lease.owner_id == owner_id
+        assert expected_version == self.operation.record_version
+        assert operation.operation_id == self.operation.operation_id
+        assert operation.record_version == expected_version + 1
+        assert operation.updated_at <= now
+        validate_operation_update(self.operation, operation, reconciliation=True)
+        if operation.state in {
+            MarketOperationState.CLAIMED,
+            MarketOperationState.RUNNING,
+            MarketOperationState.RECOVERING,
+        }:
+            assert operation.lease == self.operation.lease
+        else:
+            assert operation.lease is None
+        self.reconcile_calls.append((operation, owner_id, now, expected_version))
+        if self.reconcile_error is not None:
+            raise self.reconcile_error
+        self.operation = operation
+        return operation
 
 
 def _session(
@@ -246,11 +339,33 @@ async def test_claim_next_uses_explicit_owner_clock_and_lease_bound() -> None:
 
 
 @pytest.mark.asyncio
+async def test_claim_next_expired_uses_current_owner_clock_and_lease_bound() -> None:
+    clock = ManualClock(NOW)
+    recovering = _snapshot(state=MarketOperationState.RECOVERING)
+    claim = MarketOperationRecoveryClaim(
+        operation=recovering,
+        recovered_from=MarketOperationState.RUNNING,
+    )
+    repository = FakeRepository(recovering, recovery_claim=claim)
+    session = _session(repository, clock)
+
+    recovered = await session.claim_next_expired()
+
+    assert recovered is claim
+    assert repository.recovery_claim_call == (
+        OWNER,
+        NOW,
+        NOW + timedelta(minutes=2),
+    )
+
+
+@pytest.mark.asyncio
 async def test_start_requires_owned_claim_and_transitions_to_running() -> None:
     clock = ManualClock(NOW + timedelta(seconds=1))
     repository = FakeRepository(_snapshot())
     session = _session(repository, clock)
 
+    assert repository.operation is not None
     running = await session.start(repository.operation)
 
     assert running.state is MarketOperationState.RUNNING
@@ -264,6 +379,7 @@ async def test_poll_continue_reloads_and_renews_owned_lease() -> None:
     repository = FakeRepository(_snapshot(state=MarketOperationState.RUNNING))
     session = _session(repository, clock)
 
+    assert repository.operation is not None
     current, control = await session.poll_control(repository.operation)
 
     assert control is BackfillControl.CONTINUE
@@ -290,6 +406,7 @@ async def test_poll_surfaces_admin_control_without_renewing(
     repository = FakeRepository(_snapshot(state=state))
     session = _session(repository, clock)
 
+    assert repository.operation is not None
     current, control = await session.poll_control(repository.operation)
 
     assert current.state is state
@@ -303,6 +420,7 @@ async def test_finish_pause_acknowledges_request_with_owner() -> None:
     repository = FakeRepository(_snapshot(state=MarketOperationState.PAUSE_REQUESTED))
     session = _session(repository, clock)
 
+    assert repository.operation is not None
     paused = await session.finish_pause(repository.operation)
 
     assert paused.state is MarketOperationState.PAUSED
@@ -316,6 +434,7 @@ async def test_finish_cancel_acknowledges_request_with_owner() -> None:
     repository = FakeRepository(_snapshot(state=MarketOperationState.CANCEL_REQUESTED))
     session = _session(repository, clock)
 
+    assert repository.operation is not None
     cancelled = await session.finish_cancel(repository.operation)
 
     assert cancelled.state is MarketOperationState.CANCELLED
@@ -329,6 +448,7 @@ async def test_wrong_owner_is_rejected_before_repository_mutation() -> None:
     repository = FakeRepository(_snapshot(owner_id=OTHER_OWNER))
     session = _session(repository, clock)
 
+    assert repository.operation is not None
     with pytest.raises(ValueError, match="not owned"):
         await session.start(repository.operation)
 
@@ -391,17 +511,30 @@ class ProgressFakeRepository(FakeRepository):
         assert owner_id == OWNER
         assert self.operation is not None
         assert expected_version == self.operation.record_version
+        assert self.operation.state in {
+            MarketOperationState.CLAIMED,
+            MarketOperationState.RUNNING,
+            MarketOperationState.PAUSE_REQUESTED,
+            MarketOperationState.CANCEL_REQUESTED,
+        }
+        assert self.operation.lease is not None
+        assert self.operation.lease.owner_id == owner_id
+        require_progress_not_regressed(self.operation.progress, progress)
+        if self.operation.local_job_id is not None:
+            assert local_job_id == self.operation.local_job_id
 
         self.progress_calls.append((expected_version, progress, local_job_id))
 
-        self.operation = replace(
+        updated = replace(
             self.operation,
             progress=progress,
             local_job_id=local_job_id,
             updated_at=now,
             record_version=self.operation.record_version + 1,
         )
-        return self.operation
+        validate_operation_update(self.operation, updated)
+        self.operation = updated
+        return updated
 
 
 class StaticPlanner:
@@ -526,6 +659,7 @@ async def test_heartbeat_keeps_control_requested_lease_alive_until_safe_boundary
     repository = FakeRepository(_snapshot(state=state))
     session = _session(repository, clock)
 
+    assert repository.operation is not None
     renewed = await session.heartbeat(repository.operation)
 
     assert renewed.state is state
@@ -533,6 +667,110 @@ async def test_heartbeat_keeps_control_requested_lease_alive_until_safe_boundary
     assert renewed.lease.heartbeat_at == clock.current
     assert renewed.lease.lease_expires_at == (clock.current + timedelta(minutes=2))
     assert len(repository.renew_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_keeps_recovery_lease_alive() -> None:
+    clock = ManualClock(NOW + timedelta(seconds=30))
+    recovering = _snapshot(state=MarketOperationState.RECOVERING)
+    repository = FakeRepository(recovering)
+    session = _session(repository, clock)
+
+    renewed = await session.heartbeat(recovering)
+
+    assert renewed.state is MarketOperationState.RECOVERING
+    assert renewed.lease is not None
+    assert renewed.lease.owner_id == OWNER
+    assert renewed.lease.heartbeat_at == clock.current
+    assert repository.renew_calls[0][0] == recovering.record_version
+
+
+@pytest.mark.asyncio
+async def test_reconcile_uses_current_owner_version_and_returned_snapshot() -> None:
+    clock = ManualClock(NOW + timedelta(seconds=30))
+    recovering = _snapshot(state=MarketOperationState.RECOVERING)
+    repository = FakeRepository(recovering)
+    session = _session(repository, clock)
+    target = replace(
+        recovering,
+        state=MarketOperationState.RUNNING,
+        updated_at=clock.current,
+        record_version=recovering.record_version + 1,
+    )
+
+    reconciled = await session.reconcile(recovering, target)
+
+    assert reconciled is repository.operation
+    assert reconciled is target
+    assert repository.reconcile_calls == [(target, OWNER, clock.current, recovering.record_version)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [InvalidOperationLeaseError(), OperationVersionConflictError()],
+)
+async def test_reconcile_propagates_stale_owner_or_version(error: Exception) -> None:
+    clock = ManualClock(NOW + timedelta(seconds=30))
+    recovering = _snapshot(state=MarketOperationState.RECOVERING)
+    repository = FakeRepository(recovering, reconcile_error=error)
+    session = _session(repository, clock)
+    target = replace(
+        recovering,
+        state=MarketOperationState.RUNNING,
+        updated_at=clock.current,
+        record_version=recovering.record_version + 1,
+    )
+
+    with pytest.raises(type(error)):
+        await session.reconcile(recovering, target)
+
+    assert repository.operation is recovering
+
+
+@pytest.mark.asyncio
+async def test_fake_reconcile_rejects_non_recovering_wrong_owner_and_stale_version() -> None:
+    now = NOW + timedelta(seconds=30)
+
+    running = _snapshot(state=MarketOperationState.RUNNING)
+    running_target = replace(
+        running,
+        updated_at=now,
+        record_version=running.record_version + 1,
+    )
+    running_repository = FakeRepository(running)
+    with pytest.raises(AssertionError):
+        await running_repository.reconcile(
+            operation=running_target,
+            owner_id=OWNER,
+            now=now,
+            expected_version=running.record_version,
+        )
+
+    recovering = _snapshot(state=MarketOperationState.RECOVERING)
+    recovery_target = replace(
+        recovering,
+        state=MarketOperationState.RUNNING,
+        updated_at=now,
+        record_version=recovering.record_version + 1,
+    )
+    wrong_owner_repository = FakeRepository(recovering)
+    with pytest.raises(AssertionError):
+        await wrong_owner_repository.reconcile(
+            operation=recovery_target,
+            owner_id=OTHER_OWNER,
+            now=now,
+            expected_version=recovering.record_version,
+        )
+
+    stale_version_repository = FakeRepository(recovering)
+    with pytest.raises(AssertionError):
+        await stale_version_repository.reconcile(
+            operation=recovery_target,
+            owner_id=OWNER,
+            now=now,
+            expected_version=recovering.record_version - 1,
+        )
 
 
 @pytest.mark.asyncio

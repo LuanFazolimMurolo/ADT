@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from asyncio import Lock
+from dataclasses import replace
 from datetime import datetime, timedelta
 from uuid import UUID
 
+from app.market_data.catalog import ChunkCommitReceipt
 from app.market_data.errors import (
     InvalidMarketOperationRequestError,
     InvalidMarketResponseError,
@@ -18,6 +20,7 @@ from app.market_data.errors import (
     MarketJobNotFoundError,
     MarketOperationPlanConflictError,
     MarketRateLimitError,
+    OperationProgressRegressionError,
     OperationVersionConflictError,
     UnknownInstrumentError,
     UnsupportedTimeframeError,
@@ -26,6 +29,7 @@ from app.market_data.jobs import MarketJobCatalog, MarketJobRecord
 from app.market_data.operation_ports import MarketOperationRepository, OperationClock
 from app.market_data.operations import (
     MarketOperationFailureCode,
+    MarketOperationRecoveryClaim,
     MarketOperationSnapshot,
     MarketOperationState,
     MarketOperationType,
@@ -33,6 +37,7 @@ from app.market_data.operations import (
     OperationResult,
     SanitizedOperationFailure,
     renew_lease,
+    require_progress_not_regressed,
 )
 from app.market_data.orchestration import BackfillControl, BackfillExecutor
 from app.market_data.planning import (
@@ -76,6 +81,15 @@ class MarketOperationWorkerSession:
         """Claim the oldest eligible operation using one bounded worker lease."""
         now = self._clock()
         return await self._repository.claim_next(
+            owner_id=self._owner_id,
+            now=now,
+            lease_expires_at=now + self._lease_duration,
+        )
+
+    async def claim_next_expired(self) -> MarketOperationRecoveryClaim | None:
+        """Claim one expired operation using a fresh bounded recovery lease."""
+        now = self._clock()
+        return await self._repository.claim_next_expired(
             owner_id=self._owner_id,
             now=now,
             lease_expires_at=now + self._lease_duration,
@@ -166,6 +180,7 @@ class MarketOperationWorkerSession:
             MarketOperationState.RUNNING,
             MarketOperationState.PAUSE_REQUESTED,
             MarketOperationState.CANCEL_REQUESTED,
+            MarketOperationState.RECOVERING,
         }:
             raise ValueError("operation does not accept worker heartbeat")
 
@@ -185,6 +200,26 @@ class MarketOperationWorkerSession:
             owner_id=self._owner_id,
             now=now,
             lease=renewed,
+            expected_version=current.record_version,
+        )
+
+    async def reconcile(
+        self,
+        current: MarketOperationSnapshot,
+        target: MarketOperationSnapshot,
+    ) -> MarketOperationSnapshot:
+        """Persist one recovery decision with the current owner and version."""
+        self._require_owned(current)
+        self._require_same_operation(target)
+        if target.operation_id != current.operation_id:
+            raise ValueError("reconciliation target belongs to another operation")
+        if target.lease is not None:
+            self._require_owned(target)
+
+        return await self._repository.reconcile(
+            operation=target,
+            owner_id=self._owner_id,
+            now=self._clock(),
             expected_version=current.record_version,
         )
 
@@ -491,6 +526,74 @@ def _operation_progress_from_record(
     )
 
 
+def _require_record_matches_plan(
+    operation: MarketOperationSnapshot,
+    record: MarketJobRecord,
+    plan: BackfillPlan,
+) -> None:
+    """Require the complete deterministic local binding used by recovery."""
+    try:
+        _require_bound_record(operation, record)
+    except MarketOperationPlanConflictError:
+        raise MarketDataInconsistencyError(
+            "O checksum do job local divergiu da operação persistida."
+        ) from None
+    expected_ranges = tuple(
+        (chunk.data_range.start.isoformat(), chunk.data_range.end.isoformat())
+        for chunk in plan.chunks
+    )
+    if (
+        plan.job_id != str(operation.operation_id)
+        or record.start != plan.data_range.start.isoformat()
+        or record.end != plan.data_range.end.isoformat()
+        or record.chunk_ranges != expected_ranges
+        or record.chunk_candles != plan.chunk_candles
+        or record.candles_expected != plan.expected_candles
+        or record.plan_checksum != backfill_plan_checksum(plan)
+    ):
+        raise MarketDataInconsistencyError(
+            "O binding local divergiu do plano reconstruído da operação."
+        )
+
+
+def _recovery_progress_from_record(
+    operation: MarketOperationSnapshot,
+    record: MarketJobRecord,
+    *,
+    plan: BackfillPlan,
+    updated_at: datetime,
+) -> OperationProgress:
+    """Project only coherent monotonic local progress during recovery."""
+    _require_record_matches_plan(operation, record, plan)
+    try:
+        progress = _operation_progress_from_record(
+            operation,
+            record,
+            updated_at=updated_at,
+        )
+        require_progress_not_regressed(operation.progress, progress)
+    except (
+        InvalidMarketOperationRequestError,
+        OperationProgressRegressionError,
+    ) as error:
+        raise MarketDataInconsistencyError(
+            "O progresso local está atrás do progresso persistido."
+        ) from error
+    return progress
+
+
+def _has_published_progress(progress: OperationProgress) -> bool:
+    return any(
+        (
+            progress.chunks_completed,
+            progress.chunks_failed,
+            progress.candles_received,
+            progress.candles_persisted,
+            progress.requests_completed,
+        )
+    )
+
+
 class MarketOperationWorker:
     """Execute at most one claimed market-data operation per iteration."""
 
@@ -520,19 +623,33 @@ class MarketOperationWorker:
         """Claim and settle one operation without polling indefinitely."""
         self._jobs.recover_abandoned()
 
+        recovery = await self._session.claim_next_expired()
+        if recovery is not None:
+            return await self._recover_operation(recovery)
+
         claimed = await self._session.claim_next()
         if claimed is None:
             return None
 
         operation = await self._session.start(claimed)
+        return await self._run_running_operation(operation)
+
+    async def _run_running_operation(
+        self,
+        operation: MarketOperationSnapshot,
+        *,
+        plan: BackfillPlan | None = None,
+    ) -> MarketOperationSnapshot:
+        """Execute and settle one already-owned RUNNING operation."""
         observer: MarketOperationExecutionObserver | None = None
 
         try:
-            plan = build_operation_backfill_plan(
-                operation,
-                planner=self._planner,
-                now=self._clock(),
-            )
+            if plan is None:
+                plan = build_operation_backfill_plan(
+                    operation,
+                    planner=self._planner,
+                    now=self._clock(),
+                )
 
             observer = MarketOperationExecutionObserver(
                 session=self._session,
@@ -556,6 +673,317 @@ class MarketOperationWorker:
         except Exception as error:
             current = observer.operation if observer is not None else operation
             return await self._settle_failure(current, error)
+
+    async def _recover_operation(
+        self,
+        claim: MarketOperationRecoveryClaim,
+    ) -> MarketOperationSnapshot:
+        """Converge one atomically-owned recovery claim without duplicating execution."""
+        operation = claim.operation
+        try:
+            plan = build_operation_backfill_plan(
+                operation,
+                planner=self._planner,
+                now=self._clock(),
+            )
+            local = _local_job_or_none(self._jobs, plan.job_id)
+            if local is not None:
+                _require_record_matches_plan(operation, local, plan)
+
+            return await self._converge_recovery(
+                operation,
+                recovered_from=claim.recovered_from,
+                plan=plan,
+                local=local,
+            )
+        except (InvalidOperationLeaseError, OperationVersionConflictError):
+            raise
+        except Exception as error:
+            return await self._reconcile_recovery_outcome(
+                operation,
+                state=MarketOperationState.FAILED,
+                failure_code=_operation_failure_code(error),
+            )
+
+    async def _converge_recovery(
+        self,
+        operation: MarketOperationSnapshot,
+        *,
+        recovered_from: MarketOperationState,
+        plan: BackfillPlan,
+        local: MarketJobRecord | None,
+    ) -> MarketOperationSnapshot:
+        if recovered_from is MarketOperationState.CLAIMED:
+            if (
+                local is not None
+                or operation.local_job_id is not None
+                or _has_published_progress(operation.progress)
+            ):
+                raise MarketDataInconsistencyError(
+                    "A operação CLAIMED possui estado local incompatível."
+                )
+            running = await self._reconcile_recovery_running(operation, plan=plan)
+            return await self._run_running_operation(running, plan=plan)
+
+        if recovered_from is MarketOperationState.RUNNING:
+            if local is None:
+                raise MarketDataInconsistencyError(
+                    "A operação RUNNING perdeu o job local vinculado."
+                )
+            if local.status is MarketJobStatus.RUNNING:
+                return await self._reconcile_recovery_outcome(
+                    operation,
+                    state=MarketOperationState.FAILED,
+                    failure_code=MarketOperationFailureCode.DATASET_BUSY,
+                )
+            if local.status in {MarketJobStatus.PLANNED, MarketJobStatus.FAILED}:
+                running = await self._reconcile_recovery_running(
+                    operation,
+                    plan=plan,
+                    local=local,
+                )
+                return await self._run_running_operation(running, plan=plan)
+            if local.status is MarketJobStatus.PAUSED:
+                running = await self._reconcile_recovery_running(
+                    operation,
+                    plan=plan,
+                    local=local,
+                )
+                return await self._run_running_operation(running, plan=plan)
+            if local.status is MarketJobStatus.COMPLETED:
+                return await self._reconcile_recovery_outcome(
+                    operation,
+                    state=MarketOperationState.COMPLETED,
+                    plan=plan,
+                    local=local,
+                )
+            if local.status is MarketJobStatus.CANCELLED:
+                return await self._reconcile_recovery_outcome(
+                    operation,
+                    state=MarketOperationState.CANCELLED,
+                    plan=plan,
+                    local=local,
+                )
+
+        if recovered_from is MarketOperationState.PAUSE_REQUESTED:
+            if local is not None and local.status is MarketJobStatus.COMPLETED:
+                return await self._reconcile_recovery_outcome(
+                    operation,
+                    state=MarketOperationState.COMPLETED,
+                    plan=plan,
+                    local=local,
+                )
+            if local is not None and local.status is MarketJobStatus.RUNNING:
+                return await self._reconcile_recovery_outcome(
+                    operation,
+                    state=MarketOperationState.FAILED,
+                    failure_code=MarketOperationFailureCode.DATASET_BUSY,
+                )
+            if local is not None and local.status is MarketJobStatus.CANCELLED:
+                return await self._reconcile_recovery_outcome(
+                    operation,
+                    state=MarketOperationState.CANCELLED,
+                    plan=plan,
+                    local=local,
+                )
+            if local is None or local.status in {
+                MarketJobStatus.PLANNED,
+                MarketJobStatus.FAILED,
+                MarketJobStatus.PAUSED,
+            }:
+                return await self._reconcile_recovery_outcome(
+                    operation,
+                    state=MarketOperationState.PAUSED,
+                    plan=plan,
+                    local=local,
+                )
+
+        if recovered_from is MarketOperationState.CANCEL_REQUESTED:
+            if local is not None and local.status is MarketJobStatus.COMPLETED:
+                return await self._reconcile_recovery_outcome(
+                    operation,
+                    state=MarketOperationState.COMPLETED,
+                    plan=plan,
+                    local=local,
+                )
+            if local is not None and local.status is MarketJobStatus.RUNNING:
+                return await self._reconcile_recovery_outcome(
+                    operation,
+                    state=MarketOperationState.FAILED,
+                    failure_code=MarketOperationFailureCode.DATASET_BUSY,
+                )
+            if local is not None and local.status is not MarketJobStatus.CANCELLED:
+                local = self._jobs.cancel(local.job_id)
+                _require_record_matches_plan(operation, local, plan)
+            if local is None or local.status is MarketJobStatus.CANCELLED:
+                return await self._reconcile_recovery_outcome(
+                    operation,
+                    state=MarketOperationState.CANCELLED,
+                    plan=plan,
+                    local=local,
+                )
+
+        if recovered_from is MarketOperationState.RECOVERING:
+            if local is not None and local.status is MarketJobStatus.COMPLETED:
+                return await self._reconcile_recovery_outcome(
+                    operation,
+                    state=MarketOperationState.COMPLETED,
+                    plan=plan,
+                    local=local,
+                )
+            if local is not None and local.status is MarketJobStatus.CANCELLED:
+                return await self._reconcile_recovery_outcome(
+                    operation,
+                    state=MarketOperationState.CANCELLED,
+                    plan=plan,
+                    local=local,
+                )
+            if local is not None and local.status is MarketJobStatus.PAUSED:
+                return await self._reconcile_recovery_outcome(
+                    operation,
+                    state=MarketOperationState.PAUSED,
+                    plan=plan,
+                    local=local,
+                )
+            raise MarketDataInconsistencyError(
+                "A origem anterior da recuperação não pode ser determinada."
+            )
+
+        raise MarketDataInconsistencyError("O recovery claim possui origem incompatível.")
+
+    async def _reconcile_recovery_running(
+        self,
+        operation: MarketOperationSnapshot,
+        *,
+        plan: BackfillPlan,
+        local: MarketJobRecord | None = None,
+    ) -> MarketOperationSnapshot:
+        if operation.started_at is None:
+            raise MarketDataInconsistencyError(
+                "A operação recuperada não possui início persistido."
+            )
+        now = self._clock()
+        progress = operation.progress
+        local_job_id = operation.local_job_id
+        if local is not None:
+            progress = _recovery_progress_from_record(
+                operation,
+                local,
+                plan=plan,
+                updated_at=now,
+            )
+            local_job_id = local.job_id
+        target = replace(
+            operation,
+            state=MarketOperationState.RUNNING,
+            progress=progress,
+            local_job_id=local_job_id,
+            updated_at=now,
+            record_version=operation.record_version + 1,
+        )
+        return await self._session.reconcile(operation, target)
+
+    async def _reconcile_recovery_outcome(
+        self,
+        operation: MarketOperationSnapshot,
+        *,
+        state: MarketOperationState,
+        plan: BackfillPlan | None = None,
+        local: MarketJobRecord | None = None,
+        failure_code: MarketOperationFailureCode | None = None,
+    ) -> MarketOperationSnapshot:
+        now = self._clock()
+        progress = operation.progress
+        local_job_id = operation.local_job_id
+        if local is not None:
+            if plan is None:
+                raise MarketDataInconsistencyError(
+                    "O plano é obrigatório para reconciliar estado local."
+                )
+            progress = _recovery_progress_from_record(
+                operation,
+                local,
+                plan=plan,
+                updated_at=now,
+            )
+            local_job_id = local.job_id
+
+        result: OperationResult | None = None
+        failure: SanitizedOperationFailure | None = None
+        finished_at: datetime | None = None
+        if state is MarketOperationState.COMPLETED:
+            if plan is None or local is None or local.status is not MarketJobStatus.COMPLETED:
+                raise MarketDataInconsistencyError(
+                    "Completion local não foi comprovada para recovery."
+                )
+            receipt = self._final_receipt(plan)
+            try:
+                result = OperationResult(
+                    dataset_version=receipt.version,
+                    dataset_checksum=receipt.checksum,
+                    completed_at=now,
+                )
+            except InvalidMarketOperationRequestError:
+                raise MarketDataInconsistencyError(
+                    "O receipt final possui identidade de dataset inválida."
+                ) from None
+            finished_at = now
+        elif state is MarketOperationState.CANCELLED:
+            failure = SanitizedOperationFailure(
+                code=MarketOperationFailureCode.CANCELLED_BY_ADMIN,
+                failed_at=now,
+            )
+            finished_at = now
+        elif state is MarketOperationState.FAILED:
+            if failure_code is None:
+                raise MarketDataInconsistencyError("Failure code ausente no recovery.")
+            failure = SanitizedOperationFailure(code=failure_code, failed_at=now)
+            finished_at = now
+        elif state is not MarketOperationState.PAUSED:
+            raise MarketDataInconsistencyError("Destino de recovery inválido.")
+
+        target = replace(
+            operation,
+            state=state,
+            progress=progress,
+            local_job_id=local_job_id,
+            lease=None,
+            result=result,
+            failure=failure,
+            finished_at=finished_at,
+            updated_at=now,
+            record_version=operation.record_version + 1,
+        )
+        return await self._session.reconcile(operation, target)
+
+    def _final_receipt(self, plan: BackfillPlan) -> ChunkCommitReceipt:
+        last_chunk = plan.chunks[-1]
+        receipt = self._history.get_chunk_receipt(plan.job_id, last_chunk.index)
+        if receipt is None:
+            raise MarketDataInconsistencyError("O receipt durável final não foi encontrado.")
+        try:
+            UUID(receipt.job_id)
+            committed_at = datetime.fromisoformat(receipt.committed_at)
+        except (TypeError, ValueError):
+            raise MarketDataInconsistencyError("O receipt final é inválido.") from None
+        receipt_counts = (
+            receipt.fetched_count,
+            receipt.stored_count,
+            receipt.duplicate_count,
+            receipt.request_count,
+        )
+        if (
+            receipt.job_id != plan.job_id
+            or receipt.chunk_index != last_chunk.index
+            or receipt.dataset_key != plan.dataset_key
+            or receipt.start != last_chunk.data_range.start.isoformat()
+            or receipt.end != last_chunk.data_range.end.isoformat()
+            or committed_at.tzinfo is None
+            or any(type(value) is not int or value < 0 for value in receipt_counts)
+            or receipt.stored_count + receipt.duplicate_count > receipt.fetched_count
+        ):
+            raise MarketDataInconsistencyError("O receipt final divergiu da operação.")
+        return receipt
 
     async def _execute_operation(
         self,
@@ -693,21 +1121,7 @@ class MarketOperationWorker:
         if control is BackfillControl.CANCEL:
             return await self._session.finish_cancel(current)
 
-        last_chunk_index = len(plan.chunks) - 1
-        receipt = self._history.get_chunk_receipt(
-            plan.job_id,
-            last_chunk_index,
-        )
-
-        if receipt is None:
-            raise MarketDataInconsistencyError("O receipt durável final não foi encontrado.")
-
-        if (
-            receipt.job_id != plan.job_id
-            or receipt.chunk_index != last_chunk_index
-            or receipt.dataset_key != plan.dataset_key
-        ):
-            raise MarketDataInconsistencyError("O receipt final divergiu da operação.")
+        receipt = self._final_receipt(plan)
 
         return await self._session.finish_success(
             current,
