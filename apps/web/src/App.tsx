@@ -15,6 +15,7 @@ import { AppPaperSessionDetailPage } from "./pages/app/AppPaperSessionDetailPage
 import { AppPaperSessionPerformancePage } from "./pages/app/AppPaperSessionPerformancePage";
 import { InstrumentChartPage } from "./pages/admin/InstrumentChartPage";
 import { MarketOperationsPage } from "./pages/admin/MarketOperationsPage";
+import { RawDatasetsPage } from "./pages/admin/RawDatasetsPage";
 import { PaperPeriodMetricsPage } from "./pages/admin/PaperPeriodMetricsPage";
 import { PaperPortfolioPerformancePage } from "./pages/admin/PaperPortfolioPerformancePage";
 import { PaperTradeJournalPage } from "./pages/admin/PaperTradeJournalPage";
@@ -108,6 +109,7 @@ function App() {
                   path="paper-trading/period-metrics"
                   element={<PaperPeriodMetricsPage />}
                 />
+                <Route path="raw-datasets" element={<RawDatasetsPage />} />
                 <Route
                   path="market-operations"
                   element={<MarketOperationsPage />}

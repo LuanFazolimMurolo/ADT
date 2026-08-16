@@ -684,4 +684,94 @@ describe("ApiClient", () => {
     });
     expect(onFailure).toHaveBeenCalledWith(null);
   });
+
+  it("consulta datasets RAW com filtros bounded e autenticação", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        items: [],
+        page: 2,
+        page_size: 25,
+        total: 0,
+        total_pages: 0,
+      }),
+    );
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    await client.listRawDatasets({
+      page: 2,
+      pageSize: 25,
+      symbol: "BTC/USDT",
+      timeframe: "1h",
+    });
+
+    const requestedUrl = new URL(fetchMock.mock.calls[0]?.[0] as string);
+
+    expect(requestedUrl.pathname).toBe("/api/v1/admin/market-data/datasets");
+    expect(requestedUrl.searchParams.get("page")).toBe("2");
+    expect(requestedUrl.searchParams.get("page_size")).toBe("25");
+    expect(requestedUrl.searchParams.get("symbol")).toBe("BTC/USDT");
+    expect(requestedUrl.searchParams.get("timeframe")).toBe("1h");
+
+    const options = fetchMock.mock.calls[0]?.[1];
+    const headers = options?.headers as Headers;
+
+    expect(options?.method).not.toBe("POST");
+    expect(options?.body).toBeUndefined();
+    expect(headers.get("Authorization")).toBe("Bearer token");
+  });
+
+  it("consulta detalhe RAW pelo dataset_id backend-owned sem mutação", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        dataset_id: "abc_DEF-123",
+        exchange: "binance",
+        market_type: "spot",
+        symbol: "BTC/USDT",
+        base_asset: "BTC",
+        quote_asset: "USDT",
+        timeframe: "1h",
+        first_open_time: "2026-08-01T00:00:00Z",
+        last_open_time: "2026-08-01T02:00:00Z",
+        coverage_start: "2026-08-01T00:00:00Z",
+        coverage_end: "2026-08-01T03:00:00Z",
+        candle_count: 3,
+        version: "a".repeat(64),
+        version_algorithm: "raw-partition-canonical-sha256-v1",
+        updated_at: "2026-08-16T12:00:00Z",
+        integrity: {
+          present: true,
+          schema_version: 1,
+          checksum_algorithm: "raw-partition-canonical-sha256-v1",
+          partition_count: 1,
+        },
+      }),
+    );
+
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    const result = await client.getRawDataset("abc_DEF-123");
+
+    expect(result.dataset_id).toBe("abc_DEF-123");
+
+    const requestedUrl = new URL(fetchMock.mock.calls[0]?.[0] as string);
+
+    expect(requestedUrl.pathname).toBe(
+      "/api/v1/admin/market-data/datasets/abc_DEF-123",
+    );
+
+    const options = fetchMock.mock.calls[0]?.[1];
+    const headers = options?.headers as Headers;
+
+    expect(options?.method).not.toBe("POST");
+    expect(options?.body).toBeUndefined();
+    expect(headers.get("Authorization")).toBe("Bearer token");
+  });
 });

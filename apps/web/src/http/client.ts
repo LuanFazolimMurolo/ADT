@@ -17,6 +17,8 @@ import type {
   MovementCreateRequest,
   MovementListResponse,
   MarketCandlePageResponse,
+  RawDatasetPageResponse,
+  RawDatasetResponse,
   IncrementalMarketOperationPlanPreview,
   MarketOperation,
   MarketOperationBackfillPreviewRequest,
@@ -123,6 +125,13 @@ export interface MarketCandleQuery {
   timeframe: string;
   before?: string;
   limit?: number;
+}
+
+export interface RawDatasetListQuery {
+  page?: number;
+  pageSize?: number;
+  symbol?: string;
+  timeframe?: string;
 }
 
 export interface MarketOperationTargetQuery {
@@ -404,6 +413,25 @@ export class ApiClient {
 
   getAdminMe(): Promise<AdminMe> {
     return this.request("/api/v1/admin/me");
+  }
+
+  listRawDatasets(
+    query: RawDatasetListQuery = {},
+  ): Promise<RawDatasetPageResponse> {
+    const params = new URLSearchParams();
+    if (query.page !== undefined) params.set("page", String(query.page));
+    if (query.pageSize !== undefined)
+      params.set("page_size", String(query.pageSize));
+    appendQueryValue(params, "symbol", query.symbol);
+    appendQueryValue(params, "timeframe", query.timeframe);
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request(`/api/v1/admin/market-data/datasets${suffix}`);
+  }
+
+  getRawDataset(datasetId: string): Promise<RawDatasetResponse> {
+    return this.request(
+      `/api/v1/admin/market-data/datasets/${encodeURIComponent(datasetId)}`,
+    );
   }
 
   listMarketOperationTargets(

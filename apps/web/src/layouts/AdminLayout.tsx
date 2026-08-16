@@ -32,6 +32,12 @@ const navigation = [
   },
   { to: "/admin/simulations", label: "Simulações", icon: "▤", end: false },
   {
+    to: "/admin/raw-datasets",
+    label: "Datasets RAW",
+    icon: "▦",
+    end: false,
+  },
+  {
     to: "/admin/market-operations",
     label: "Operações de mercado",
     icon: "⇄",

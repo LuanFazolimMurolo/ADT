@@ -95,6 +95,11 @@ export type PaperPortfolioTimelinePageResponse =
 
 export type MarketCandle = ApiSchemas["MarketCandleResponse"];
 export type MarketCandlePageResponse = ApiSchemas["MarketCandlePageResponse"];
+
+export type RawDatasetIntegrityResponse =
+  ApiSchemas["RawDatasetIntegrityResponse"];
+export type RawDatasetResponse = ApiSchemas["RawDatasetResponse"];
+export type RawDatasetPageResponse = ApiSchemas["RawDatasetPageResponse"];
 export type PaperChartAnnotationPageResponse =
   ApiSchemas["PaperChartAnnotationPageResponse"];
 export type PaperChartOrderAnnotation =
