@@ -4,7 +4,7 @@ Last updated: 2026-08-16
 
 ## Current branch
 
-`main`
+`feat/phase-7-02-market-operation-admin-console`
 
 At the start of every session, verify the local branch and HEAD, then inspect
 the corresponding remote branch. This file records the intended handoff; Git
@@ -68,20 +68,49 @@ The control-plane recovery and shutdown deliveries are also closed:
 - Production deployment
 - Automated real-capital trading
 
-## Next task
+## Current delivery
 
-**DEFINE / START NEXT PHASE 7 DELIVERY**
+**7-02 — Market Operation Administrative Console — ACTIVE**
 
-The roadmap does not yet assign an exact identifier or title to the immediate
-next delivery. Do not invent one. Begin with a dedicated reconnaissance and
-design task that selects the next approved Phase 7 boundary.
+Starting baseline:
+`d0ce8f25633103da3ae01e5e951ef0905ef4bd48`.
 
-Candidate scope: the administrative monitoring/control surface and remaining
-approved operational projections, including dataset, gap and quality
-inspection and the minimal administrative UI as assigned by
-[`ROADMAP.md`](./ROADMAP.md).
+No 7-02 production implementation has been committed yet.
 
-No implementation of that next delivery was performed during 7-01 closure.
+**Approved objective**: Provide an authenticated administrator browser console
+for the existing 7-01 `MarketOperation` preview, submission, monitoring and
+control boundary. FastAPI must not perform physical market-data execution.
+
+**In scope**:
+
+- backend-owned target resolution;
+- explicit preview, confirmation and submission for RAW backfill and RAW
+  incremental operations;
+- operation list and detail views;
+- bounded polling and progress, result, failure and timestamp presentation;
+- safe lease-time presentation without asserting that a worker is online;
+- pause, resume and cancel using the current `record_version`;
+- stable idempotency keys for ambiguous retries of the same confirmed intent;
+- generated frontend API contracts; and
+- protected, accessible and responsive administrator navigation and UI.
+
+**Out of scope**:
+
+- dataset, gap and quality inspection or repair;
+- worker-global health, presence and operational events;
+- collector and paper-runner lifecycle control;
+- administrator mandates and paper-session creation;
+- capital-ledger integration and the ADT Official Portfolio;
+- machine learning, Telegram, SaaS and deployment; and
+- real-capital execution.
+
+**Expected migration**: NO.
+
+The existing 7-01 API, worker, C1 recovery, C2 pre-claim settlement, C3 graceful
+shutdown, local `flock` and CLI contracts remain authoritative. Controls use
+optimistic record versions and conflicts require reload/reconciliation rather
+than blind mutation retries. The same confirmed intent retains its non-sensitive
+idempotency key across an ambiguous retry; a new intent receives a new key.
 
 ## Important repository and process constraints
 

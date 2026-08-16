@@ -864,9 +864,59 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Track 7-01 — Control Plane Foundation is complete. Phase 7
-remains active; the exact current handoff and next delivery are maintained in
+**Status**: Active. Track 7-01 — Control Plane Foundation is complete and
+closed. Phase 7 remains active; the exact current handoff and delivery are
+maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
+
+### 7-02 — Market Operation Administrative Console 🚧
+
+**Status**: Active / in progress. This subsection defines the approved boundary;
+it does not claim that the 7-02 implementation exists yet.
+
+**Goal**: Expose the already validated 7-01 `MarketOperation` control plane
+through a bounded authenticated administrative browser surface.
+
+**Scope**:
+
+- backend-owned valid target resolution;
+- explicit operation preview;
+- explicit confirmation and submission for RAW backfill and RAW incremental
+  operations;
+- operation list and detail views with progress, result, failure and timestamps;
+- safe lease-time presentation that does not claim a worker process is online;
+- pause, resume and cancel controls using the current `record_version`;
+- bounded polling;
+- generated frontend API contracts; and
+- a protected, accessible and responsive administrator page.
+
+**Safety contract**: No physical market-data execution occurs inside FastAPI
+requests. The browser does not decide operation ownership or fabricate final
+state; the existing 7-01 API, worker, local durability and CLI contracts remain
+authoritative.
+
+**Idempotency**: Ambiguous retries of the same confirmed intent preserve the
+same non-sensitive idempotency key. A genuinely new intent uses a new key.
+
+**Concurrency**: Controls use the current `record_version`. A conflict requires
+reload and reconciliation rather than a blind mutation retry.
+
+**Lease presentation**: Lease and heartbeat timestamps do not prove that a
+worker process is online.
+
+**Expected migration**: None.
+
+**Dependencies**: 7-01 closed.
+
+**Explicitly out of scope**:
+
+- dataset, gap and quality inspection or repair;
+- worker-global presence, health or operational events;
+- collector or paper-runner lifecycle control and paper-session creation;
+- administrator mandates;
+- capital-ledger integration or the ADT Official Portfolio;
+- machine learning, Telegram, SaaS and deployment; and
+- real-capital execution.
 
 **Deliverables**:
 - [ ] Define administrator-approved operational mandates for assets, markets
