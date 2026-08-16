@@ -1954,6 +1954,214 @@ tbody tr:hover {
   }
 }
 
+/* Phase 7-02 market-operation administrative console */
+.operation-target-search,
+.operation-list-toolbar,
+.operation-pagination,
+.target-pagination,
+.operation-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+.operation-target-search {
+  margin-bottom: 1.25rem;
+}
+.operation-target-search label,
+.operation-list-toolbar label,
+.operation-form-grid > label {
+  display: grid;
+  flex: 1;
+  gap: 0.45rem;
+  min-width: 0;
+  color: #b8c3bb;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.operation-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.operation-kind {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 1rem;
+  margin: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+}
+.operation-kind legend {
+  padding: 0 0.35rem;
+  color: var(--muted);
+  font: 650 0.68rem monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.operation-kind label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.operation-preview {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding: 1.1rem;
+  border: 1px solid #38543f;
+  background: #0d1711;
+}
+.operation-preview h3,
+.operation-detail h3,
+.operation-lease h3 {
+  margin: 0.25rem 0;
+}
+.operation-preview dl,
+.operation-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  background: var(--border);
+}
+.operation-preview dl > div,
+.operation-detail-grid > div {
+  min-width: 0;
+  padding: 0.85rem;
+  background: var(--surface);
+}
+.operation-preview dt,
+.operation-detail-grid dt {
+  color: var(--muted);
+  font: 650 0.62rem monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.operation-preview dd,
+.operation-detail-grid dd {
+  margin: 0.35rem 0 0;
+  overflow-wrap: anywhere;
+}
+.operation-detail-grid dd small {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--muted);
+}
+.operation-notice {
+  padding: 0.85rem 1rem;
+  border: 1px solid #38543f;
+  background: #102719;
+  color: #c9f5d4;
+}
+.operation-notice--warning {
+  border-color: #796224;
+  background: #2a2411;
+  color: #f4dc92;
+}
+.operation-list-toolbar {
+  justify-content: flex-end;
+  margin-bottom: 0.8rem;
+}
+.operation-list-toolbar label {
+  max-width: 260px;
+}
+.operation-select {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--green);
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+.operation-select:hover,
+.operation-select:focus-visible {
+  text-decoration: underline;
+}
+.operation-state {
+  display: inline-flex;
+  padding: 0.28rem 0.55rem;
+  border: 1px solid #58645b;
+  border-radius: 100px;
+  color: #d1dad3;
+  font: 650 0.62rem monospace;
+  text-transform: uppercase;
+}
+.operation-state--success {
+  border-color: #337a43;
+  background: #102719;
+  color: var(--green);
+}
+.operation-state--warning {
+  border-color: #796224;
+  background: #2a2411;
+  color: #f4dc92;
+}
+.operation-state--danger {
+  border-color: #6d3634;
+  background: #261413;
+  color: #ff9994;
+}
+.operation-pagination,
+.target-pagination {
+  justify-content: flex-end;
+  margin: 1rem 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.target-pagination {
+  justify-content: center;
+}
+.operation-detail__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.operation-detail__heading small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.operation-lease {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-left: 3px solid var(--green);
+  background: #0d1711;
+}
+.operation-lease p {
+  margin: 0.4rem 0;
+}
+.operation-lease small {
+  color: var(--muted);
+}
+.operation-controls {
+  flex-wrap: wrap;
+  margin-top: 1.25rem;
+}
+
+@media (max-width: 760px) {
+  .operation-form-grid,
+  .operation-preview dl,
+  .operation-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .operation-kind,
+  .operation-target-search,
+  .operation-list-toolbar,
+  .operation-pagination,
+  .target-pagination,
+  .operation-controls,
+  .operation-detail__heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .operation-list-toolbar label {
+    max-width: none;
+  }
+}
+
 /* Phase 6-03A bounded instrument chart */
 .instrument-chart-heading {
   align-items: center;

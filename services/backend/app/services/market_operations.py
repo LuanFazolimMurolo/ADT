@@ -90,6 +90,10 @@ class MarketOperationService:
         self._clock = clock
         self._id_generator = id_generator
 
+    def observed_at(self) -> datetime:
+        """Return the authoritative server instant for lease-time presentation."""
+        return self._clock()
+
     def plan_backfill(
         self,
         *,

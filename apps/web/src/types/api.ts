@@ -102,3 +102,27 @@ export type PaperChartOrderAnnotation =
 export type PaperChartFillAnnotation =
   ApiSchemas["PaperChartFillAnnotationResponse"];
 export type PaperChartFillRole = ApiSchemas["PaperChartFillRole"];
+
+export type MarketOperationType = ApiSchemas["MarketOperationType"];
+export type MarketOperationState = ApiSchemas["MarketOperationState"];
+export type MarketOperationFailureCode =
+  ApiSchemas["MarketOperationFailureCode"];
+export type MarketOperationDataset =
+  ApiSchemas["MarketOperationDatasetResponse"];
+export type MarketOperationBackfillPreviewRequest =
+  ApiSchemas["MarketOperationBackfillPreviewRequest"];
+export type MarketOperationIncrementalPreviewRequest =
+  ApiSchemas["MarketOperationIncrementalPreviewRequest"];
+export type MarketOperationPlanPreview =
+  ApiSchemas["MarketOperationPlanPreviewResponse"];
+export type IncrementalMarketOperationPlanPreview =
+  ApiSchemas["IncrementalMarketOperationPlanPreviewResponse"];
+export type MarketOperationSubmitRequest =
+  ApiSchemas["MarketOperationSubmitRequest"];
+export type MarketOperationControlRequest =
+  ApiSchemas["MarketOperationControlRequest"];
+export type MarketOperation = ApiSchemas["MarketOperationResponse"];
+export type MarketOperationList = ApiSchemas["MarketOperationListResponse"];
+export type MarketOperationTarget = ApiSchemas["MarketOperationTargetResponse"];
+export type MarketOperationTargetList =
+  ApiSchemas["MarketOperationTargetListResponse"];

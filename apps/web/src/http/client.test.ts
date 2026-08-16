@@ -277,6 +277,136 @@ describe("ApiClient", () => {
     expect(headers.get("Authorization")).toBe("Bearer token");
   });
 
+  it("consulta targets, lista e detalhe de operações com queries bounded", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(200, {})));
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    await client.listMarketOperationTargets({
+      activeOnly: true,
+      quoteAsset: "USDT",
+      search: "BTC / spot",
+      page: 2,
+      pageSize: 25,
+    });
+    await client.listMarketOperations({
+      limit: 20,
+      offset: 40,
+      state: "RUNNING",
+      requestedBy: "admin id",
+      datasetId: "dataset/id",
+    });
+    await client.getMarketOperation("operation/id");
+
+    const urls = fetchMock.mock.calls.map((call) => new URL(call[0] as string));
+    expect(urls[0].pathname).toBe(
+      "/api/v1/admin/market-data/operations/targets",
+    );
+    expect(urls[0].search).toBe(
+      "?active_only=true&quote_asset=USDT&search=BTC+%2F+spot&page=2&page_size=25",
+    );
+    expect(urls[1].pathname).toBe("/api/v1/admin/market-data/operations");
+    expect(urls[1].search).toBe(
+      "?limit=20&offset=40&state=RUNNING&requested_by=admin+id&dataset_id=dataset%2Fid",
+    );
+    expect(urls[2].pathname).toBe(
+      "/api/v1/admin/market-data/operations/operation%2Fid",
+    );
+    expect(
+      fetchMock.mock.calls.every((call) => call[1]?.method !== "POST"),
+    ).toBe(true);
+  });
+
+  it("envia previews, submissão e controles com corpos exatos", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(200, {})));
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+    const backfill = {
+      dataset_id: "dataset-id",
+      range_start: "2026-08-01T00:00:00Z",
+      range_end: "2026-08-02T00:00:00Z",
+    };
+    const submit = {
+      ...backfill,
+      operation_type: "RAW_BACKFILL" as const,
+      plan_checksum: "a".repeat(64),
+      idempotency_key: "intent-key",
+      confirmed: true as const,
+    };
+
+    await client.previewMarketOperationBackfill(backfill);
+    await client.previewMarketOperationIncremental({
+      dataset_id: "dataset-id",
+      overlap_candles: 2,
+      start: "2026-08-01T00:00:00Z",
+    });
+    await client.submitMarketOperation(submit);
+    await client.pauseMarketOperation("operation-id", { expected_version: 7 });
+    await client.resumeMarketOperation("operation-id", { expected_version: 8 });
+    await client.cancelMarketOperation("operation-id", { expected_version: 9 });
+
+    const calls = fetchMock.mock.calls;
+    expect(calls.map((call) => new URL(call[0] as string).pathname)).toEqual([
+      "/api/v1/admin/market-data/operations/preview/backfill",
+      "/api/v1/admin/market-data/operations/preview/incremental",
+      "/api/v1/admin/market-data/operations",
+      "/api/v1/admin/market-data/operations/operation-id/pause",
+      "/api/v1/admin/market-data/operations/operation-id/resume",
+      "/api/v1/admin/market-data/operations/operation-id/cancel",
+    ]);
+    expect(calls.map((call) => JSON.parse(String(call[1]?.body)))).toEqual([
+      backfill,
+      {
+        dataset_id: "dataset-id",
+        overlap_candles: 2,
+        start: "2026-08-01T00:00:00Z",
+      },
+      submit,
+      { expected_version: 7 },
+      { expected_version: 8 },
+      { expected_version: 9 },
+    ]);
+  });
+
+  it("não repete submissão de operação após 401", async () => {
+    const refreshAccessToken = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(401, {
+        error: { code: "expired", message: "Expirado." },
+      }),
+    );
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      refreshAccessToken,
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    await expect(
+      client.submitMarketOperation({
+        operation_type: "RAW_BACKFILL",
+        dataset_id: "dataset-id",
+        range_start: "2026-08-01T00:00:00Z",
+        range_end: "2026-08-02T00:00:00Z",
+        plan_checksum: "a".repeat(64),
+        idempotency_key: "intent-key",
+        confirmed: true,
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(refreshAccessToken).not.toHaveBeenCalled();
+  });
+
   it("envia o token Bearer sem registrá-lo", async () => {
     const fetchMock = vi
       .fn()

@@ -8,13 +8,14 @@ from typing import Final
 from uuid import UUID
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from httpx import ASGITransport, AsyncClient
 
 from app.api.dependencies.auth import require_administrator
-from app.api.dependencies.resources import get_market_operation_service
+from app.api.dependencies.resources import get_asset_market_service, get_market_operation_service
 from app.main import create_app
-from app.market_data.domain import DataRange, Exchange, MarketType, TradingPair
+from app.market_data.asset_catalog import AssetCatalogPage, AssetCatalogQuery
+from app.market_data.domain import DataRange, Exchange, Instrument, MarketType, TradingPair
 from app.market_data.errors import MarketOperationPlanConflictError
 from app.market_data.operations import (
     MarketDatasetSelector,
@@ -24,6 +25,7 @@ from app.market_data.operations import (
     MarketOperationType,
     OperationPlanSummary,
     OperationProgress,
+    decode_dataset_id,
     encode_dataset_id,
 )
 from app.market_data.timeframes import get_timeframe
@@ -47,6 +49,16 @@ def _dataset() -> MarketDatasetSelector:
         market_type=MarketType.SPOT,
         pair=TradingPair("BTC", "USDT"),
         timeframe=get_timeframe("1h"),
+    )
+
+
+def _instrument() -> Instrument:
+    return Instrument(
+        exchange=Exchange.BINANCE,
+        market_type=MarketType.SPOT,
+        pair=TradingPair("BTC", "USDT"),
+        native_symbol="BTCUSDT",
+        active=True,
     )
 
 
@@ -122,6 +134,10 @@ class FakeMarketOperationService:
         self.control_call: tuple[str, UUID, int] | None = None
         self.submit_error: Exception | None = None
         self.operation = _snapshot()
+        self.asset_service = FakeAssetMarketService()
+
+    def observed_at(self) -> datetime:
+        return NOW
 
     def plan_backfill(
         self,
@@ -219,6 +235,23 @@ class FakeMarketOperationService:
         return self.operation
 
 
+class FakeAssetMarketService:
+    def __init__(self) -> None:
+        self.list_call: AssetCatalogQuery | None = None
+
+    async def list_assets(self, query: AssetCatalogQuery) -> AssetCatalogPage:
+        self.list_call = query
+        return AssetCatalogPage(
+            items=(_instrument(),),
+            page=query.page,
+            page_size=query.page_size,
+            total=1,
+            fetched_at=NOW,
+            expires_at=NOW.replace(hour=13),
+            source="binance_spot_exchange_info",
+        )
+
+
 @pytest.fixture
 def api() -> tuple[FastAPI, FakeMarketOperationService]:
     application = create_app()
@@ -227,11 +260,15 @@ def api() -> tuple[FastAPI, FakeMarketOperationService]:
     async def administrator_override() -> UUID:
         return ADMIN_ID
 
-    def service_override() -> FakeMarketOperationService:
+    async def service_override() -> FakeMarketOperationService:
         return service
+
+    async def asset_service_override() -> FakeAssetMarketService:
+        return service.asset_service
 
     application.dependency_overrides[require_administrator] = administrator_override
     application.dependency_overrides[get_market_operation_service] = service_override
+    application.dependency_overrides[get_asset_market_service] = asset_service_override
     return application, service
 
 
@@ -267,6 +304,80 @@ async def test_backfill_preview_decodes_dataset_and_preserves_exact_utc_range(
     assert response.json()["plan"]["checksum"] == CHECKSUM
     service = api[1]
     assert service.backfill_call == (_dataset(), DataRange(START, END))
+
+
+@pytest.mark.asyncio
+async def test_targets_are_admin_bounded_and_backend_own_all_dataset_ids(
+    client: AsyncClient,
+    api: tuple[FastAPI, FakeMarketOperationService],
+) -> None:
+    response = await client.get(
+        "/api/v1/admin/market-data/operations/targets",
+        headers=AUTH_HEADERS,
+        params={"quote_asset": "USDT", "search": "BTC", "page_size": 10},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["catalog_fetched_at"] == "2026-08-10T12:00:00Z"
+    target = body["items"][0]
+    assert target["symbol"] == "BTC/USDT"
+    assert [item["timeframe"] for item in target["timeframes"]] == [
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "4h",
+        "12h",
+        "1d",
+        "1w",
+    ]
+    for item in target["timeframes"]:
+        dataset = decode_dataset_id(item["dataset_id"])
+        assert dataset.pair == TradingPair("BTC", "USDT")
+        assert dataset.timeframe.code == item["timeframe"]
+    assert "path" not in response.text.lower()
+    assert "owner" not in response.text.lower()
+    assert api[1].backfill_call is None
+    assert api[1].incremental_call is None
+    assert api[1].asset_service.list_call == AssetCatalogQuery(
+        quote_asset="USDT",
+        search="BTC",
+        page_size=10,
+    )
+
+
+@pytest.mark.asyncio
+async def test_targets_reject_oversized_page_before_catalog_access(
+    client: AsyncClient,
+    api: tuple[FastAPI, FakeMarketOperationService],
+) -> None:
+    response = await client.get(
+        "/api/v1/admin/market-data/operations/targets?page_size=51",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert api[1].asset_service.list_call is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN])
+async def test_targets_require_administrator(
+    client: AsyncClient,
+    api: tuple[FastAPI, FakeMarketOperationService],
+    status_code: int,
+) -> None:
+    async def reject_administrator() -> UUID:
+        raise HTTPException(status_code=status_code)
+
+    api[0].dependency_overrides[require_administrator] = reject_administrator
+    response = await client.get("/api/v1/admin/market-data/operations/targets")
+
+    assert response.status_code == status_code
+    assert api[1].asset_service.list_call is None
 
 
 @pytest.mark.asyncio
@@ -357,6 +468,7 @@ async def test_submit_returns_202_and_does_not_echo_idempotency_key(
     body = response.json()
     assert body["operation_id"] == str(OPERATION_ID)
     assert body["record_version"] == 1
+    assert body["observed_at"] == "2026-08-10T12:00:00Z"
     assert "idempotency_key" not in body
     assert api[1].submit_call == {
         "operation_type": MarketOperationType.RAW_BACKFILL,
@@ -434,6 +546,7 @@ async def test_get_returns_sanitized_operation(
     assert response.status_code == 200
     assert response.json()["dataset"]["symbol"] == "BTC/USDT"
     assert response.json()["lease"] is None
+    assert response.json()["observed_at"] == "2026-08-10T12:00:00Z"
     assert api[1].get_call == OPERATION_ID
 
 
@@ -482,8 +595,11 @@ def test_openapi_declares_control_plane_and_accepted_submission(
 
     assert "/api/v1/admin/market-data/operations/preview/backfill" in paths
     assert "/api/v1/admin/market-data/operations/preview/incremental" in paths
+    assert "/api/v1/admin/market-data/operations/targets" in paths
     assert "/api/v1/admin/market-data/operations" in paths
     assert (
         paths["/api/v1/admin/market-data/operations"]["post"]["responses"]["202"]["description"]
         == "Successful Response"
     )
+    operation_schema = schema["components"]["schemas"]["MarketOperationResponse"]
+    assert "observed_at" in operation_schema["required"]

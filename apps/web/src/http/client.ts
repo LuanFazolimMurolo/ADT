@@ -17,6 +17,16 @@ import type {
   MovementCreateRequest,
   MovementListResponse,
   MarketCandlePageResponse,
+  IncrementalMarketOperationPlanPreview,
+  MarketOperation,
+  MarketOperationBackfillPreviewRequest,
+  MarketOperationControlRequest,
+  MarketOperationIncrementalPreviewRequest,
+  MarketOperationList,
+  MarketOperationPlanPreview,
+  MarketOperationState,
+  MarketOperationSubmitRequest,
+  MarketOperationTargetList,
   PaperChartAnnotationPageResponse,
   PaperDashboardResponse,
   PaperPeriodGranularity,
@@ -113,6 +123,22 @@ export interface MarketCandleQuery {
   timeframe: string;
   before?: string;
   limit?: number;
+}
+
+export interface MarketOperationTargetQuery {
+  activeOnly?: boolean;
+  quoteAsset?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface MarketOperationListQuery {
+  limit?: number;
+  offset?: number;
+  state?: MarketOperationState;
+  requestedBy?: string;
+  datasetId?: string;
 }
 
 export interface PaperChartAnnotationQuery {
@@ -378,6 +404,101 @@ export class ApiClient {
 
   getAdminMe(): Promise<AdminMe> {
     return this.request("/api/v1/admin/me");
+  }
+
+  listMarketOperationTargets(
+    query: MarketOperationTargetQuery = {},
+  ): Promise<MarketOperationTargetList> {
+    const params = new URLSearchParams();
+    if (query.activeOnly !== undefined)
+      params.set("active_only", String(query.activeOnly));
+    appendQueryValue(params, "quote_asset", query.quoteAsset);
+    appendQueryValue(params, "search", query.search);
+    if (query.page !== undefined) params.set("page", String(query.page));
+    if (query.pageSize !== undefined)
+      params.set("page_size", String(query.pageSize));
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request(
+      `/api/v1/admin/market-data/operations/targets${suffix}`,
+    );
+  }
+
+  previewMarketOperationBackfill(
+    payload: MarketOperationBackfillPreviewRequest,
+  ): Promise<MarketOperationPlanPreview> {
+    return this.request(
+      "/api/v1/admin/market-data/operations/preview/backfill",
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  }
+
+  previewMarketOperationIncremental(
+    payload: MarketOperationIncrementalPreviewRequest,
+  ): Promise<IncrementalMarketOperationPlanPreview> {
+    return this.request(
+      "/api/v1/admin/market-data/operations/preview/incremental",
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  }
+
+  submitMarketOperation(
+    payload: MarketOperationSubmitRequest,
+  ): Promise<MarketOperation> {
+    return this.request("/api/v1/admin/market-data/operations", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  listMarketOperations(
+    query: MarketOperationListQuery = {},
+  ): Promise<MarketOperationList> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    appendQueryValue(params, "state", query.state);
+    appendQueryValue(params, "requested_by", query.requestedBy);
+    appendQueryValue(params, "dataset_id", query.datasetId);
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request(`/api/v1/admin/market-data/operations${suffix}`);
+  }
+
+  getMarketOperation(operationId: string): Promise<MarketOperation> {
+    return this.request(
+      `/api/v1/admin/market-data/operations/${encodeURIComponent(operationId)}`,
+    );
+  }
+
+  pauseMarketOperation(
+    operationId: string,
+    payload: MarketOperationControlRequest,
+  ): Promise<MarketOperation> {
+    return this.marketOperationControl(operationId, "pause", payload);
+  }
+
+  resumeMarketOperation(
+    operationId: string,
+    payload: MarketOperationControlRequest,
+  ): Promise<MarketOperation> {
+    return this.marketOperationControl(operationId, "resume", payload);
+  }
+
+  cancelMarketOperation(
+    operationId: string,
+    payload: MarketOperationControlRequest,
+  ): Promise<MarketOperation> {
+    return this.marketOperationControl(operationId, "cancel", payload);
+  }
+
+  private marketOperationControl(
+    operationId: string,
+    action: "pause" | "resume" | "cancel",
+    payload: MarketOperationControlRequest,
+  ): Promise<MarketOperation> {
+    return this.request(
+      `/api/v1/admin/market-data/operations/${encodeURIComponent(operationId)}/${action}`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
   }
 
   getMarketCandles(

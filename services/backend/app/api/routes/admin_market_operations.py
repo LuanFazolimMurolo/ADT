@@ -8,7 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies.auth import require_administrator
-from app.api.dependencies.resources import get_market_operation_service
+from app.api.dependencies.resources import get_asset_market_service, get_market_operation_service
 from app.api.openapi import ADMIN_ERROR_RESPONSES
 from app.api.schemas.market_operations import (
     DatasetId,
@@ -20,7 +20,9 @@ from app.api.schemas.market_operations import (
     MarketOperationPlanPreviewResponse,
     MarketOperationResponse,
     MarketOperationSubmitRequest,
+    MarketOperationTargetListResponse,
 )
+from app.market_data.asset_catalog import AssetCatalogQuery, AssetMarketService
 from app.market_data.operations import MarketOperationState, decode_dataset_id
 from app.services import MarketOperationService
 
@@ -29,6 +31,32 @@ router = APIRouter(
     tags=["admin market data operations"],
     responses=ADMIN_ERROR_RESPONSES,
 )
+
+
+@router.get("/targets", response_model=MarketOperationTargetListResponse)
+async def list_operation_targets(
+    _administrator_id: Annotated[UUID, Depends(require_administrator)],
+    service: Annotated[AssetMarketService, Depends(get_asset_market_service)],
+    active_only: Annotated[bool, Query()] = True,
+    quote_asset: Annotated[
+        str | None,
+        Query(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$"),
+    ] = None,
+    search: Annotated[str | None, Query(min_length=1, max_length=64)] = None,
+    page: Annotated[int, Query(ge=1, le=100_000)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> MarketOperationTargetListResponse:
+    """Resolve bounded valid operation targets through the existing asset catalog."""
+    result = await service.list_assets(
+        AssetCatalogQuery(
+            active_only=active_only,
+            quote_asset=quote_asset,
+            search=search,
+            page=page,
+            page_size=page_size,
+        )
+    )
+    return MarketOperationTargetListResponse.from_domain(result)
 
 
 @router.post(
@@ -85,7 +113,7 @@ async def submit_operation(
         idempotency_key=payload.idempotency_key,
         requested_by=administrator_id,
     )
-    return MarketOperationResponse.from_domain(operation)
+    return MarketOperationResponse.from_domain(operation, observed_at=service.observed_at())
 
 
 @router.get("", response_model=MarketOperationListResponse)
@@ -108,8 +136,11 @@ async def list_operations(
     )
     has_more = len(operations) > limit
     selected = operations[:limit]
+    observed_at = service.observed_at()
     return MarketOperationListResponse(
-        items=[MarketOperationResponse.from_domain(item) for item in selected],
+        items=[
+            MarketOperationResponse.from_domain(item, observed_at=observed_at) for item in selected
+        ],
         limit=limit,
         offset=offset,
         count=len(selected),
@@ -124,7 +155,8 @@ async def get_operation(
     service: Annotated[MarketOperationService, Depends(get_market_operation_service)],
 ) -> MarketOperationResponse:
     """Return one sanitized persisted operation."""
-    return MarketOperationResponse.from_domain(await service.get(operation_id))
+    operation = await service.get(operation_id)
+    return MarketOperationResponse.from_domain(operation, observed_at=service.observed_at())
 
 
 @router.post("/{operation_id}/pause", response_model=MarketOperationResponse)
@@ -139,7 +171,7 @@ async def pause_operation(
         operation_id,
         expected_version=payload.expected_version,
     )
-    return MarketOperationResponse.from_domain(operation)
+    return MarketOperationResponse.from_domain(operation, observed_at=service.observed_at())
 
 
 @router.post("/{operation_id}/resume", response_model=MarketOperationResponse)
@@ -154,7 +186,7 @@ async def resume_operation(
         operation_id,
         expected_version=payload.expected_version,
     )
-    return MarketOperationResponse.from_domain(operation)
+    return MarketOperationResponse.from_domain(operation, observed_at=service.observed_at())
 
 
 @router.post("/{operation_id}/cancel", response_model=MarketOperationResponse)
@@ -169,4 +201,4 @@ async def cancel_operation(
         operation_id,
         expected_version=payload.expected_version,
     )
-    return MarketOperationResponse.from_domain(operation)
+    return MarketOperationResponse.from_domain(operation, observed_at=service.observed_at())

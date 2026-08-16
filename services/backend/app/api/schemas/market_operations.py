@@ -9,7 +9,8 @@ from uuid import UUID
 from pydantic import AfterValidator, Field, StringConstraints, model_validator
 
 from app.api.schemas.common import ApiSchema
-from app.market_data.domain import DataRange, Exchange, MarketType
+from app.market_data.asset_catalog import AssetCatalogPage
+from app.market_data.domain import DataRange, Exchange, Instrument, MarketType, Timeframe
 from app.market_data.operations import (
     MAX_DATASET_ID_LENGTH,
     MAX_IDEMPOTENCY_KEY_LENGTH,
@@ -26,6 +27,7 @@ from app.market_data.operations import (
     decode_dataset_id,
     encode_dataset_id,
 )
+from app.market_data.timeframes import TIMEFRAMES
 from app.services.market_operations import (
     IncrementalMarketOperationPlanPreview,
     MarketOperationPlanPreview,
@@ -134,6 +136,79 @@ class MarketOperationDatasetResponse(ApiSchema):
             market_type=dataset.market_type,
             symbol=dataset.pair.symbol,
             timeframe=dataset.timeframe.code,
+        )
+
+
+class MarketOperationTargetTimeframeResponse(ApiSchema):
+    """One backend-owned operational timeframe and canonical dataset ID."""
+
+    timeframe: str
+    dataset_id: str
+
+    @classmethod
+    def from_domain(cls, instrument: Instrument, timeframe: Timeframe) -> Self:
+        return cls(
+            timeframe=timeframe.code,
+            dataset_id=encode_dataset_id(
+                MarketDatasetSelector(
+                    exchange=instrument.exchange,
+                    market_type=instrument.market_type,
+                    pair=instrument.pair,
+                    timeframe=timeframe,
+                )
+            ),
+        )
+
+
+class MarketOperationTargetResponse(ApiSchema):
+    """Bounded operation-creation target without storage details."""
+
+    symbol: str
+    base_asset: str
+    quote_asset: str
+    exchange: Exchange
+    market_type: MarketType
+    timeframes: list[MarketOperationTargetTimeframeResponse]
+
+    @classmethod
+    def from_domain(cls, instrument: Instrument) -> Self:
+        return cls(
+            symbol=instrument.symbol,
+            base_asset=instrument.pair.base,
+            quote_asset=instrument.pair.quote,
+            exchange=instrument.exchange,
+            market_type=instrument.market_type,
+            timeframes=[
+                MarketOperationTargetTimeframeResponse.from_domain(instrument, timeframe)
+                for timeframe in TIMEFRAMES.values()
+            ],
+        )
+
+
+class MarketOperationTargetListResponse(ApiSchema):
+    """Paginated catalog projection used only to create operations."""
+
+    items: list[MarketOperationTargetResponse]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
+    catalog_fetched_at: datetime
+    catalog_expires_at: datetime
+    source: str
+
+    @classmethod
+    def from_domain(cls, page: AssetCatalogPage) -> Self:
+        AssetCatalogPage.__post_init__(page)
+        return cls(
+            items=[MarketOperationTargetResponse.from_domain(item) for item in page.items],
+            page=page.page,
+            page_size=page.page_size,
+            total=page.total,
+            total_pages=page.total_pages,
+            catalog_fetched_at=page.fetched_at,
+            catalog_expires_at=page.expires_at,
+            source=page.source,
         )
 
 
@@ -286,9 +361,10 @@ class MarketOperationResponse(ApiSchema):
     updated_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    observed_at: datetime
 
     @classmethod
-    def from_domain(cls, operation: MarketOperationSnapshot) -> Self:
+    def from_domain(cls, operation: MarketOperationSnapshot, *, observed_at: datetime) -> Self:
         MarketOperationSnapshot.__post_init__(operation)
         return cls(
             operation_id=operation.operation_id,
@@ -322,6 +398,7 @@ class MarketOperationResponse(ApiSchema):
             updated_at=operation.updated_at,
             started_at=operation.started_at,
             finished_at=operation.finished_at,
+            observed_at=_validate_utc_datetime(observed_at),
         )
 
 

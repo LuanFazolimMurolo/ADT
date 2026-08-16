@@ -74,15 +74,28 @@ test.describe("fechamento de acessibilidade da Phase 6", () => {
       name: "Navegação administrativa",
     });
     await expect(navigation).toBeVisible();
+
+    const overviewLink = navigation.getByRole("link", { name: "Visão geral" });
+
+    await expect
+      .poll(async () => {
+        const box = await overviewLink.boundingBox();
+        return box?.x ?? -1;
+      })
+      .toBeGreaterThanOrEqual(0);
+
     await page.keyboard.press("Tab");
-    await expect(
-      navigation.getByRole("link", { name: "Visão geral" }),
-    ).toBeFocused();
+    await expect(overviewLink).toBeFocused();
     await expectFocusedElementInsideViewport(page);
 
-    for (let index = 0; index < 7; index += 1) {
+    const navigationLinks = navigation.getByRole("link");
+    const navigationLinkCount = await navigationLinks.count();
+
+    for (let index = 1; index < navigationLinkCount; index += 1) {
       await page.keyboard.press("Tab");
+      await expectFocusedElementInsideViewport(page);
     }
+
     await expect(
       navigation.getByRole("link", { name: "Configurações", exact: true }),
     ).toBeFocused();

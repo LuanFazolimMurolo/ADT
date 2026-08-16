@@ -10,6 +10,10 @@ import type {
   JsonValue,
   MovementCreateRequest,
   MarketCandlePageResponse,
+  MarketOperation,
+  MarketOperationPlanPreview,
+  MarketOperationSubmitRequest,
+  MarketOperationTargetList,
   PaperChartAnnotationPageResponse,
   PaperDashboardResponse,
   PaperPeriodGranularity,
@@ -74,6 +78,75 @@ const JSON_HEADERS = {
 export const PAPER_SESSION_ID = "c".repeat(64);
 export const ADMIN_PAPER_SESSION_ID = "a".repeat(64);
 export const ADMIN_PAPER_TRADE_ID = "e".repeat(64);
+export const ADMIN_MARKET_OPERATION_ID = "20000000-0000-4000-8000-000000000002";
+export const ADMIN_MARKET_DATASET_ID = "e2e-backend-owned-dataset-id";
+
+function marketOperationPreview(): MarketOperationPlanPreview {
+  return {
+    operation_type: "RAW_BACKFILL",
+    dataset: {
+      dataset_id: ADMIN_MARKET_DATASET_ID,
+      exchange: "binance",
+      market_type: "spot",
+      symbol: "BTC/USDT",
+      timeframe: "12h",
+    },
+    range_start: "2026-08-01T00:00:00Z",
+    range_end: "2026-08-03T00:00:00Z",
+    plan: {
+      checksum: "a".repeat(64),
+      chunks_planned: 2,
+      estimated_candles: 4,
+      estimated_requests: 2,
+      created_at: "2026-08-16T10:00:00Z",
+    },
+  };
+}
+
+function marketOperation(
+  state: MarketOperation["state"] = "RUNNING",
+  recordVersion = 2,
+): MarketOperation {
+  const preview = marketOperationPreview();
+  return {
+    operation_id: ADMIN_MARKET_OPERATION_ID,
+    operation_type: preview.operation_type,
+    state,
+    dataset: preview.dataset,
+    range_start: preview.range_start,
+    range_end: preview.range_end,
+    plan: preview.plan,
+    progress: {
+      chunks_planned: 2,
+      chunks_completed: state === "PENDING" ? 0 : 1,
+      chunks_failed: 0,
+      candles_estimated: 4,
+      candles_received: state === "PENDING" ? 0 : 2,
+      candles_persisted: state === "PENDING" ? 0 : 2,
+      requests_completed: state === "PENDING" ? 0 : 1,
+      updated_at: "2026-08-16T10:00:00Z",
+    },
+    requested_by: ADMIN_ID,
+    contract_version: 1,
+    record_version: recordVersion,
+    local_job_id: null,
+    lease:
+      state === "PENDING"
+        ? null
+        : {
+            claimed_at: "2026-08-16T09:58:00Z",
+            heartbeat_at: "2026-08-16T09:59:30Z",
+            lease_expires_at: "2026-08-16T10:00:30Z",
+          },
+    result: null,
+    failure: null,
+    created_at: "2026-08-16T09:55:00Z",
+    updated_at: "2026-08-16T10:00:00Z",
+    started_at: state === "PENDING" ? null : "2026-08-16T09:58:00Z",
+    finished_at: null,
+    observed_at: "2026-08-16T10:00:00Z",
+  };
+}
 
 function decimalToBigInt(value: string): bigint {
   const match = /^(-?)(\d+)(?:\.(\d{1,8}))?$/.exec(value);
@@ -510,6 +583,8 @@ export class MockServices {
   private backendMode: BackendMode = "online";
   private databaseAvailable = true;
   private pendingAdminUnauthorizedResponses = 0;
+  private pendingAdminForbiddenResponses = 0;
+  private marketOperationControlConflict = false;
   private tokenSequence = 0;
   private movementSequence = 0;
   private readonly tokenRoles = new Map<string, MockRole>();
@@ -518,6 +593,7 @@ export class MockServices {
   private simulations: SimulationDetail[] = [];
   private readonly movements = new Map<string, CapitalMovement[]>();
   private settings: Setting[] = createSettings();
+  private currentMarketOperation: MarketOperation = marketOperation();
 
   lastIssuedAccessToken: string | null = null;
   recoveredEmail: string | null = null;
@@ -575,6 +651,14 @@ export class MockServices {
 
   rejectNextAdminRequestsWith401(count = 1): void {
     this.pendingAdminUnauthorizedResponses = count;
+  }
+
+  rejectNextAdminRequestsWith403(count = 1): void {
+    this.pendingAdminForbiddenResponses = count;
+  }
+
+  conflictNextMarketOperationControl(): void {
+    this.marketOperationControlConflict = true;
   }
 
   requestsFor(method: string, pathname: string): RecordedRequest[] {
@@ -1452,7 +1536,175 @@ export class MockServices {
         await this.apiError(route, 401, "token_expired", "A sessão expirou.");
         return;
       }
+      if (this.pendingAdminForbiddenResponses > 0) {
+        this.pendingAdminForbiddenResponses -= 1;
+        await this.apiError(
+          route,
+          403,
+          "administrator_required",
+          "Acesso administrativo negado.",
+        );
+        return;
+      }
       if (!(await this.requireAdmin(route, request))) return;
+    }
+
+    if (
+      request.method() === "GET" &&
+      url.pathname === "/api/v1/admin/market-data/operations/targets"
+    ) {
+      const response: MarketOperationTargetList = {
+        items: [
+          {
+            symbol: "BTC/USDT",
+            base_asset: "BTC",
+            quote_asset: "USDT",
+            exchange: "binance",
+            market_type: "spot",
+            timeframes: [
+              "1m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "4h",
+              "12h",
+              "1d",
+              "1w",
+            ].map((timeframe) => ({
+              timeframe,
+              dataset_id:
+                timeframe === "12h"
+                  ? ADMIN_MARKET_DATASET_ID
+                  : `e2e-dataset-${timeframe}`,
+            })),
+          },
+        ],
+        page: 1,
+        page_size: 25,
+        total: 1,
+        total_pages: 1,
+        catalog_fetched_at: "2026-08-16T10:00:00Z",
+        catalog_expires_at: "2026-08-16T10:05:00Z",
+        source: "binance_spot_exchange_info",
+      };
+      await this.json(route, 200, response);
+      return;
+    }
+
+    if (
+      request.method() === "POST" &&
+      url.pathname === "/api/v1/admin/market-data/operations/preview/backfill"
+    ) {
+      await this.json(route, 200, marketOperationPreview());
+      return;
+    }
+
+    if (
+      request.method() === "POST" &&
+      url.pathname ===
+        "/api/v1/admin/market-data/operations/preview/incremental"
+    ) {
+      await this.json(route, 200, {
+        action: "NOOP",
+        preview: null,
+        last_open_time: "2026-08-15T12:00:00Z",
+        latest_closed_end: "2026-08-16T00:00:00Z",
+      });
+      return;
+    }
+
+    if (
+      request.method() === "POST" &&
+      url.pathname === "/api/v1/admin/market-data/operations"
+    ) {
+      const body = this.requestBody<MarketOperationSubmitRequest>(request);
+      const preview = marketOperationPreview();
+      if (
+        body.confirmed !== true ||
+        body.dataset_id !== preview.dataset.dataset_id ||
+        body.plan_checksum !== preview.plan.checksum ||
+        body.range_start !== preview.range_start ||
+        body.range_end !== preview.range_end
+      ) {
+        await this.apiError(
+          route,
+          409,
+          "market_operation_plan_conflict",
+          "A prévia não corresponde ao plano atual.",
+        );
+        return;
+      }
+      this.currentMarketOperation = marketOperation("PENDING", 1);
+      await this.json(route, 202, this.currentMarketOperation);
+      return;
+    }
+
+    if (
+      request.method() === "GET" &&
+      url.pathname === "/api/v1/admin/market-data/operations"
+    ) {
+      await this.json(route, 200, {
+        items: [this.currentMarketOperation],
+        limit: Number(url.searchParams.get("limit") ?? "20"),
+        offset: Number(url.searchParams.get("offset") ?? "0"),
+        count: 1,
+        has_more: false,
+      });
+      return;
+    }
+
+    const marketOperationMatch =
+      /^\/api\/v1\/admin\/market-data\/operations\/([0-9a-f-]{36})(?:\/(pause|resume|cancel))?$/.exec(
+        url.pathname,
+      );
+    if (marketOperationMatch?.[1] === ADMIN_MARKET_OPERATION_ID) {
+      const action = marketOperationMatch[2];
+      if (request.method() === "GET" && !action) {
+        await this.json(route, 200, this.currentMarketOperation);
+        return;
+      }
+      if (request.method() === "POST" && action) {
+        if (this.marketOperationControlConflict) {
+          this.marketOperationControlConflict = false;
+          this.currentMarketOperation = {
+            ...this.currentMarketOperation,
+            record_version: this.currentMarketOperation.record_version + 1,
+          };
+          await this.apiError(
+            route,
+            409,
+            "market_operation_version_conflict",
+            "A operação mudou no servidor.",
+          );
+          return;
+        }
+        const body = this.requestBody<{ expected_version: number }>(request);
+        if (
+          body.expected_version !== this.currentMarketOperation.record_version
+        ) {
+          await this.apiError(
+            route,
+            409,
+            "market_operation_version_conflict",
+            "A operação mudou no servidor.",
+          );
+          return;
+        }
+        const nextState =
+          action === "pause"
+            ? "PAUSE_REQUESTED"
+            : action === "resume"
+              ? "PENDING"
+              : "CANCEL_REQUESTED";
+        this.currentMarketOperation = {
+          ...this.currentMarketOperation,
+          state: nextState,
+          record_version: this.currentMarketOperation.record_version + 1,
+        };
+        await this.json(route, 200, this.currentMarketOperation);
+        return;
+      }
     }
 
     const adminMarketCandlesMatch =

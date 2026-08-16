@@ -31,6 +31,12 @@ const navigation = [
     end: false,
   },
   { to: "/admin/simulations", label: "Simulações", icon: "▤", end: false },
+  {
+    to: "/admin/market-operations",
+    label: "Operações de mercado",
+    icon: "⇄",
+    end: false,
+  },
   { to: "/admin/settings", label: "Configurações", icon: "⚙", end: false },
 ];
 

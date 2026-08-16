@@ -1,0 +1,40 @@
+import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { describe, expect, it, vi } from "vitest";
+import { AdminLayout } from "./AdminLayout";
+
+vi.mock("../auth/AuthContext", () => ({
+  useAuth: () => ({ signOut: vi.fn() }),
+}));
+
+vi.mock("../http/client", () => ({
+  apiClient: { getHealth: vi.fn().mockResolvedValue({ status: "healthy" }) },
+}));
+
+describe("AdminLayout", () => {
+  it("expõe a navegação acessível para a console de operações", async () => {
+    const user = userEvent.setup();
+    await act(async () => {
+      render(
+        <MemoryRouter initialEntries={["/admin"]}>
+          <Routes>
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index element={<h1>Admin</h1>} />
+              <Route path="market-operations" element={<h1>Operações</h1>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>,
+      );
+      await Promise.resolve();
+    });
+
+    const link = screen.getByRole("link", { name: "Operações de mercado" });
+    expect(link.getAttribute("href")).toBe("/admin/market-operations");
+    await screen.findByText("Backend conectado");
+    await act(async () => user.click(link));
+    expect(
+      await screen.findByRole("heading", { name: "Operações" }),
+    ).toBeDefined();
+  });
+});
