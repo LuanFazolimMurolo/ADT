@@ -18,19 +18,47 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Last completed track
 
-**7-01 — Control Plane Foundation — CLOSED**
+**7-02 — Market Operation Administrative Console — CLOSED**
 
-Formal closure is supported by the accepted Final 7-01 Closure Audit.
+Formal closure is supported by the accepted 7-02 Semantic Gate 2 + Full Local
+validation and protected staged audit.
 
-The control-plane recovery and shutdown deliveries are also closed:
+The previous control-plane foundation delivery remains closed:
 
+- **7-01 — Control Plane Foundation — CLOSED**
 - **7-01D2C1 — Expired Operation Recovery — CLOSED**
 - **7-01D2C2 — Pre-claim Control Settlement — CLOSED**
 - **7-01D2C3 — Structured Cancellation & Graceful Shutdown — CLOSED**
 
 ## Last validated code milestone
 
-`e4970a75af7478b1425e1cac45eba8e25c34a37b`
+`b7b2e2f258fe788d7c97bb09875a709058f4eec5`
+
+## 7-02 closure evidence
+
+- Code milestone:
+  `b7b2e2f258fe788d7c97bb09875a709058f4eec5`
+- Parent/bootstrap milestone:
+  `c4acf97fba0c3a56e71bd22430bbeabfd167844a`
+- Protected staged patch SHA256:
+  `01e2a995bd883002f3ae36fad5bff9fb6e059664c681cd08ef8905c5b14ab7a6`
+- 7-02 Semantic Gate 2 + Full Local: PASS
+- Default asyncio/AnyIO path validated on the authoritative local Kali
+  environment without forcing uvloop
+- Full backend: 2406 passed, 1 skipped
+- Backend coverage: 87%
+- Full frontend Vitest: 207 passed
+- Frontend lint, typecheck, E2E typecheck, production build, generated API
+  consistency and bundle budget: PASS
+- Full Playwright: 50 passed
+- Phase 6 accessibility regression suite: 10 passed
+- Previously timing-sensitive mobile navigation scenario: 10/10 deterministic
+  stress repetitions passed after removing fixed-link-count and transition-timing
+  assumptions from the test
+- No migration or dependency changes
+- No repository, worker, C1, C2 or C3 changes
+- No remote Supabase mutation, real Binance OHLCV execution or real-capital work
+- No unresolved 7-02 blocker
 
 ## 7-01 closure evidence
 
@@ -70,47 +98,49 @@ The control-plane recovery and shutdown deliveries are also closed:
 
 ## Current delivery
 
-**7-02 — Market Operation Administrative Console — ACTIVE**
+**7-02 — Market Operation Administrative Console — CLOSED**
 
-Starting baseline:
-`d0ce8f25633103da3ae01e5e951ef0905ef4bd48`.
+The authenticated administrator console for the existing 7-01
+`MarketOperation` boundary is implemented and locally validated.
 
-No 7-02 production implementation has been committed yet.
+Delivered 7-02 boundary:
 
-**Approved objective**: Provide an authenticated administrator browser console
-for the existing 7-01 `MarketOperation` preview, submission, monitoring and
-control boundary. FastAPI must not perform physical market-data execution.
+- backend-owned administrative operation targets and canonical `dataset_id`;
+- nine operation-compatible timeframes owned by backend contracts;
+- server-observed lease-time semantics without claiming worker presence;
+- RAW backfill and incremental preview, explicit confirmation and submission;
+- incremental `NOOP` handling without submission;
+- stable same-intent idempotency keys across ambiguous transport retries;
+- bounded operation list, detail and polling;
+- monotonic snapshot handling across polling, selection and successful
+  lifecycle mutations;
+- pause, resume and cancel with current optimistic `record_version`;
+- explicit 409 reconciliation without blind mutation retry;
+- generated frontend API contracts and typed API client methods;
+- protected administrator route and navigation;
+- accessible, responsive UI and browser coverage.
 
-**In scope**:
+The existing 7-01 API, worker, C1 recovery, C2 pre-claim settlement, C3 graceful
+shutdown, local `flock` and CLI contracts remain authoritative and unchanged.
 
-- backend-owned target resolution;
-- explicit preview, confirmation and submission for RAW backfill and RAW
-  incremental operations;
-- operation list and detail views;
-- bounded polling and progress, result, failure and timestamp presentation;
-- safe lease-time presentation without asserting that a worker is online;
-- pause, resume and cancel using the current `record_version`;
-- stable idempotency keys for ambiguous retries of the same confirmed intent;
-- generated frontend API contracts; and
-- protected, accessible and responsive administrator navigation and UI.
+The 7-02 closure does **not** close Phase 7 as a whole.
 
-**Out of scope**:
+## Next Phase 7 delivery
 
-- dataset, gap and quality inspection or repair;
+No new Phase 7 implementation delivery is selected in this handoff.
+
+Selection of the next delivery must start from the remaining roadmap and product
+vision rather than expanding 7-02 beyond its approved boundary.
+
+Still outside the closed 7-02 boundary:
+
+- dataset, gap and quality administrative inspection or repair;
 - worker-global health, presence and operational events;
 - collector and paper-runner lifecycle control;
 - administrator mandates and paper-session creation;
 - capital-ledger integration and the ADT Official Portfolio;
 - machine learning, Telegram, SaaS and deployment; and
 - real-capital execution.
-
-**Expected migration**: NO.
-
-The existing 7-01 API, worker, C1 recovery, C2 pre-claim settlement, C3 graceful
-shutdown, local `flock` and CLI contracts remain authoritative. Controls use
-optimistic record versions and conflicts require reload/reconciliation rather
-than blind mutation retries. The same confirmed intent retains its non-sensitive
-idempotency key across an ambiguous retry; a new intent receives a new key.
 
 ## Important repository and process constraints
 
