@@ -4,7 +4,7 @@ Last updated: 2026-08-16
 
 ## Current branch
 
-`feat/phase-7-01-control-plane-foundation`
+`main`
 
 At the start of every session, verify the local branch and HEAD, then inspect
 the corresponding remote branch. This file records the intended handoff; Git
@@ -12,68 +12,76 @@ remains the evidence of the repository's actual state.
 
 ## Current phase
 
-**Phase 7 — Operational Control Plane**
+**Phase 7 — Operational Control Plane — ACTIVE**
 
-Phase 6 is complete and versioned. Phase 7 is active.
+Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
-## Current track
+## Last completed track
 
-**7-01 — Control Plane Foundation**
+**7-01 — Control Plane Foundation — CLOSED**
 
-## Last completed delivery
+Formal closure is supported by the accepted Final 7-01 Closure Audit.
 
-**7-01D2C3 — Structured Cancellation & Graceful Shutdown — CLOSED**
-
-The preceding control-plane recovery deliveries also remain closed:
+The control-plane recovery and shutdown deliveries are also closed:
 
 - **7-01D2C1 — Expired Operation Recovery — CLOSED**
 - **7-01D2C2 — Pre-claim Control Settlement — CLOSED**
+- **7-01D2C3 — Structured Cancellation & Graceful Shutdown — CLOSED**
 
-C3 gives executor and heartbeat children structured cancellation and joining.
-Parent cancellation propagates without stale PostgreSQL settlement, and the
-continuous runner supports an explicit idempotent stop using Policy B
-cooperative cancellation of an active `run_once`. `SIGTERM` and `SIGINT` route
-to that contract at the runtime/process boundary, previous signal handlers are
-restored after the owned lifecycle, and all asynchronous work joins before
-runtime resources close. Shutdown composes with C1 recovery rather than
-fabricating an administrative or terminal transition.
-
-Last validated **code milestone** commit:
+## Last validated code milestone
 
 `e4970a75af7478b1425e1cac45eba8e25c34a37b`
 
-This is not a permanent assertion about the feature branch HEAD. The
-documentation continuity commit and later deliveries naturally make the branch
-newer. Verify the current local and remote SHAs at session start.
+## 7-01 closure evidence
 
-## Accepted C3 evidence
+- Final 7-01 Closure Audit: PASS
+- Targeted closure suite: 520 passed
+- Full backend: 2402 passed, 1 skipped
+- Coverage: 87%
+- Branch at audit: `33314bec2ff3f87b6af23fd52e553fcc3e2481c4`
+- No unresolved 7-01 blocker
+- Remote migration application remains operational/deployment work and is not
+  a local code-closure blocker
 
-- Gate 1: PASS
-- Semantic Gate 2: PASS
-- Full Local: PASS
-- Backend suite: 2402 passed, 1 skipped, 87% coverage
-- Protected patch SHA:
-  `94e60940c97775e5acb5495a9b6036b50671dd558cc8fde1588c50b7abd90861`
-- Protected code commit:
-  `e4970a75af7478b1425e1cac45eba8e25c34a37b`
+## Delivered 7-01 boundary
+
+- Authenticated administrative operation API and application service
+- Durable PostgreSQL operational coordination
+- Separate worker, runtime and CLI
+- Normal execution with heartbeat, checkpoint and receipt settlement
+- C1 restart recovery
+- C2 pre-claim controls
+- C3 graceful shutdown
+- No long-running work inside FastAPI HTTP requests
+
+## Explicitly not closed by 7-01
+
+- Phase 7 as a whole
+- The full historical Phase 2D scope
+- Minimal administrative frontend
+- Dataset, gap and quality administrative inspection
+- Future broader operational mandates and session configuration
+- ADT Official Portfolio
+- ADT Confidence Score
+- Telegram and SaaS
+- Machine learning
+- Production deployment
+- Automated real-capital trading
 
 ## Next task
 
-**FINAL 7-01 CLOSURE AUDIT**
+**DEFINE / START NEXT PHASE 7 DELIVERY**
 
-No new implementation delivery should start before this audit confirms whether
-7-01 Control Plane Foundation is complete. C3 is closed; **7-01 is not yet
-closed**.
+The roadmap does not yet assign an exact identifier or title to the immediate
+next delivery. Do not invent one. Begin with a dedicated reconnaissance and
+design task that selects the next approved Phase 7 boundary.
 
-The closure audit must:
+Candidate scope: the administrative monitoring/control surface and remaining
+approved operational projections, including dataset, gap and quality
+inspection and the minimal administrative UI as assigned by
+[`ROADMAP.md`](./ROADMAP.md).
 
-- audit 7-01 as a whole;
-- verify C1/C2/C3 composition;
-- verify the original 7-01 scope and invariants;
-- verify that no unresolved blocker remains;
-- reconcile documentation with actual branch history;
-- decide whether 7-01 can be formally closed; and
-- only then select the next Phase 7 delivery from [`ROADMAP.md`](./ROADMAP.md).
+No implementation of that next delivery was performed during 7-01 closure.
 
 ## Important repository and process constraints
 

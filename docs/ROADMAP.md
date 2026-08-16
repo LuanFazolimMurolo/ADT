@@ -864,9 +864,8 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Track 7-01 is establishing the durable control-plane
-foundation. Expired-operation recovery (7-01D2C1) is closed; the exact current
-handoff and next delivery are maintained in
+**Status**: Active. Track 7-01 — Control Plane Foundation is complete. Phase 7
+remains active; the exact current handoff and next delivery are maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 **Deliverables**:
