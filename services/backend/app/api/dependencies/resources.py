@@ -9,6 +9,7 @@ from app.database import Database
 from app.market_data.asset_catalog import AssetMarketService
 from app.market_data.candle_query import LocalMarketCandleReadService
 from app.market_data.continuous import ContinuousCollectionStateStore
+from app.market_data.raw_dataset_query import LocalRawDatasetReadService
 from app.paper_trading.chart_annotations import PaperChartAnnotationReadService
 from app.paper_trading.continuous import PaperRunnerStateStore
 from app.paper_trading.dashboard import PaperDashboardReadService
@@ -53,6 +54,14 @@ def get_market_candle_read_service(request: Request) -> LocalMarketCandleReadSer
     return cast(
         LocalMarketCandleReadService,
         request.app.state.market_candle_read_service,
+    )
+
+
+def get_raw_dataset_read_service(request: Request) -> LocalRawDatasetReadService:
+    """Return the application-owned persisted RAW dataset reader."""
+    return cast(
+        LocalRawDatasetReadService,
+        request.app.state.raw_dataset_read_service,
     )
 
 

@@ -8,12 +8,15 @@ import os
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from math import isfinite
 from pathlib import Path
+from time import monotonic, sleep
 from typing import Protocol, TextIO
 from uuid import uuid4
 
 from app.market_data.domain import DataRange, Instrument, Timeframe
 from app.market_data.errors import (
+    MarketDataCatalogBusyError,
     MarketDataInconsistencyError,
     MarketDataStorageError,
     MarketJobLockTimeoutError,
@@ -515,6 +518,73 @@ class JsonMarketDataCatalog:
             except TypeError:
                 raise MarketDataStorageError("O recibo persistido é inválido.") from None
         return tuple(sorted(receipts, key=lambda item: (item.job_id, item.chunk_index)))
+
+    def list_datasets_snapshot(
+        self,
+        *,
+        timeout_seconds: float,
+    ) -> tuple[DatasetMetadata, ...]:
+        """Read one atomic catalog snapshot under a bounded shared lock."""
+        stream = self._acquire_snapshot_lock(timeout_seconds)
+        try:
+            state = self._load()
+            datasets = [
+                _decode_dataset_metadata(raw)
+                for raw in state["datasets"].values()
+                if isinstance(raw, dict)
+            ]
+            return tuple(sorted(datasets, key=lambda item: item.key))
+        finally:
+            self._release_snapshot_lock(stream)
+
+    def get_dataset_snapshot(
+        self,
+        key: str,
+        *,
+        timeout_seconds: float,
+    ) -> DatasetMetadata | None:
+        """Read one dataset from an atomic catalog snapshot."""
+        stream = self._acquire_snapshot_lock(timeout_seconds)
+        try:
+            raw = self._load()["datasets"].get(key)
+            return _decode_dataset_metadata(raw) if isinstance(raw, dict) else None
+        finally:
+            self._release_snapshot_lock(stream)
+
+    def _acquire_snapshot_lock(self, timeout_seconds: float) -> TextIO:
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not isfinite(float(timeout_seconds))
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("timeout_seconds must be positive and finite")
+
+        self._root.mkdir(parents=True, exist_ok=True)
+        lock_path = ensure_safe_path(self._root, self._root / ".catalog.lock")
+        stream = lock_path.open("a+", encoding="utf-8")
+        deadline = monotonic() + float(timeout_seconds)
+
+        while True:
+            try:
+                fcntl.flock(
+                    stream.fileno(),
+                    fcntl.LOCK_SH | fcntl.LOCK_NB,
+                )
+                return stream
+            except BlockingIOError:
+                remaining = deadline - monotonic()
+                if remaining <= 0:
+                    stream.close()
+                    raise MarketDataCatalogBusyError() from None
+                sleep(min(0.01, remaining))
+
+    @staticmethod
+    def _release_snapshot_lock(stream: TextIO) -> None:
+        try:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+        finally:
+            stream.close()
 
     def acquire_lease(self) -> CatalogLease:
         self._root.mkdir(parents=True, exist_ok=True)

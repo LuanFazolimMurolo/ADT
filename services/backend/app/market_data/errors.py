@@ -101,6 +101,14 @@ class MarketDataStorageError(MarketDataError):
     status_code = 500
 
 
+class MarketDataCatalogBusyError(MarketDataError):
+    """The local catalog could not provide a bounded read snapshot in time."""
+
+    code = "market_data_catalog_busy"
+    default_message = "O catálogo local de dados de mercado está temporariamente ocupado."
+    status_code = 503
+
+
 class ContinuousCollectionStateNotFoundError(MarketDataError):
     """No continuous collection cycle has been published yet."""
 
@@ -115,6 +123,20 @@ class MarketCandleDatasetNotFoundError(MarketDataError):
     code = "market_candle_dataset_not_found"
     default_message = "O dataset local de candles solicitado não foi encontrado."
     status_code = 404
+
+
+class InvalidRawDatasetQueryError(InvalidDomainInputError):
+    """A bounded RAW dataset inspection query is invalid."""
+
+    code = "invalid_raw_dataset_query"
+    default_message = "A consulta de datasets RAW é inválida."
+
+
+class RawDatasetNotFoundError(ResourceNotFoundError):
+    """The requested transactionally cataloged RAW dataset does not exist."""
+
+    code = "raw_dataset_not_found"
+    default_message = "O dataset RAW solicitado não foi encontrado."
 
 
 class MarketJobNotFoundError(MarketDataError):

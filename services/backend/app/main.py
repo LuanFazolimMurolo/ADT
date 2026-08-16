@@ -17,6 +17,7 @@ from app.api.exceptions import setup_exception_handlers
 from app.api.routes import (
     admin,
     admin_market_candles,
+    admin_market_datasets,
     admin_market_operations,
     admin_paper_chart_annotations,
     admin_paper_dashboard,
@@ -50,6 +51,7 @@ from app.market_data.http import PublicMarketHttpClient
 from app.market_data.locks import DatasetLockManager
 from app.market_data.planning import MarketDataPlanner
 from app.market_data.quality import MarketDataQualityValidator
+from app.market_data.raw_dataset_query import LocalRawDatasetReadService
 from app.market_data.services import HistoricalMarketDataService
 from app.market_data.storage import ParquetCandleStore
 from app.market_data.transaction import MarketDataTransactionCoordinator
@@ -169,6 +171,10 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
                 timeout_seconds=app_settings.market_job_lock_timeout,
                 stale_after_seconds=app_settings.market_job_stale_after,
                 clock=market_operation_clock,
+            )
+            application.state.raw_dataset_read_service = LocalRawDatasetReadService(
+                market_operation_catalog,
+                lock_timeout_seconds=app_settings.market_job_lock_timeout,
             )
             market_operation_coordinator = MarketDataTransactionCoordinator(
                 market_operation_store,
@@ -320,6 +326,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(paper_trading.router)
     application.include_router(admin.router)
     application.include_router(admin_market_candles.router)
+    application.include_router(admin_market_datasets.router)
     application.include_router(admin_market_operations.router)
     application.include_router(admin_paper_chart_annotations.router)
     application.include_router(admin_paper_dashboard.router)
