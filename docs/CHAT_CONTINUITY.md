@@ -4,7 +4,7 @@ Last updated: 2026-08-16
 
 ## Current branch
 
-`feat/phase-7-02-market-operation-admin-console`
+`feat/phase-7-03-raw-dataset-inspection`
 
 At the start of every session, verify the local branch and HEAD, then inspect
 the corresponding remote branch. This file records the intended handoff; Git
@@ -98,43 +98,52 @@ The previous control-plane foundation delivery remains closed:
 
 ## Current delivery
 
-**7-02 — Market Operation Administrative Console — CLOSED**
+**7-03 — Persisted RAW Dataset Inspection — ACTIVE**
 
-The authenticated administrator console for the existing 7-01
-`MarketOperation` boundary is implemented and locally validated.
+Starting baseline:
+`673b5d8c233b1f232e85636e9e03ff4bbe62395f`.
 
-Delivered 7-02 boundary:
+No 7-03 production implementation has been committed yet.
 
-- backend-owned administrative operation targets and canonical `dataset_id`;
-- nine operation-compatible timeframes owned by backend contracts;
-- server-observed lease-time semantics without claiming worker presence;
-- RAW backfill and incremental preview, explicit confirmation and submission;
-- incremental `NOOP` handling without submission;
-- stable same-intent idempotency keys across ambiguous transport retries;
-- bounded operation list, detail and polling;
-- monotonic snapshot handling across polling, selection and successful
-  lifecycle mutations;
-- pause, resume and cancel with current optimistic `record_version`;
-- explicit 409 reconciliation without blind mutation retry;
-- generated frontend API contracts and typed API client methods;
-- protected administrator route and navigation;
-- accessible, responsive UI and browser coverage.
+**Approved objective**: Provide authenticated administrators with a bounded,
+read-only browser projection of locally cataloged RAW market-data datasets
+without exposing filesystem layout and without executing scans, repairs,
+ingestion or other long-running work inside HTTP requests.
 
-The existing 7-01 API, worker, C1 recovery, C2 pre-claim settlement, C3 graceful
-shutdown, local `flock` and CLI contracts remain authoritative and unchanged.
+**In scope**:
 
-The 7-02 closure does **not** close Phase 7 as a whole.
+- list locally cataloged RAW datasets through a bounded administrative API;
+- inspect one RAW dataset through its backend-owned canonical `dataset_id`;
+- expose canonical exchange, market type, symbol and timeframe identity;
+- expose persisted first/last open time, candle count, dataset version,
+  version algorithm and catalog update time;
+- expose only a sanitized integrity-manifest summary, such as presence/schema
+  and partition count, without partition paths;
+- deterministic ordering, bounded pagination and useful administrative filters;
+- generated frontend API contracts and typed client methods;
+- protected administrator navigation and a read-only dataset list/detail UI;
+- accessibility, responsive behavior and deterministic local tests.
 
-## Next Phase 7 delivery
+**Safety contract**:
 
-No new Phase 7 implementation delivery is selected in this handoff.
+- never expose `location`, filesystem paths or manifest `relative_path`;
+- never expose local `ADT_DATA_DIR`;
+- never perform Binance/network access for dataset inspection;
+- never run gap discovery, quality scanning, repair or ingestion;
+- never mutate Parquet, the local catalog or PostgreSQL;
+- reuse backend-owned dataset identity encoding rather than reproducing it in
+  the browser;
+- retain the existing RAW catalog, transaction, locking and candle contracts as
+  authoritative.
 
-Selection of the next delivery must start from the remaining roadmap and product
-vision rather than expanding 7-02 beyond its approved boundary.
+**Expected migration**: NO.
 
-Still outside the closed 7-02 boundary:
+**Explicitly out of scope**:
 
-- dataset, gap and quality administrative inspection or repair;
+- RAW gap discovery or repair;
+- advanced quality scans or quality-baseline management;
+- DERIVED datasets and snapshots;
+- operation submission or lifecycle controls already owned by 7-02;
 - worker-global health, presence and operational events;
 - collector and paper-runner lifecycle control;
 - administrator mandates and paper-session creation;

@@ -280,15 +280,15 @@ durability and dataset contracts established in Phases 2A–2C.
 
 **MVP operations**:
 
-- [ ] Plan RAW backfill
-- [ ] Submit RAW backfill with explicit idempotency key
-- [ ] Submit RAW incremental update
+- [x] Plan RAW backfill
+- [x] Submit RAW backfill with explicit idempotency key
+- [x] Submit RAW incremental update
 - [ ] List and inspect RAW datasets
 - [ ] Read RAW gaps and quality
-- [ ] List and inspect operations
-- [ ] Pause, resume and cancel cooperatively
-- [ ] Reconcile abandoned operations after restart
-- [ ] Expose a minimal administrator UI
+- [x] List and inspect operations
+- [x] Pause, resume and cancel cooperatively
+- [x] Reconcile abandoned operations after restart
+- [x] Expose a minimal administrator UI
 
 **Explicitly out of scope**:
 
@@ -341,7 +341,7 @@ for the market-data operational boundary rather than a claim of Phase 2 closure.
 - [x] Multi-timeframe support (1m, 5m, 1h, 1d)
 - [x] Historical data sync job
 - [x] Data validation foundations
-- [ ] Admin interface to trigger sync (Phase 2D)
+- [x] Admin interface to trigger sync (Phase 2D)
 
 **Dependencies**: Phase 1 complete
 **Estimated Duration**: 2 weeks
@@ -864,15 +864,38 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Track 7-01 — Control Plane Foundation is complete and
-closed. Phase 7 remains active; the exact current handoff and delivery are
-maintained in
+**Status**: Active. Tracks 7-01 — Control Plane Foundation and 7-02 — Market
+Operation Administrative Console are complete and closed. Track 7-03 —
+Persisted RAW Dataset Inspection is the active delivery. Phase 7 as a whole
+remains active; the exact current handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
-### 7-02 — Market Operation Administrative Console 🚧
+### Phase 7 remaining deliverables
+- [ ] Define administrator-approved operational mandates for assets, markets
+      and instruments
+- [ ] Create and validate paper-session configurations through the frontend
+- [ ] Configure timeframes and trading horizons as their contracts mature
+- [ ] Select strategies, sizing, fees and risk policies within explicit mandates
+- [x] Submit and monitor bounded market-data synchronization operations
+- [ ] Start, pause, resume and stop durable collectors and paper runners
+- [x] Reconcile abandoned work after restart
+- [ ] Integrate the administrative capital ledger with operational sessions
+- [ ] Establish the ledger and session foundations required by a future ADT
+      Official Portfolio and official paper capital without claiming that
+      portfolio is already implemented
+- [ ] Show worker health, leases, progress, errors and audit events
+- [x] Preserve CLI workflows and explicit operator confirmation
+- [x] Preserve auditable start, pause, resume, cancel and recovery transitions
+- [ ] Complete the previously approved Phase 2D operational administration scope
 
-**Status**: Active / in progress. This subsection defines the approved boundary;
-it does not claim that the 7-02 implementation exists yet.
+**Dependencies**: Phase 6 complete
+**Estimated Duration**: 4 weeks
+**Blockers**: Reviewed PostgreSQL operational migrations and persistent worker host
+
+### 7-02 — Market Operation Administrative Console ✅
+
+**Status**: Complete and closed. The authenticated administrative console is
+implemented, locally validated and integrated into `main`.
 
 **Goal**: Expose the already validated 7-01 `MarketOperation` control plane
 through a bounded authenticated administrative browser surface.
@@ -918,27 +941,47 @@ worker process is online.
 - machine learning, Telegram, SaaS and deployment; and
 - real-capital execution.
 
-**Deliverables**:
-- [ ] Define administrator-approved operational mandates for assets, markets
-      and instruments
-- [ ] Create and validate paper-session configurations through the frontend
-- [ ] Configure timeframes and trading horizons as their contracts mature
-- [ ] Select strategies, sizing, fees and risk policies within explicit mandates
-- [ ] Submit and monitor bounded market-data synchronization operations
-- [ ] Start, pause, resume and stop durable collectors and paper runners
-- [ ] Reconcile abandoned work after restart
-- [ ] Integrate the administrative capital ledger with operational sessions
-- [ ] Establish the ledger and session foundations required by a future ADT
-      Official Portfolio and official paper capital without claiming that
-      portfolio is already implemented
-- [ ] Show worker health, leases, progress, errors and audit events
-- [ ] Preserve CLI workflows and explicit operator confirmation
-- [ ] Preserve auditable start, pause, resume, cancel and recovery transitions
-- [ ] Complete the previously approved Phase 2D operational administration scope
 
-**Dependencies**: Phase 6 complete
-**Estimated Duration**: 4 weeks
-**Blockers**: Reviewed PostgreSQL operational migrations and persistent worker host
+
+### 7-03 — Persisted RAW Dataset Inspection 🚧
+
+**Status**: Active / bootstrap.
+
+**Goal**: Expose a bounded, authenticated and read-only administrative view of
+locally cataloged RAW datasets without leaking storage paths and without
+performing physical market-data work inside HTTP requests.
+
+**Scope**:
+
+- list cataloged RAW datasets with deterministic bounded pagination;
+- inspect one dataset through the canonical backend-owned `dataset_id`;
+- expose canonical market identity, persisted temporal coverage, candle count,
+  dataset version, version algorithm and catalog update timestamp;
+- expose a sanitized integrity-manifest summary without partition paths;
+- generated frontend API contracts and typed client methods;
+- protected, accessible and responsive administrator list/detail UI.
+
+**Safety contract**:
+
+- no `location`, `relative_path`, `ADT_DATA_DIR` or filesystem disclosure;
+- no Binance/network access;
+- no ingestion, repair, gap discovery or advanced quality scan;
+- no Parquet, catalog or PostgreSQL mutation;
+- no browser-side recreation of dataset identity encoding.
+
+**Expected migration**: None.
+
+**Dependencies**: 7-02 closed and integrated.
+
+**Explicitly out of scope**:
+
+- RAW gaps and quality inspection;
+- repair or materialization;
+- DERIVED datasets and snapshots;
+- worker-global presence/events;
+- collector or paper-runner lifecycle control;
+- mandates, capital integration and Official Portfolio;
+- machine learning, Telegram, SaaS, deployment and real-capital execution.
 
 ---
 
