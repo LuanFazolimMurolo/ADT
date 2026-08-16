@@ -1,6 +1,6 @@
 # ADT Current Development Handoff
 
-Last updated: 2026-08-15
+Last updated: 2026-08-16
 
 ## Current branch
 
@@ -22,53 +22,58 @@ Phase 6 is complete and versioned. Phase 7 is active.
 
 ## Last completed delivery
 
-**7-01D2C2 — Pre-claim Control Settlement — CLOSED**
+**7-01D2C3 — Structured Cancellation & Graceful Shutdown — CLOSED**
 
-**7-01D2C1 — Expired Operation Recovery — CLOSED** remains the protected
-recovery foundation consumed by C2.
+The preceding control-plane recovery deliveries also remain closed:
 
-C2 atomically settles never-started Category A controls. Previously-started
-Category B controls acquire settlement-only ownership and reconcile durable
-local state. Both categories use one globally ordered C2 path, their crash
-windows compose with C1 recovery, and no executor or fetch runs during C2
-settlement.
+- **7-01D2C1 — Expired Operation Recovery — CLOSED**
+- **7-01D2C2 — Pre-claim Control Settlement — CLOSED**
+
+C3 gives executor and heartbeat children structured cancellation and joining.
+Parent cancellation propagates without stale PostgreSQL settlement, and the
+continuous runner supports an explicit idempotent stop using Policy B
+cooperative cancellation of an active `run_once`. `SIGTERM` and `SIGINT` route
+to that contract at the runtime/process boundary, previous signal handlers are
+restored after the owned lifecycle, and all asynchronous work joins before
+runtime resources close. Shutdown composes with C1 recovery rather than
+fabricating an administrative or terminal transition.
 
 Last validated **code milestone** commit:
 
-`b7815996443286a6663a2e08903b15726c3d2e96`
+`e4970a75af7478b1425e1cac45eba8e25c34a37b`
 
 This is not a permanent assertion about the feature branch HEAD. The
 documentation continuity commit and later deliveries naturally make the branch
 newer. Verify the current local and remote SHAs at session start.
 
-## Accepted C2 evidence
+## Accepted C3 evidence
 
 - Gate 1: PASS
-- Category B Gate 1 Retry: PASS
 - Semantic Gate 2: PASS
 - Full Local: PASS
-- Backend suite: 2389 passed, 1 skipped, 87% coverage
+- Backend suite: 2402 passed, 1 skipped, 87% coverage
 - Protected patch SHA:
-  `2a65c25a59dae81fa1aea42d4b8051c42ef81b2158f607c5517fba58e2a9af2a`
+  `94e60940c97775e5acb5495a9b6036b50671dd558cc8fde1588c50b7abd90861`
 - Protected code commit:
-  `b7815996443286a6663a2e08903b15726c3d2e96`
+  `e4970a75af7478b1425e1cac45eba8e25c34a37b`
 
-## Next technical delivery
+## Next task
 
-**7-01D2C3 — Structured Cancellation & Graceful Shutdown**
+**FINAL 7-01 CLOSURE AUDIT**
 
-Known objective: structured cooperative cancellation of active execution tasks,
-with no orphan child tasks, graceful `SIGTERM`/drain in the continuous runtime,
-and no stale settlement after cancellation or lease loss.
+No new implementation delivery should start before this audit confirms whether
+7-01 Control Plane Foundation is complete. C3 is closed; **7-01 is not yet
+closed**.
 
-The exact implementation must be reconfirmed against the current repository,
-state-machine contracts and tests before code changes begin.
+The closure audit must:
 
-## Remaining 7-01 closure
-
-1. **7-01D2C3 — Structured Cancellation & Graceful Shutdown**
-2. final **7-01 closure audit**
-3. continue Phase 7 according to [`ROADMAP.md`](./ROADMAP.md)
+- audit 7-01 as a whole;
+- verify C1/C2/C3 composition;
+- verify the original 7-01 scope and invariants;
+- verify that no unresolved blocker remains;
+- reconcile documentation with actual branch history;
+- decide whether 7-01 can be formally closed; and
+- only then select the next Phase 7 delivery from [`ROADMAP.md`](./ROADMAP.md).
 
 ## Important repository and process constraints
 
