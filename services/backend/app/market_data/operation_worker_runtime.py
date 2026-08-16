@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections.abc import Awaitable, Callable
-from contextlib import AsyncExitStack
+import signal
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import AsyncExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from types import TracebackType
+from types import FrameType, TracebackType
 from typing import Final, Protocol
 from uuid import UUID, uuid4
 
@@ -72,6 +73,15 @@ class MarketOperationPoller(Protocol):
     async def run_once(self) -> MarketOperationSnapshot | None:
         """Process at most one queued operation."""
         ...
+
+
+class MarketOperationSignalLoop(Protocol):
+    """Event-loop signal boundary used by the process-level shutdown hook."""
+
+    def call_soon_threadsafe(
+        self,
+        callback: Callable[[], object],
+    ) -> object: ...
 
 
 class MarketOperationWorkerRuntime:
@@ -224,6 +234,18 @@ class MarketOperationContinuousRunner:
         self._runtime = runtime
         self._interval_seconds = interval_seconds
         self._sleeper = sleeper
+        self._stop_requested = asyncio.Event()
+        self._active_poll: asyncio.Task[MarketOperationSnapshot | None] | None = None
+
+    def request_stop(self) -> None:
+        """Idempotently stop polling and cancel one active poll cooperatively."""
+        if self._stop_requested.is_set():
+            return
+
+        self._stop_requested.set()
+        active_poll = self._active_poll
+        if active_poll is not None and not active_poll.done():
+            active_poll.cancel()
 
     async def run(
         self,
@@ -238,8 +260,20 @@ class MarketOperationContinuousRunner:
         idle_cycles = 0
         last_operation: MarketOperationSnapshot | None = None
 
-        while max_cycles is None or cycles_completed < max_cycles:
-            operation = await self._runtime.run_once()
+        while not self._stop_requested.is_set() and (
+            max_cycles is None or cycles_completed < max_cycles
+        ):
+            active_poll = asyncio.create_task(self._runtime.run_once())
+            self._active_poll = active_poll
+            try:
+                operation = await active_poll
+            except asyncio.CancelledError:
+                if not self._stop_requested.is_set():
+                    raise
+                break
+            finally:
+                self._active_poll = None
+
             cycles_completed += 1
 
             if operation is None:
@@ -251,8 +285,11 @@ class MarketOperationContinuousRunner:
             if max_cycles is not None and cycles_completed >= max_cycles:
                 break
 
+            if self._stop_requested.is_set():
+                break
+
             if operation is None:
-                await self._sleeper(self._interval_seconds)
+                await self._wait_until_next_cycle()
 
         return MarketOperationWorkerLoopResult(
             cycles_completed=cycles_completed,
@@ -261,6 +298,60 @@ class MarketOperationContinuousRunner:
             last_operation_id=(last_operation.operation_id if last_operation is not None else None),
             last_state=(last_operation.state if last_operation is not None else None),
         )
+
+    async def _wait_until_next_cycle(self) -> None:
+        async def wait_for_stop() -> None:
+            await self._stop_requested.wait()
+
+        sleep_task: asyncio.Future[None] = asyncio.ensure_future(
+            self._sleeper(self._interval_seconds)
+        )
+        stop_task = asyncio.create_task(wait_for_stop())
+
+        try:
+            await asyncio.wait(
+                {sleep_task, stop_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            sleep_task.cancel()
+            stop_task.cancel()
+            await asyncio.gather(sleep_task, stop_task, return_exceptions=True)
+
+        if not sleep_task.cancelled():
+            sleep_task.result()
+
+
+SignalHandler = signal.Handlers | int | Callable[[int, FrameType | None], object]
+
+
+@contextmanager
+def _market_operation_shutdown_signals(
+    runner: MarketOperationContinuousRunner,
+    *,
+    loop: MarketOperationSignalLoop | None = None,
+) -> Iterator[None]:
+    """Own SIGTERM/SIGINT handlers only for the continuous worker lifecycle."""
+    signal_loop = loop if loop is not None else asyncio.get_running_loop()
+    installed: list[tuple[signal.Signals, SignalHandler]] = []
+
+    def request_shutdown(_signum: int, _frame: FrameType | None) -> None:
+        signal_loop.call_soon_threadsafe(runner.request_stop)
+
+    for shutdown_signal in (signal.SIGTERM, signal.SIGINT):
+        try:
+            previous = signal.signal(shutdown_signal, request_shutdown)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if previous is None:
+            previous = signal.SIG_DFL
+        installed.append((shutdown_signal, previous))
+
+    try:
+        yield
+    finally:
+        for shutdown_signal, previous in reversed(installed):
+            signal.signal(shutdown_signal, previous)
 
 
 async def run_market_operation_worker_once(
@@ -294,15 +385,18 @@ async def run_market_operation_worker_loop(
     _validate_interval_seconds(interval_seconds)
     _validate_max_cycles(max_cycles)
 
-    async with MarketOperationWorkerRuntime(
+    runtime = MarketOperationWorkerRuntime(
         settings,
         transport=transport,
         owner_id=owner_id,
         clock=clock,
-    ) as runtime:
-        runner = MarketOperationContinuousRunner(
-            runtime=runtime,
-            interval_seconds=interval_seconds,
-            sleeper=sleeper,
-        )
-        return await runner.run(max_cycles=max_cycles)
+    )
+    runner = MarketOperationContinuousRunner(
+        runtime=runtime,
+        interval_seconds=interval_seconds,
+        sleeper=sleeper,
+    )
+
+    with _market_operation_shutdown_signals(runner):
+        async with runtime:
+            return await runner.run(max_cycles=max_cycles)

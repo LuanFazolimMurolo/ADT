@@ -1124,7 +1124,8 @@ class MarketOperationWorker:
                     plan.job_id,
                     pair,
                     observer=observer,
-                )
+                ),
+                name=f"market-operation-executor:{operation.operation_id}",
             )
         else:
             execution_task = asyncio.create_task(
@@ -1132,31 +1133,61 @@ class MarketOperationWorker:
                     plan,
                     pair,
                     observer=observer,
-                )
+                ),
+                name=f"market-operation-executor:{operation.operation_id}",
             )
 
         stop = asyncio.Event()
-        heartbeat_task = asyncio.create_task(self._heartbeat_loop(observer, stop))
-
-        done, _pending = await asyncio.wait(
-            {execution_task, heartbeat_task},
-            return_when=asyncio.FIRST_COMPLETED,
+        heartbeat_task = asyncio.create_task(
+            self._heartbeat_loop(observer, stop),
+            name=f"market-operation-heartbeat:{operation.operation_id}",
         )
 
-        if execution_task in done:
+        try:
+            done, _pending = await asyncio.wait(
+                {execution_task, heartbeat_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            if execution_task in done:
+                stop.set()
+                await asyncio.gather(execution_task, heartbeat_task, return_exceptions=True)
+
+                # A simultaneous heartbeat ownership failure wins over a local
+                # result: this worker may no longer settle PostgreSQL safely.
+                heartbeat_task.result()
+                return execution_task.result()
+
+            execution_task.cancel()
+            await asyncio.gather(
+                execution_task,
+                heartbeat_task,
+                return_exceptions=True,
+            )
+
+            # result() intentionally re-raises the heartbeat ownership failure.
+            heartbeat_task.result()
+            raise AssertionError("heartbeat task completed without a result")
+        except asyncio.CancelledError:
             stop.set()
-            await heartbeat_task
-            return execution_task.result()
+            execution_task.cancel()
+            heartbeat_task.cancel()
 
-        execution_task.cancel()
-        await asyncio.gather(
-            execution_task,
-            return_exceptions=True,
-        )
-
-        # result() intentionally re-raises the heartbeat ownership failure.
-        heartbeat_task.result()
-        raise AssertionError("heartbeat task completed without a result")
+            # The first cancellation is already being handled. Shield only the
+            # join (never the physical work) so repeated cancellation cannot
+            # abandon either owned child task.
+            children = asyncio.gather(
+                execution_task,
+                heartbeat_task,
+                return_exceptions=True,
+            )
+            while not children.done():
+                try:
+                    await asyncio.shield(children)
+                except asyncio.CancelledError:
+                    continue
+            children.result()
+            raise
 
     async def _heartbeat_loop(
         self,

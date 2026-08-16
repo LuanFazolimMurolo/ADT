@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import signal
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -507,3 +509,300 @@ async def test_loop_policy_is_validated_before_runtime_resources_open(
         )
 
     assert runtime_constructed is False
+
+
+@pytest.mark.asyncio
+async def test_continuous_runner_stop_wakes_idle_sleep_without_another_poll() -> None:
+    sleep_started = asyncio.Event()
+    sleep_cancelled = asyncio.Event()
+
+    async def sleeper(_seconds: float) -> None:
+        sleep_started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            sleep_cancelled.set()
+
+    runtime = SequenceRuntime([None, _operation_marker()])
+    runner = runtime_module.MarketOperationContinuousRunner(
+        runtime=runtime,
+        interval_seconds=60,
+        sleeper=sleeper,
+    )
+    parent = asyncio.create_task(runner.run())
+
+    await asyncio.wait_for(sleep_started.wait(), timeout=1)
+    runner.request_stop()
+    runner.request_stop()
+    result = await asyncio.wait_for(parent, timeout=1)
+
+    assert sleep_cancelled.is_set()
+    assert runtime.calls == 1
+    assert result.cycles_completed == 1
+    assert result.idle_cycles == 1
+    assert result.operations_processed == 0
+    assert not any(
+        task is not asyncio.current_task() and not task.done()
+        for task in asyncio.all_tasks()
+        if task.get_coro().__qualname__.endswith("wait_for_stop")
+    )
+
+
+@pytest.mark.asyncio
+async def test_continuous_runner_propagates_unexpected_sleeper_error() -> None:
+    async def failing_sleeper(_seconds: float) -> None:
+        raise RuntimeError("synthetic sleeper failure")
+
+    runner = runtime_module.MarketOperationContinuousRunner(
+        runtime=SequenceRuntime([None]),
+        interval_seconds=1,
+        sleeper=failing_sleeper,
+    )
+
+    with pytest.raises(RuntimeError, match="synthetic sleeper failure"):
+        await runner.run()
+
+
+@pytest.mark.asyncio
+async def test_continuous_runner_stop_cancels_and_joins_active_poll() -> None:
+    poll_started = asyncio.Event()
+    poll_cancelled = asyncio.Event()
+    poll_joined = asyncio.Event()
+
+    class BlockingRuntime:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def run_once(self) -> MarketOperationSnapshot | None:
+            self.calls += 1
+            poll_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                poll_cancelled.set()
+                await asyncio.sleep(0)
+                poll_joined.set()
+                raise
+
+    runtime = BlockingRuntime()
+    runner = runtime_module.MarketOperationContinuousRunner(
+        runtime=runtime,
+        interval_seconds=1,
+    )
+    parent = asyncio.create_task(runner.run())
+
+    await asyncio.wait_for(poll_started.wait(), timeout=1)
+    runner.request_stop()
+    runner.request_stop()
+    result = await asyncio.wait_for(parent, timeout=1)
+
+    assert poll_cancelled.is_set()
+    assert poll_joined.is_set()
+    assert runtime.calls == 1
+    assert result.cycles_completed == 0
+    assert result.operations_processed == 0
+
+
+@pytest.mark.asyncio
+async def test_continuous_runner_stop_after_result_prevents_second_poll() -> None:
+    holder: dict[str, runtime_module.MarketOperationContinuousRunner] = {}
+
+    class StopAfterResultRuntime:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def run_once(self) -> MarketOperationSnapshot | None:
+            self.calls += 1
+            if self.calls > 1:
+                raise AssertionError("stop allowed an unexpected second poll")
+            asyncio.get_running_loop().call_soon(holder["runner"].request_stop)
+            return _operation_marker()
+
+    runtime = StopAfterResultRuntime()
+    runner = runtime_module.MarketOperationContinuousRunner(
+        runtime=runtime,
+        interval_seconds=1,
+    )
+    holder["runner"] = runner
+
+    result = await runner.run()
+
+    assert runtime.calls == 1
+    assert result.cycles_completed == 1
+    assert result.operations_processed == 1
+    assert result.last_operation_id == OWNER_ID
+
+
+def test_shutdown_signal_scope_requests_stop_and_restores_handlers() -> None:
+    class FakeSignalLoop:
+        def __init__(self) -> None:
+            self.callbacks: list[object] = []
+
+        def call_soon_threadsafe(
+            self,
+            callback: object,
+        ) -> object:
+            self.callbacks.append(callback)
+            assert callable(callback)
+            callback()
+            return object()
+
+    def previous_term(_signum: int, _frame: object) -> None:
+        return None
+
+    def previous_int(_signum: int, _frame: object) -> None:
+        return None
+
+    signal_loop = FakeSignalLoop()
+    runner = runtime_module.MarketOperationContinuousRunner(
+        runtime=SequenceRuntime([None]),
+        interval_seconds=1,
+    )
+    original_term = signal.signal(signal.SIGTERM, previous_term)
+    original_int = signal.signal(signal.SIGINT, previous_int)
+
+    try:
+        with runtime_module._market_operation_shutdown_signals(
+            runner,
+            loop=signal_loop,
+        ):
+            term_callback = signal.getsignal(signal.SIGTERM)
+            int_callback = signal.getsignal(signal.SIGINT)
+            assert callable(term_callback)
+            assert callable(int_callback)
+            term_callback(signal.SIGTERM, None)
+            int_callback(signal.SIGINT, None)
+
+        assert signal_loop.callbacks == [runner.request_stop, runner.request_stop]
+        assert signal.getsignal(signal.SIGTERM) is previous_term
+        assert signal.getsignal(signal.SIGINT) is previous_int
+    finally:
+        signal.signal(signal.SIGTERM, original_term)
+        signal.signal(signal.SIGINT, original_int)
+
+
+def test_shutdown_signal_scope_preserves_existing_event_loop_handler() -> None:
+    signal_loop = asyncio.new_event_loop()
+    runner = runtime_module.MarketOperationContinuousRunner(
+        runtime=SequenceRuntime([None]),
+        interval_seconds=1,
+    )
+
+    try:
+        signal_loop.add_signal_handler(signal.SIGTERM, lambda: None)
+
+        with runtime_module._market_operation_shutdown_signals(
+            runner,
+            loop=signal_loop,
+        ):
+            pass
+
+        assert signal_loop.remove_signal_handler(signal.SIGTERM)
+    finally:
+        signal_loop.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_resources_close_only_after_active_poll_is_joined() -> None:
+    events: list[str] = []
+    poll_started = asyncio.Event()
+
+    class ResourceRuntime:
+        async def __aenter__(self) -> ResourceRuntime:
+            events.append("runtime-enter")
+            return self
+
+        async def __aexit__(
+            self,
+            _exc_type: object,
+            _exc: object,
+            _traceback: object,
+        ) -> None:
+            events.append("runtime-exit")
+
+        async def run_once(self) -> MarketOperationSnapshot | None:
+            events.append("poll-start")
+            poll_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                events.append("poll-cancel")
+                await asyncio.sleep(0)
+                events.append("poll-joined")
+                raise
+
+    runtime = ResourceRuntime()
+    runner = runtime_module.MarketOperationContinuousRunner(
+        runtime=runtime,
+        interval_seconds=1,
+    )
+
+    async with runtime:
+        parent = asyncio.create_task(runner.run())
+        await asyncio.wait_for(poll_started.wait(), timeout=1)
+        runner.request_stop()
+        await asyncio.wait_for(parent, timeout=1)
+
+    assert events == [
+        "runtime-enter",
+        "poll-start",
+        "poll-cancel",
+        "poll-joined",
+        "runtime-exit",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_loop_process_boundary_propagates_unexpected_application_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    class FailingRuntime:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            events.append("runtime-init")
+
+        async def __aenter__(self) -> FailingRuntime:
+            events.append("runtime-enter")
+            return self
+
+        async def __aexit__(
+            self,
+            _exc_type: object,
+            _exc: object,
+            _traceback: object,
+        ) -> None:
+            events.append("runtime-exit")
+
+        async def run_once(self) -> MarketOperationSnapshot | None:
+            events.append("poll")
+            raise RuntimeError("synthetic worker failure")
+
+    @contextmanager
+    def fake_signals(
+        _runner: runtime_module.MarketOperationContinuousRunner,
+    ) -> object:
+        events.append("signals-enter")
+        try:
+            yield
+        finally:
+            events.append("signals-exit")
+
+    monkeypatch.setattr(runtime_module, "MarketOperationWorkerRuntime", FailingRuntime)
+    monkeypatch.setattr(runtime_module, "_market_operation_shutdown_signals", fake_signals)
+
+    with pytest.raises(RuntimeError, match="synthetic worker failure"):
+        await runtime_module.run_market_operation_worker_loop(
+            _settings(tmp_path),
+            interval_seconds=1,
+        )
+
+    assert events == [
+        "runtime-init",
+        "signals-enter",
+        "runtime-enter",
+        "poll",
+        "runtime-exit",
+        "signals-exit",
+    ]

@@ -13,6 +13,7 @@ import pytest
 
 from app.database import Database
 from app.market_data.catalog import ChunkCommitReceipt, ChunkOperationContext
+from app.market_data.domain import CandleBatch, DataRange, Instrument, Timeframe
 from app.market_data.errors import (
     InvalidOperationLeaseError,
     MarketJobNotFoundError,
@@ -285,6 +286,10 @@ class FakeExecutor:
         repository: TerminalRepository | None = None,
         control_request: MarketOperationState | None = None,
         clock: TickClock | None = None,
+        started: asyncio.Event | None = None,
+        blocker: asyncio.Event | None = None,
+        cancellation_started: asyncio.Event | None = None,
+        cancellation_blocker: asyncio.Event | None = None,
     ) -> None:
         self.jobs = jobs
         self.terminal_record = terminal_record
@@ -293,6 +298,10 @@ class FakeExecutor:
         self.repository = repository
         self.control_request = control_request
         self.clock = clock
+        self.started = started
+        self.blocker = blocker
+        self.cancellation_started = cancellation_started
+        self.cancellation_blocker = cancellation_blocker
         self.run_calls = 0
         self.resume_calls = 0
         self.cancelled = False
@@ -325,11 +334,20 @@ class FakeExecutor:
 
     async def _execute(self) -> BackfillResult:
         try:
-            if self.delay_seconds:
+            if self.started is not None:
+                self.started.set()
+            if self.blocker is not None:
+                await self.blocker.wait()
+            elif self.delay_seconds:
                 await asyncio.sleep(self.delay_seconds)
         except asyncio.CancelledError:
             self.cancelled = True
-            await asyncio.sleep(0)
+            if self.cancellation_started is not None:
+                self.cancellation_started.set()
+            if self.cancellation_blocker is not None:
+                await self.cancellation_blocker.wait()
+            else:
+                await asyncio.sleep(0)
             self.cancel_awaited = True
             raise
 
@@ -2146,3 +2164,257 @@ async def test_recovered_execution_lease_loss_cancels_and_awaits_executor() -> N
     assert repository.operation.state is MarketOperationState.RUNNING
     assert repository.complete_calls == 0
     assert repository.fail_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_parent_cancellation_joins_executor_and_sleeping_heartbeat() -> None:
+    source = _source_plan()
+    operation = _operation_for_plan(source)
+    clock = TickClock(NOW)
+    repository = TerminalRepository(operation)
+    jobs = FakeJobs()
+    execution_started = asyncio.Event()
+    execution_blocker = asyncio.Event()
+    cancellation_started = asyncio.Event()
+    cancellation_blocker = asyncio.Event()
+    executor = FakeExecutor(
+        jobs=jobs,
+        terminal_record=_record(operation, MarketJobStatus.COMPLETED),
+        started=execution_started,
+        blocker=execution_blocker,
+        cancellation_started=cancellation_started,
+        cancellation_blocker=cancellation_blocker,
+    )
+    worker = _worker(
+        operation=operation,
+        repository=repository,
+        jobs=jobs,
+        executor=executor,
+        history=FakeHistory(_receipt(operation)),
+        clock=clock,
+    )
+    parent = asyncio.create_task(worker.run_once())
+
+    await asyncio.wait_for(execution_started.wait(), timeout=1)
+    owned_names = {
+        task.get_name()
+        for task in asyncio.all_tasks()
+        if not task.done() and task is not asyncio.current_task()
+    }
+    assert f"market-operation-executor:{OPERATION_ID}" in owned_names
+    assert f"market-operation-heartbeat:{OPERATION_ID}" in owned_names
+
+    parent.cancel()
+    await asyncio.wait_for(cancellation_started.wait(), timeout=1)
+    parent.cancel()
+    cancellation_blocker.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(parent, timeout=1)
+
+    assert executor.cancelled
+    assert executor.cancel_awaited
+    assert repository.operation is not None
+    assert repository.operation.state is MarketOperationState.RUNNING
+    assert repository.complete_calls == 0
+    assert repository.fail_calls == 0
+    assert not any(
+        task.get_name().startswith("market-operation-") and not task.done()
+        for task in asyncio.all_tasks()
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("executor_error", (None, MarketRateLimitError()))
+async def test_executor_completion_or_error_always_joins_heartbeat(
+    executor_error: Exception | None,
+) -> None:
+    source = _source_plan()
+    operation = _operation_for_plan(source)
+    clock = TickClock(NOW)
+    repository = TerminalRepository(operation)
+    jobs = FakeJobs()
+    executor = FakeExecutor(
+        jobs=jobs,
+        terminal_record=(
+            _record(operation, MarketJobStatus.COMPLETED) if executor_error is None else None
+        ),
+        error=executor_error,
+    )
+
+    result = await _worker(
+        operation=operation,
+        repository=repository,
+        jobs=jobs,
+        executor=executor,
+        history=FakeHistory(_receipt(operation)),
+        clock=clock,
+    ).run_once()
+
+    assert result is not None
+    assert result.state is (
+        MarketOperationState.COMPLETED if executor_error is None else MarketOperationState.FAILED
+    )
+    assert not any(
+        task.get_name().startswith("market-operation-") and not task.done()
+        for task in asyncio.all_tasks()
+    )
+
+
+@pytest.mark.asyncio
+async def test_simultaneous_executor_completion_and_heartbeat_loss_prefers_ownership(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source_plan()
+    operation = _operation_for_plan(source)
+    clock = TickClock(NOW)
+    repository = TerminalRepository(operation)
+    jobs = FakeJobs()
+    execution_started = asyncio.Event()
+    heartbeat_started = asyncio.Event()
+    release = asyncio.Event()
+    executor = FakeExecutor(
+        jobs=jobs,
+        terminal_record=_record(operation, MarketJobStatus.COMPLETED),
+        started=execution_started,
+        blocker=release,
+    )
+    worker = _worker(
+        operation=operation,
+        repository=repository,
+        jobs=jobs,
+        executor=executor,
+        history=FakeHistory(_receipt(operation)),
+        clock=clock,
+    )
+
+    async def failing_heartbeat(
+        _observer: object,
+        _stop: asyncio.Event,
+    ) -> None:
+        heartbeat_started.set()
+        await release.wait()
+        raise InvalidOperationLeaseError()
+
+    monkeypatch.setattr(worker, "_heartbeat_loop", failing_heartbeat)
+    parent = asyncio.create_task(worker.run_once())
+
+    await asyncio.wait_for(execution_started.wait(), timeout=1)
+    await asyncio.wait_for(heartbeat_started.wait(), timeout=1)
+    release.set()
+
+    with pytest.raises(InvalidOperationLeaseError):
+        await asyncio.wait_for(parent, timeout=1)
+
+    assert repository.operation is not None
+    assert repository.operation.state is MarketOperationState.RUNNING
+    assert repository.complete_calls == 0
+    assert repository.fail_calls == 0
+    assert not any(
+        task.get_name().startswith("market-operation-") and not task.done()
+        for task in asyncio.all_tasks()
+    )
+
+
+@pytest.mark.asyncio
+async def test_shutdown_cancellation_composes_with_abandoned_job_and_c1_recovery(
+    tmp_path: Path,
+) -> None:
+    class AsyncBlockingRangeAdapter(RangeAdapter):
+        def __init__(self, started: asyncio.Event, release: asyncio.Event) -> None:
+            super().__init__()
+            self._started = started
+            self._release = release
+
+        async def fetch_candles(
+            self,
+            instrument: Instrument,
+            timeframe: Timeframe,
+            data_range: DataRange,
+            *,
+            max_candles: int,
+        ) -> CandleBatch:
+            self._started.set()
+            await self._release.wait()
+            return await super().fetch_candles(
+                instrument,
+                timeframe,
+                data_range,
+                max_candles=max_candles,
+            )
+
+    source = _source_plan()
+    local_plan = replace(source, job_id=str(OPERATION_ID))
+    operation = _operation_for_plan(source)
+    clock = TickClock(NOW)
+    repository = TerminalRepository(operation)
+    jobs = MarketJobCatalog(tmp_path, clock=clock)
+    fetch_started = asyncio.Event()
+    fetch_release = asyncio.Event()
+    history = _service(
+        tmp_path,
+        AsyncBlockingRangeAdapter(fetch_started, fetch_release),
+    )
+    executor = BackfillExecutor(
+        history=history,
+        jobs=jobs,
+        data_dir=tmp_path,
+        lock_timeout_seconds=0,
+        lock_stale_after_seconds=60,
+    )
+    worker = MarketOperationWorker(
+        session=_session(repository, clock),
+        planner=cast(MarketDataPlanner, StaticPlanner(source)),
+        executor=executor,
+        jobs=jobs,
+        history=history,
+        clock=clock,
+        heartbeat_interval_seconds=60,
+    )
+    parent = asyncio.create_task(worker.run_once())
+
+    await asyncio.wait_for(fetch_started.wait(), timeout=1)
+    parent.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(parent, timeout=1)
+
+    interrupted = jobs.get(local_plan.job_id)
+    assert interrupted.status is MarketJobStatus.RUNNING
+    assert repository.operation is not None
+    assert repository.operation.state is MarketOperationState.RUNNING
+    assert repository.complete_calls == 0
+    assert repository.fail_calls == 0
+
+    claim = _recovery_claim(
+        source,
+        recovered_from=MarketOperationState.RUNNING,
+        bind_local=True,
+    )
+    recovery_repository = TerminalRepository(
+        claim.operation,
+        recovery_claim=claim,
+    )
+    recovery_history = _service(tmp_path, RangeAdapter())
+    recovery_worker = MarketOperationWorker(
+        session=_session(recovery_repository, clock),
+        planner=cast(MarketDataPlanner, StaticPlanner(source)),
+        executor=BackfillExecutor(
+            history=recovery_history,
+            jobs=jobs,
+            data_dir=tmp_path,
+            lock_timeout_seconds=0,
+            lock_stale_after_seconds=60,
+        ),
+        jobs=jobs,
+        history=recovery_history,
+        clock=clock,
+        heartbeat_interval_seconds=60,
+    )
+
+    recovered = await recovery_worker.run_once()
+
+    assert recovered is not None
+    assert recovered.state is MarketOperationState.COMPLETED
+    assert jobs.get(local_plan.job_id).status is MarketJobStatus.COMPLETED
+    assert recovery_repository.complete_calls == 1
+    assert recovery_repository.fail_calls == 0
