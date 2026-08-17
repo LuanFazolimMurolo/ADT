@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -118,6 +118,33 @@ def expected_candle_count(data_range: DataRange, timeframe: Timeframe) -> int:
     if count < 1 or data_range.start + count * timeframe.duration != data_range.end:
         raise InvalidDataRangeError()
     return count
+
+
+def find_gap_ranges(
+    observed_open_times: Iterable[datetime],
+    timeframe: Timeframe,
+    data_range: DataRange,
+) -> tuple[DataRange, ...]:
+    """Return canonical missing-candle ranges inside one half-open interval."""
+    expected_candle_count(data_range, timeframe)
+    observed = set(observed_open_times)
+
+    gaps: list[DataRange] = []
+    cursor = data_range.start
+    gap_start: datetime | None = None
+
+    while cursor < data_range.end:
+        if cursor not in observed and gap_start is None:
+            gap_start = cursor
+        if cursor in observed and gap_start is not None:
+            gaps.append(DataRange(gap_start, cursor))
+            gap_start = None
+        cursor += timeframe.duration
+
+    if gap_start is not None:
+        gaps.append(DataRange(gap_start, data_range.end))
+
+    return tuple(gaps)
 
 
 class MarketDataPlanner:
@@ -257,19 +284,13 @@ class MarketDataPlanner:
             timeframe,
             data_range,
         )
-        observed = {candle.open_time for candle in rows}
-        gaps: list[DataRange] = []
-        cursor = data_range.start
-        gap_start: datetime | None = None
-        while cursor < data_range.end:
-            if cursor not in observed and gap_start is None:
-                gap_start = cursor
-            if cursor in observed and gap_start is not None:
-                gaps.append(DataRange(gap_start, cursor))
-                gap_start = None
-            cursor += timeframe.duration
-        if gap_start is not None:
-            gaps.append(DataRange(gap_start, data_range.end))
+        gaps = list(
+            find_gap_ranges(
+                (candle.open_time for candle in rows),
+                timeframe,
+                data_range,
+            )
+        )
         key = (
             f"{instrument.exchange.value}:{instrument.market_type.value}:"
             f"{instrument.symbol}:{timeframe.code}"

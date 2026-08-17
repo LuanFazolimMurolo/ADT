@@ -140,6 +140,13 @@ class InvalidRawDatasetQueryError(InvalidDomainInputError):
     default_message = "A consulta de datasets RAW é inválida."
 
 
+class InvalidRawGapQueryError(InvalidDomainInputError):
+    """A bounded read-only RAW gap inspection query is invalid."""
+
+    code = "invalid_raw_gap_query"
+    default_message = "A consulta de gaps do dataset RAW é inválida."
+
+
 class RawDatasetNotFoundError(ResourceNotFoundError):
     """The requested transactionally cataloged RAW dataset does not exist."""
 
