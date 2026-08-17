@@ -283,7 +283,7 @@ durability and dataset contracts established in Phases 2A–2C.
 - [x] Plan RAW backfill
 - [x] Submit RAW backfill with explicit idempotency key
 - [x] Submit RAW incremental update
-- [ ] List and inspect RAW datasets
+- [x] List and inspect RAW datasets
 - [ ] Read RAW gaps and quality
 - [x] List and inspect operations
 - [x] Pause, resume and cancel cooperatively

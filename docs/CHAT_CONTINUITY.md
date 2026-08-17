@@ -18,10 +18,11 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Last completed track
 
-**7-02 — Market Operation Administrative Console — CLOSED**
+**7-03 — Persisted RAW Dataset Inspection — CLOSED**
 
-Formal closure is supported by the accepted 7-02 Semantic Gate 2 + Full Local
-validation and protected staged audit.
+Formal closure is supported by the accepted backend and frontend gates,
+independent remote verification, full repository regressions and the final
+structural/safety closure audit.
 
 The previous control-plane foundation delivery remains closed:
 
@@ -32,7 +33,7 @@ The previous control-plane foundation delivery remains closed:
 
 ## Last validated code milestone
 
-`b7b2e2f258fe788d7c97bb09875a709058f4eec5`
+`1445c074e5c02aebb6ef82cbf74acda8df06b286`
 
 ## 7-02 closure evidence
 
@@ -96,60 +97,54 @@ The previous control-plane foundation delivery remains closed:
 - Production deployment
 - Automated real-capital trading
 
+## 7-03 closure evidence
+
+- Starting baseline:
+  `673b5d8c233b1f232e85636e9e03ff4bbe62395f`
+- Bootstrap milestone:
+  `4b39a0d6fe00709c1973e702fec23f9dbdd9d428`
+- Backend implementation milestone:
+  `ad8e5c08d940e75baea1cc57f8595bd5f58a7d8e`
+- Frontend implementation milestone:
+  `1445c074e5c02aebb6ef82cbf74acda8df06b286`
+- Frontend protected staged patch SHA256:
+  `50d1df06190dd6d3e361a9613f37df157af02564c10f97edb966d69dfced23bb`
+- Remote branch verified at the same frontend implementation milestone
+- Branch remained exactly 3 commits ahead and 0 behind starting `main`
+- Backend Ruff: PASS
+- Backend format: PASS
+- Backend MyPy strict: PASS in 211 source files
+- Full backend: 2432 passed, 1 skipped
+- Backend coverage: 87%
+- Backend pip check: PASS
+- Frontend OpenAPI freshness: PASS
+- Frontend typecheck and lint: PASS
+- Full frontend Vitest: 28 files, 214 passed
+- Production build and bundle budget: PASS
+- Frontend E2E typecheck: PASS
+- Full Playwright: 50 passed
+- No migration or dependency changes
+- No RAW mutation method was added to the frontend
+- No `ADT_DATA_DIR`, filesystem path or manifest `relative_path` is exposed
+  through the browser/API contract
+- Internal manifest `relative_path` remains used only for backend integrity
+  verification
+- No gap scan, quality scan, repair, ingestion or Binance/network execution
+  occurs in the inspection HTTP path
+- Working tree clean after implementation checkpoints
+- No unresolved 7-03 blocker
+
 ## Current delivery
 
-**7-03 — Persisted RAW Dataset Inspection — ACTIVE**
+**7-04 — RAW Gap & Quality Inspection — PLANNED**
 
-Starting baseline:
-`673b5d8c233b1f232e85636e9e03ff4bbe62395f`.
+7-03 is closed. The next remaining approved Phase 2D read-only administration
+boundary is RAW gap and quality inspection. Its exact contract must be opened
+with a dedicated bootstrap before production implementation begins.
 
-No 7-03 production implementation has been committed yet.
-
-**Approved objective**: Provide authenticated administrators with a bounded,
-read-only browser projection of locally cataloged RAW market-data datasets
-without exposing filesystem layout and without executing scans, repairs,
-ingestion or other long-running work inside HTTP requests.
-
-**In scope**:
-
-- list locally cataloged RAW datasets through a bounded administrative API;
-- inspect one RAW dataset through its backend-owned canonical `dataset_id`;
-- expose canonical exchange, market type, symbol and timeframe identity;
-- expose persisted first/last open time, candle count, dataset version,
-  version algorithm and catalog update time;
-- expose only a sanitized integrity-manifest summary, such as presence/schema
-  and partition count, without partition paths;
-- deterministic ordering, bounded pagination and useful administrative filters;
-- generated frontend API contracts and typed client methods;
-- protected administrator navigation and a read-only dataset list/detail UI;
-- accessibility, responsive behavior and deterministic local tests.
-
-**Safety contract**:
-
-- never expose `location`, filesystem paths or manifest `relative_path`;
-- never expose local `ADT_DATA_DIR`;
-- never perform Binance/network access for dataset inspection;
-- never run gap discovery, quality scanning, repair or ingestion;
-- never mutate Parquet, the local catalog or PostgreSQL;
-- reuse backend-owned dataset identity encoding rather than reproducing it in
-  the browser;
-- retain the existing RAW catalog, transaction, locking and candle contracts as
-  authoritative.
-
-**Expected migration**: NO.
-
-**Explicitly out of scope**:
-
-- RAW gap discovery or repair;
-- advanced quality scans or quality-baseline management;
-- DERIVED datasets and snapshots;
-- operation submission or lifecycle controls already owned by 7-02;
-- worker-global health, presence and operational events;
-- collector and paper-runner lifecycle control;
-- administrator mandates and paper-session creation;
-- capital-ledger integration and the ADT Official Portfolio;
-- machine learning, Telegram, SaaS and deployment; and
-- real-capital execution.
+The next delivery must preserve the 7-03 read-only dataset-inspection boundary
+and must not turn a browser request into repair, ingestion or other long-running
+market-data work.
 
 ## Important repository and process constraints
 
