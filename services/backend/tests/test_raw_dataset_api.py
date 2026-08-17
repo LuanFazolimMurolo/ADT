@@ -358,6 +358,8 @@ def test_http_boundary_contains_only_get_routes() -> None:
     assert set(routes) == {
         "/api/v1/admin/market-data/datasets",
         "/api/v1/admin/market-data/datasets/{dataset_id}",
+        "/api/v1/admin/market-data/datasets/{dataset_id}/gaps",
+        "/api/v1/admin/market-data/datasets/{dataset_id}/quality",
     }
 
     assert all(route.methods == {"GET"} for route in routes.values())

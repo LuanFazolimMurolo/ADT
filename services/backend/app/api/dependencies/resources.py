@@ -10,6 +10,8 @@ from app.market_data.asset_catalog import AssetMarketService
 from app.market_data.candle_query import LocalMarketCandleReadService
 from app.market_data.continuous import ContinuousCollectionStateStore
 from app.market_data.raw_dataset_query import LocalRawDatasetReadService
+from app.market_data.raw_gap_query import LocalRawGapReadService
+from app.market_data.raw_quality_query import LocalRawQualityReadService
 from app.paper_trading.chart_annotations import PaperChartAnnotationReadService
 from app.paper_trading.continuous import PaperRunnerStateStore
 from app.paper_trading.dashboard import PaperDashboardReadService
@@ -62,6 +64,24 @@ def get_raw_dataset_read_service(request: Request) -> LocalRawDatasetReadService
     return cast(
         LocalRawDatasetReadService,
         request.app.state.raw_dataset_read_service,
+    )
+
+
+def get_raw_gap_read_service(request: Request) -> LocalRawGapReadService:
+    """Return the application-owned bounded RAW gap reader."""
+    return cast(
+        LocalRawGapReadService,
+        request.app.state.raw_gap_read_service,
+    )
+
+
+def get_raw_quality_read_service(
+    request: Request,
+) -> LocalRawQualityReadService:
+    """Return the application-owned persisted RAW quality reader."""
+    return cast(
+        LocalRawQualityReadService,
+        request.app.state.raw_quality_read_service,
     )
 
 

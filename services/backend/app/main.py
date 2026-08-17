@@ -52,6 +52,8 @@ from app.market_data.locks import DatasetLockManager
 from app.market_data.planning import MarketDataPlanner
 from app.market_data.quality import MarketDataQualityValidator
 from app.market_data.raw_dataset_query import LocalRawDatasetReadService
+from app.market_data.raw_gap_query import LocalRawGapReadService
+from app.market_data.raw_quality_query import LocalRawQualityReadService
 from app.market_data.services import HistoricalMarketDataService
 from app.market_data.storage import ParquetCandleStore
 from app.market_data.transaction import MarketDataTransactionCoordinator
@@ -172,9 +174,21 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
                 stale_after_seconds=app_settings.market_job_stale_after,
                 clock=market_operation_clock,
             )
-            application.state.raw_dataset_read_service = LocalRawDatasetReadService(
+            raw_dataset_read_service = LocalRawDatasetReadService(
                 market_operation_catalog,
                 lock_timeout_seconds=app_settings.market_job_lock_timeout,
+            )
+            application.state.raw_dataset_read_service = raw_dataset_read_service
+            application.state.raw_gap_read_service = LocalRawGapReadService(
+                dataset_reader=raw_dataset_read_service,
+                store=market_operation_store,
+                lock_manager=market_operation_lock_manager,
+            )
+            application.state.raw_quality_read_service = LocalRawQualityReadService(
+                dataset_reader=raw_dataset_read_service,
+                lock_manager=market_operation_lock_manager,
+                root=market_operation_store.root,
+                manifest_schema_version=app_settings.market_manifest_schema_version,
             )
             market_operation_coordinator = MarketDataTransactionCoordinator(
                 market_operation_store,
