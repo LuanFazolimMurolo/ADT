@@ -14,7 +14,11 @@ from hashlib import sha256
 from pathlib import Path
 from typing import TextIO
 
-from app.market_data.errors import MarketDataInconsistencyError, MarketJobLockTimeoutError
+from app.market_data.errors import (
+    MarketDataInconsistencyError,
+    MarketDataSnapshotBusyError,
+    MarketJobLockTimeoutError,
+)
 from app.market_data.filesystem import ensure_safe_path, market_root
 
 Clock = Callable[[], datetime]
@@ -50,7 +54,7 @@ class DatasetLease:
 
 
 class DatasetLockManager:
-    """Create exclusive leases whose kernel flock is the authority."""
+    """Coordinate exclusive writers and bounded shared snapshot readers."""
 
     def __init__(
         self,
@@ -73,8 +77,7 @@ class DatasetLockManager:
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def acquire(self, dataset_key: str) -> DatasetLease:
-        digest = sha256(dataset_key.encode()).hexdigest()
-        path = ensure_safe_path(self._root, self._root / ".locks" / f"{digest}.lock")
+        path = self._lock_path(dataset_key)
         path.parent.mkdir(parents=True, exist_ok=True)
         deadline = time.monotonic() + self._timeout
         stream = path.open("a+", encoding="utf-8")
@@ -110,6 +113,42 @@ class DatasetLockManager:
                 "Os metadados do lock não puderam ser persistidos."
             ) from None
         return DatasetLease(self._root, dataset_key, stream)
+
+    @contextmanager
+    def snapshot(self, dataset_key: str) -> Iterator[None]:
+        """Hold a bounded shared dataset lock without changing writer metadata."""
+        path = self._lock_path(dataset_key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        deadline = time.monotonic() + self._timeout
+        stream = path.open("a+", encoding="utf-8")
+        while True:
+            try:
+                fcntl.flock(
+                    stream.fileno(),
+                    fcntl.LOCK_SH | fcntl.LOCK_NB,
+                )
+                break
+            except BlockingIOError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    stream.close()
+                    raise MarketDataSnapshotBusyError() from None
+                time.sleep(min(0.01, remaining))
+
+        try:
+            yield
+        finally:
+            try:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+            finally:
+                stream.close()
+
+    def _lock_path(self, dataset_key: str) -> Path:
+        digest = sha256(dataset_key.encode()).hexdigest()
+        return ensure_safe_path(
+            self._root,
+            self._root / ".locks" / f"{digest}.lock",
+        )
 
     def validate(self, lease: DatasetLease, dataset_key: str) -> None:
         lease.validate(self._root, dataset_key)

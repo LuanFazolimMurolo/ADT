@@ -109,6 +109,14 @@ class MarketDataCatalogBusyError(MarketDataError):
     status_code = 503
 
 
+class MarketDataSnapshotBusyError(MarketDataError):
+    """A local dataset could not provide a bounded read snapshot in time."""
+
+    code = "market_data_snapshot_busy"
+    default_message = "O dataset local de mercado está temporariamente ocupado."
+    status_code = 503
+
+
 class ContinuousCollectionStateNotFoundError(MarketDataError):
     """No continuous collection cycle has been published yet."""
 
