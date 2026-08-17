@@ -11,6 +11,8 @@ import { RawDatasetsPage } from "./RawDatasetsPage";
 const mocks = vi.hoisted(() => ({
   listRawDatasets: vi.fn(),
   getRawDataset: vi.fn(),
+  getRawDatasetGaps: vi.fn(),
+  getRawDatasetQuality: vi.fn(),
 }));
 
 vi.mock("../../http/client", () => ({
@@ -44,6 +46,8 @@ const dataset = {
 beforeEach(() => {
   mocks.listRawDatasets.mockReset();
   mocks.getRawDataset.mockReset();
+  mocks.getRawDatasetGaps.mockReset();
+  mocks.getRawDatasetQuality.mockReset();
 
   mocks.listRawDatasets.mockResolvedValue({
     items: [dataset],
@@ -54,6 +58,79 @@ beforeEach(() => {
   });
 
   mocks.getRawDataset.mockResolvedValue(dataset);
+
+  mocks.getRawDatasetQuality.mockResolvedValue({
+    dataset_id: dataset.dataset_id,
+    exchange: dataset.exchange,
+    market_type: dataset.market_type,
+    symbol: dataset.symbol,
+    timeframe: dataset.timeframe,
+    status: "CURRENT",
+    dataset_version: dataset.version,
+    version_algorithm: dataset.version_algorithm,
+    baseline_dataset_version: dataset.version,
+    baseline_version_algorithm: dataset.version_algorithm,
+    scanner_schema_version: 2,
+    scanner_version: "phase2c-3",
+    coverage: {
+      expected_count: 3,
+      observed_count: 2,
+      internal_gap_count: 1,
+      missing_at_start: 0,
+      missing_at_end: 0,
+    },
+    partition_count: 1,
+    issue_totals: {
+      total: 1,
+      errors: 1,
+      warnings: 0,
+      other: 0,
+    },
+    issues: [
+      {
+        code: "gap",
+        severity: "ERROR",
+        category: "COVERAGE",
+        open_time: "2026-08-01T01:00:00Z",
+      },
+    ],
+  });
+
+  mocks.getRawDatasetGaps.mockImplementation(
+    async (
+      _datasetId: string,
+      query: {
+        start: string;
+        end: string;
+        page?: number;
+        pageSize?: number;
+      },
+    ) => ({
+      dataset_id: dataset.dataset_id,
+      exchange: dataset.exchange,
+      market_type: dataset.market_type,
+      symbol: dataset.symbol,
+      timeframe: dataset.timeframe,
+      dataset_version: dataset.version,
+      version_algorithm: dataset.version_algorithm,
+      checked_start: query.start,
+      checked_end: query.end,
+      expected_candles: 3,
+      observed_candles: 2,
+      missing_candles: 1,
+      total_gap_count: 26,
+      page: query.page ?? 1,
+      page_size: query.pageSize ?? 25,
+      total_pages: 2,
+      items: [
+        {
+          start: "2026-08-01T01:00:00Z",
+          end: "2026-08-01T02:00:00Z",
+          missing_candles: 1,
+        },
+      ],
+    }),
+  );
 });
 
 describe("RawDatasetsPage", () => {
@@ -164,6 +241,118 @@ describe("RawDatasetsPage", () => {
     );
 
     expect(detailSection?.textContent).toContain("abc_DEF-123");
+  });
+
+
+  it("carrega quality persistida pelo dataset_id sem expor storage", async () => {
+    render(<RawDatasetsPage />);
+
+    const inspectButton = await screen.findByRole("button", {
+      name: "Inspecionar dataset BTC/USDT 1h",
+    });
+
+    await act(async () => {
+      fireEvent.click(inspectButton);
+    });
+
+    await waitFor(() =>
+      expect(mocks.getRawDatasetQuality).toHaveBeenCalledWith("abc_DEF-123"),
+    );
+
+    expect(await screen.findByText("CURRENT")).toBeDefined();
+    expect(screen.getByText("phase2c-3")).toBeDefined();
+    expect(screen.getByText("gap")).toBeDefined();
+
+    const body = document.body.textContent ?? "";
+
+    expect(body).not.toContain("relative_path");
+    expect(body).not.toContain("quality-baselines/");
+    expect(body).not.toContain("candles.parquet");
+    expect(body).not.toContain("baseline_path");
+  });
+
+  it("consulta gaps com intervalo UTC explícito e paginação bounded", async () => {
+    render(<RawDatasetsPage />);
+
+    const inspectButton = await screen.findByRole("button", {
+      name: "Inspecionar dataset BTC/USDT 1h",
+    });
+
+    await act(async () => {
+      fireEvent.click(inspectButton);
+    });
+
+    fireEvent.change(screen.getByLabelText("Início UTC"), {
+      target: { value: "2026-08-01T00:00:00Z" },
+    });
+    fireEvent.change(screen.getByLabelText("Fim UTC"), {
+      target: { value: "2026-08-01T03:00:00Z" },
+    });
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Consultar gaps" }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(mocks.getRawDatasetGaps).toHaveBeenLastCalledWith(
+        "abc_DEF-123",
+        {
+          start: "2026-08-01T00:00:00Z",
+          end: "2026-08-01T03:00:00Z",
+          page: 1,
+          pageSize: 25,
+        },
+      ),
+    );
+
+    expect(await screen.findByText("Página 1 de 2")).toBeDefined();
+
+    const gapPagination = screen
+      .getByLabelText("Paginação de gaps RAW");
+
+    await act(async () => {
+      fireEvent.click(
+        gapPagination.querySelectorAll("button")[1] as HTMLButtonElement,
+      );
+    });
+
+    await waitFor(() =>
+      expect(mocks.getRawDatasetGaps).toHaveBeenLastCalledWith(
+        "abc_DEF-123",
+        {
+          start: "2026-08-01T00:00:00Z",
+          end: "2026-08-01T03:00:00Z",
+          page: 2,
+          pageSize: 25,
+        },
+      ),
+    );
+  });
+
+  it("não oferece scan, repair, backfill ou mutação na inspeção RAW", async () => {
+    render(<RawDatasetsPage />);
+
+    const inspectButton = await screen.findByRole("button", {
+      name: "Inspecionar dataset BTC/USDT 1h",
+    });
+
+    await act(async () => {
+      fireEvent.click(inspectButton);
+    });
+
+    await screen.findByText("Quality persistida");
+
+    expect(
+      screen.queryByRole("button", { name: /scan/i }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /repair/i }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /backfill/i }),
+    ).toBeNull();
   });
 
   it("renderiza estado vazio sem inventar datasets", async () => {

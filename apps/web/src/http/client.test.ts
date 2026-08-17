@@ -774,4 +774,112 @@ describe("ApiClient", () => {
     expect(options?.body).toBeUndefined();
     expect(headers.get("Authorization")).toBe("Bearer token");
   });
+
+  it("consulta gaps RAW bounded por GET sem mutação", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        dataset_id: "abc_DEF-123",
+        exchange: "binance",
+        market_type: "spot",
+        symbol: "BTC/USDT",
+        timeframe: "1h",
+        dataset_version: "a".repeat(64),
+        version_algorithm: "raw-partition-canonical-sha256-v1",
+        checked_start: "2026-08-01T00:00:00Z",
+        checked_end: "2026-08-02T00:00:00Z",
+        expected_candles: 24,
+        observed_candles: 23,
+        missing_candles: 1,
+        total_gap_count: 1,
+        page: 2,
+        page_size: 100,
+        total_pages: 2,
+        items: [],
+      }),
+    );
+
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    await client.getRawDatasetGaps("abc_DEF-123", {
+      start: "2026-08-01T00:00:00Z",
+      end: "2026-08-02T00:00:00Z",
+      page: 2,
+      pageSize: 100,
+    });
+
+    const requestedUrl = new URL(fetchMock.mock.calls[0]?.[0] as string);
+
+    expect(requestedUrl.pathname).toBe(
+      "/api/v1/admin/market-data/datasets/abc_DEF-123/gaps",
+    );
+    expect(requestedUrl.searchParams.get("start")).toBe(
+      "2026-08-01T00:00:00Z",
+    );
+    expect(requestedUrl.searchParams.get("end")).toBe(
+      "2026-08-02T00:00:00Z",
+    );
+    expect(requestedUrl.searchParams.get("page")).toBe("2");
+    expect(requestedUrl.searchParams.get("page_size")).toBe("100");
+
+    const options = fetchMock.mock.calls[0]?.[1];
+    const headers = options?.headers as Headers;
+
+    expect(options?.method).not.toBe("POST");
+    expect(options?.method).not.toBe("PATCH");
+    expect(options?.body).toBeUndefined();
+    expect(headers.get("Authorization")).toBe("Bearer token");
+  });
+
+  it("consulta quality RAW persistida por GET sem scan ou mutação", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        dataset_id: "abc_DEF-123",
+        exchange: "binance",
+        market_type: "spot",
+        symbol: "BTC/USDT",
+        timeframe: "1h",
+        status: "CURRENT",
+        dataset_version: "a".repeat(64),
+        version_algorithm: "raw-partition-canonical-sha256-v1",
+        baseline_dataset_version: "a".repeat(64),
+        baseline_version_algorithm: "raw-partition-canonical-sha256-v1",
+        scanner_schema_version: 2,
+        scanner_version: "phase2c-3",
+        coverage: null,
+        partition_count: 1,
+        issue_totals: null,
+        issues: [],
+      }),
+    );
+
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    const result = await client.getRawDatasetQuality("abc_DEF-123");
+
+    expect(result.status).toBe("CURRENT");
+
+    const requestedUrl = new URL(fetchMock.mock.calls[0]?.[0] as string);
+
+    expect(requestedUrl.pathname).toBe(
+      "/api/v1/admin/market-data/datasets/abc_DEF-123/quality",
+    );
+    expect(requestedUrl.search).toBe("");
+
+    const options = fetchMock.mock.calls[0]?.[1];
+    const headers = options?.headers as Headers;
+
+    expect(options?.method).not.toBe("POST");
+    expect(options?.method).not.toBe("PATCH");
+    expect(options?.body).toBeUndefined();
+    expect(headers.get("Authorization")).toBe("Bearer token");
+  });
+
 });

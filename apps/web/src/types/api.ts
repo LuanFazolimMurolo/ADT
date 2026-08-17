@@ -100,6 +100,16 @@ export type RawDatasetIntegrityResponse =
   ApiSchemas["RawDatasetIntegrityResponse"];
 export type RawDatasetResponse = ApiSchemas["RawDatasetResponse"];
 export type RawDatasetPageResponse = ApiSchemas["RawDatasetPageResponse"];
+export type RawGapRangeResponse = ApiSchemas["RawGapRangeResponse"];
+export type RawGapPageResponse = ApiSchemas["RawGapPageResponse"];
+export type RawQualityCoverageResponse =
+  ApiSchemas["RawQualityCoverageResponse"];
+export type RawQualityIssueResponse =
+  ApiSchemas["RawQualityIssueResponse"];
+export type RawQualityIssueTotalsResponse =
+  ApiSchemas["RawQualityIssueTotalsResponse"];
+export type RawQualityResponse = ApiSchemas["RawQualityResponse"];
+export type RawQualityStatus = RawQualityResponse["status"];
 export type PaperChartAnnotationPageResponse =
   ApiSchemas["PaperChartAnnotationPageResponse"];
 export type PaperChartOrderAnnotation =

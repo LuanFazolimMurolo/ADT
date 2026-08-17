@@ -72,6 +72,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/market-data/datasets/{dataset_id}/gaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Raw Dataset Gaps
+         * @description Inspect bounded missing-candle ranges in one RAW dataset.
+         */
+        get: operations["get_raw_dataset_gaps_api_v1_admin_market_data_datasets__dataset_id__gaps_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/market-data/datasets/{dataset_id}/quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Raw Dataset Quality
+         * @description Inspect the persisted FULL_DATASET RAW quality baseline.
+         */
+        get: operations["get_raw_dataset_quality_api_v1_admin_market_data_datasets__dataset_id__quality_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/market-data/operations": {
         parameters: {
             query?: never;
@@ -3303,6 +3343,11 @@ export interface components {
             total_profit_loss: string;
         };
         /**
+         * QualityIssueCategory
+         * @enum {string}
+         */
+        QualityIssueCategory: "STRUCTURE" | "CONTENT" | "COVERAGE" | "CATALOG" | "LINEAGE" | "OPERATIONAL_ARTIFACT";
+        /**
          * RawDatasetIntegrityResponse
          * @description Integrity summary that intentionally omits partition paths.
          */
@@ -3370,6 +3415,150 @@ export interface components {
             /** Version Algorithm */
             version_algorithm: string;
         };
+        /**
+         * RawGapPageResponse
+         * @description Bounded deterministic RAW gap inspection response.
+         */
+        RawGapPageResponse: {
+            /**
+             * Checked End
+             * Format: date-time
+             */
+            checked_end: string;
+            /**
+             * Checked Start
+             * Format: date-time
+             */
+            checked_start: string;
+            /** Dataset Id */
+            dataset_id: string;
+            /** Dataset Version */
+            dataset_version: string;
+            exchange: components["schemas"]["Exchange"];
+            /** Expected Candles */
+            expected_candles: number;
+            /** Items */
+            items: components["schemas"]["RawGapRangeResponse"][];
+            market_type: components["schemas"]["MarketType"];
+            /** Missing Candles */
+            missing_candles: number;
+            /** Observed Candles */
+            observed_candles: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Symbol */
+            symbol: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Total Gap Count */
+            total_gap_count: number;
+            /** Total Pages */
+            total_pages: number;
+            /** Version Algorithm */
+            version_algorithm: string;
+        };
+        /**
+         * RawGapRangeResponse
+         * @description One sanitized half-open missing-candle range.
+         */
+        RawGapRangeResponse: {
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** Missing Candles */
+            missing_candles: number;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+        };
+        /**
+         * RawQualityCoverageResponse
+         * @description Sanitized persisted RAW quality coverage counters.
+         */
+        RawQualityCoverageResponse: {
+            /** Expected Count */
+            expected_count: number | null;
+            /** Internal Gap Count */
+            internal_gap_count: number;
+            /** Missing At End */
+            missing_at_end: number;
+            /** Missing At Start */
+            missing_at_start: number;
+            /** Observed Count */
+            observed_count: number;
+        };
+        /**
+         * RawQualityIssueResponse
+         * @description Sanitized quality issue without partition identifiers.
+         */
+        RawQualityIssueResponse: {
+            category: components["schemas"]["QualityIssueCategory"];
+            /** Code */
+            code: string;
+            /** Open Time */
+            open_time: string | null;
+            /** Severity */
+            severity: string;
+        };
+        /**
+         * RawQualityIssueTotalsResponse
+         * @description Aggregate quality issue counters.
+         */
+        RawQualityIssueTotalsResponse: {
+            /** Errors */
+            errors: number;
+            /** Other */
+            other: number;
+            /** Total */
+            total: number;
+            /** Warnings */
+            warnings: number;
+        };
+        /**
+         * RawQualityResponse
+         * @description Persisted RAW quality status without local storage details.
+         */
+        RawQualityResponse: {
+            /** Baseline Dataset Version */
+            baseline_dataset_version: string | null;
+            /** Baseline Version Algorithm */
+            baseline_version_algorithm: string | null;
+            coverage: components["schemas"]["RawQualityCoverageResponse"] | null;
+            /** Dataset Id */
+            dataset_id: string;
+            /** Dataset Version */
+            dataset_version: string;
+            exchange: components["schemas"]["Exchange"];
+            issue_totals: components["schemas"]["RawQualityIssueTotalsResponse"] | null;
+            /** Issues */
+            issues: components["schemas"]["RawQualityIssueResponse"][];
+            market_type: components["schemas"]["MarketType"];
+            /** Partition Count */
+            partition_count: number | null;
+            /** Scanner Schema Version */
+            scanner_schema_version: number | null;
+            /** Scanner Version */
+            scanner_version: string | null;
+            status: components["schemas"]["RawQualityStatus"];
+            /** Symbol */
+            symbol: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Version Algorithm */
+            version_algorithm: string;
+        };
+        /**
+         * RawQualityStatus
+         * @description Persisted quality-baseline freshness relative to the current RAW dataset.
+         * @enum {string}
+         */
+        RawQualityStatus: "CURRENT" | "STALE" | "MISSING" | "INVALID";
         /**
          * SettingPatchRequest
          * @description Only a setting's JSON value is mutable through the API.
@@ -3984,6 +4173,257 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RawDatasetResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_raw_dataset_gaps_api_v1_admin_market_data_datasets__dataset_id__gaps_get: {
+        parameters: {
+            query: {
+                start: string;
+                end: string;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawGapPageResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_raw_dataset_quality_api_v1_admin_market_data_datasets__dataset_id__quality_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawQualityResponse"];
                 };
             };
             /** @description Malformed administrative request. */

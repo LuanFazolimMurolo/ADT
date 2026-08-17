@@ -19,6 +19,8 @@ import type {
   MarketCandlePageResponse,
   RawDatasetPageResponse,
   RawDatasetResponse,
+  RawGapPageResponse,
+  RawQualityResponse,
   IncrementalMarketOperationPlanPreview,
   MarketOperation,
   MarketOperationBackfillPreviewRequest,
@@ -132,6 +134,13 @@ export interface RawDatasetListQuery {
   pageSize?: number;
   symbol?: string;
   timeframe?: string;
+}
+
+export interface RawGapQuery {
+  start: string;
+  end: string;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface MarketOperationTargetQuery {
@@ -431,6 +440,33 @@ export class ApiClient {
   getRawDataset(datasetId: string): Promise<RawDatasetResponse> {
     return this.request(
       `/api/v1/admin/market-data/datasets/${encodeURIComponent(datasetId)}`,
+    );
+  }
+
+  getRawDatasetGaps(
+    datasetId: string,
+    query: RawGapQuery,
+  ): Promise<RawGapPageResponse> {
+    const params = new URLSearchParams({
+      start: query.start,
+      end: query.end,
+    });
+
+    if (query.page !== undefined) {
+      params.set("page", String(query.page));
+    }
+    if (query.pageSize !== undefined) {
+      params.set("page_size", String(query.pageSize));
+    }
+
+    return this.request(
+      `/api/v1/admin/market-data/datasets/${encodeURIComponent(datasetId)}/gaps?${params.toString()}`,
+    );
+  }
+
+  getRawDatasetQuality(datasetId: string): Promise<RawQualityResponse> {
+    return this.request(
+      `/api/v1/admin/market-data/datasets/${encodeURIComponent(datasetId)}/quality`,
     );
   }
 

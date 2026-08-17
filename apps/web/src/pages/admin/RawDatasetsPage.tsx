@@ -10,6 +10,8 @@ import { apiClient } from "../../http/client";
 import type {
   RawDatasetPageResponse,
   RawDatasetResponse,
+  RawGapPageResponse,
+  RawQualityResponse,
 } from "../../types/api";
 import { getErrorMessage } from "../../utils/format";
 
@@ -59,9 +61,21 @@ export function RawDatasetsPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
+  const [quality, setQuality] = useState<RawQualityResponse | null>(null);
+  const [qualityLoading, setQualityLoading] = useState(false);
+  const [qualityError, setQualityError] = useState<string | null>(null);
+
+  const [gapStartInput, setGapStartInput] = useState("");
+  const [gapEndInput, setGapEndInput] = useState("");
+  const [gapData, setGapData] = useState<RawGapPageResponse | null>(null);
+  const [gapLoading, setGapLoading] = useState(false);
+  const [gapError, setGapError] = useState<string | null>(null);
+
   const mountedRef = useRef(true);
   const listSequenceRef = useRef(0);
   const detailSequenceRef = useRef(0);
+  const qualitySequenceRef = useRef(0);
+  const gapSequenceRef = useRef(0);
   const selectedIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -69,6 +83,8 @@ export function RawDatasetsPage() {
       mountedRef.current = false;
       listSequenceRef.current += 1;
       detailSequenceRef.current += 1;
+      qualitySequenceRef.current += 1;
+      gapSequenceRef.current += 1;
     };
   }, []);
 
@@ -97,9 +113,19 @@ export function RawDatasetsPage() {
       ) {
         selectedIdRef.current = null;
         detailSequenceRef.current += 1;
+        qualitySequenceRef.current += 1;
+        gapSequenceRef.current += 1;
         setSelectedId(null);
         setDetail(null);
         setDetailError(null);
+        setQuality(null);
+        setQualityError(null);
+        setQualityLoading(false);
+        setGapData(null);
+        setGapError(null);
+        setGapLoading(false);
+        setGapStartInput("");
+        setGapEndInput("");
       }
     } catch (error) {
       if (!mountedRef.current || sequence !== listSequenceRef.current) return;
@@ -164,25 +190,145 @@ export function RawDatasetsPage() {
     }
   }, []);
 
-  const selectDataset = (dataset: RawDatasetResponse) => {
-    selectedIdRef.current = dataset.dataset_id;
-    detailSequenceRef.current += 1;
+  const loadQuality = useCallback(async (datasetId: string) => {
+    const sequence = ++qualitySequenceRef.current;
+    setQualityLoading(true);
+    setQualityError(null);
 
+    try {
+      const response = await apiClient.getRawDatasetQuality(datasetId);
+
+      if (
+        !mountedRef.current ||
+        sequence !== qualitySequenceRef.current ||
+        selectedIdRef.current !== datasetId
+      ) {
+        return;
+      }
+
+      setQuality(response);
+    } catch (error) {
+      if (
+        !mountedRef.current ||
+        sequence !== qualitySequenceRef.current ||
+        selectedIdRef.current !== datasetId
+      ) {
+        return;
+      }
+
+      setQualityError(
+        getErrorMessage(
+          error,
+          "Não foi possível carregar a baseline de quality persistida.",
+        ),
+      );
+    } finally {
+      if (
+        mountedRef.current &&
+        sequence === qualitySequenceRef.current &&
+        selectedIdRef.current === datasetId
+      ) {
+        setQualityLoading(false);
+      }
+    }
+  }, []);
+
+  const loadGaps = useCallback(
+    async (
+      datasetId: string,
+      start: string,
+      end: string,
+      page: number,
+    ) => {
+      const sequence = ++gapSequenceRef.current;
+      setGapLoading(true);
+      setGapError(null);
+
+      try {
+        const response = await apiClient.getRawDatasetGaps(datasetId, {
+          start,
+          end,
+          page,
+          pageSize: PAGE_SIZE,
+        });
+
+        if (
+          !mountedRef.current ||
+          sequence !== gapSequenceRef.current ||
+          selectedIdRef.current !== datasetId
+        ) {
+          return;
+        }
+
+        setGapData(response);
+      } catch (error) {
+        if (
+          !mountedRef.current ||
+          sequence !== gapSequenceRef.current ||
+          selectedIdRef.current !== datasetId
+        ) {
+          return;
+        }
+
+        setGapError(
+          getErrorMessage(
+            error,
+            "Não foi possível inspecionar os gaps RAW neste intervalo.",
+          ),
+        );
+      } finally {
+        if (
+          mountedRef.current &&
+          sequence === gapSequenceRef.current &&
+          selectedIdRef.current === datasetId
+        ) {
+          setGapLoading(false);
+        }
+      }
+    },
+    [],
+  );
+
+  const clearSelectedInspection = () => {
+    detailSequenceRef.current += 1;
+    qualitySequenceRef.current += 1;
+    gapSequenceRef.current += 1;
+
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(false);
+
+    setQuality(null);
+    setQualityError(null);
+    setQualityLoading(false);
+
+    setGapData(null);
+    setGapError(null);
+    setGapLoading(false);
+    setGapStartInput("");
+    setGapEndInput("");
+  };
+
+  const selectDataset = (dataset: RawDatasetResponse) => {
+    clearSelectedInspection();
+
+    selectedIdRef.current = dataset.dataset_id;
     setSelectedId(dataset.dataset_id);
     setDetail(dataset);
-    setDetailError(null);
+
+    setGapStartInput(dataset.coverage_start ?? "");
+    setGapEndInput(dataset.coverage_end ?? "");
 
     void loadDetail(dataset.dataset_id);
+    void loadQuality(dataset.dataset_id);
   };
 
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     selectedIdRef.current = null;
-    detailSequenceRef.current += 1;
+    clearSelectedInspection();
     setSelectedId(null);
-    setDetail(null);
-    setDetailError(null);
 
     setPage(1);
     setSymbolFilter(symbolInput.trim());
@@ -191,7 +337,7 @@ export function RawDatasetsPage() {
 
   const clearFilters = () => {
     selectedIdRef.current = null;
-    detailSequenceRef.current += 1;
+    clearSelectedInspection();
 
     setSymbolInput("");
     setTimeframeInput("");
@@ -199,11 +345,23 @@ export function RawDatasetsPage() {
     setTimeframeFilter("");
     setPage(1);
     setSelectedId(null);
-    setDetail(null);
-    setDetailError(null);
+  };
+
+  const submitGapInspection = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const datasetId = selectedIdRef.current;
+    const start = gapStartInput.trim();
+    const end = gapEndInput.trim();
+
+    if (!datasetId || !start || !end) return;
+
+    setGapData(null);
+    void loadGaps(datasetId, start, end, 1);
   };
 
   const totalPages = pageData?.total_pages ?? 0;
+  const gapTotalPages = gapData?.total_pages ?? 0;
 
   return (
     <div className="market-operations-page raw-datasets-page">
@@ -462,6 +620,308 @@ export function RawDatasetsPage() {
                 entradas físicas de partição não são expostos pelo contrato
                 administrativo.
               </p>
+
+              <section aria-labelledby="raw-quality-title">
+                <div className="section-heading">
+                  <div>
+                    <h3 id="raw-quality-title">Quality persistida</h3>
+                    <span>
+                      Baseline FULL_DATASET já persistida; nenhuma varredura é
+                      iniciada por esta tela.
+                    </span>
+                  </div>
+
+                  <button
+                    className="button button--ghost button--compact"
+                    type="button"
+                    disabled={qualityLoading}
+                    onClick={() => void loadQuality(selectedId)}
+                  >
+                    {qualityLoading
+                      ? "Recarregando…"
+                      : "Recarregar baseline"}
+                  </button>
+                </div>
+
+                {qualityLoading && !quality ? (
+                  <LoadingState message="Carregando quality persistida…" />
+                ) : qualityError ? (
+                  <InlineError message={qualityError} />
+                ) : quality ? (
+                  <>
+                    <dl className="operation-detail-grid">
+                      <div>
+                        <dt>Status</dt>
+                        <dd>{quality.status}</dd>
+                      </div>
+
+                      <div>
+                        <dt>Versão atual</dt>
+                        <dd title={quality.dataset_version}>
+                          {shortVersion(quality.dataset_version)}
+                          <small>{quality.version_algorithm}</small>
+                        </dd>
+                      </div>
+
+                      <div>
+                        <dt>Versão da baseline</dt>
+                        <dd title={quality.baseline_dataset_version ?? undefined}>
+                          {quality.baseline_dataset_version
+                            ? shortVersion(quality.baseline_dataset_version)
+                            : "—"}
+                          <small>
+                            {quality.baseline_version_algorithm ?? "—"}
+                          </small>
+                        </dd>
+                      </div>
+
+                      <div>
+                        <dt>Scanner</dt>
+                        <dd>
+                          {quality.scanner_version ?? "—"}
+                          <small>
+                            schema {quality.scanner_schema_version ?? "—"}
+                          </small>
+                        </dd>
+                      </div>
+
+                      <div>
+                        <dt>Partições avaliadas</dt>
+                        <dd>{quality.partition_count ?? "—"}</dd>
+                      </div>
+
+                      <div>
+                        <dt>Issues</dt>
+                        <dd>
+                          {quality.issue_totals?.total ?? "—"}
+                          <small>
+                            {quality.issue_totals
+                              ? `${quality.issue_totals.errors} erros · ${quality.issue_totals.warnings} warnings · ${quality.issue_totals.other} outros`
+                              : "Resumo não disponível"}
+                          </small>
+                        </dd>
+                      </div>
+
+                      <div>
+                        <dt>Cobertura observada</dt>
+                        <dd>
+                          {quality.coverage
+                            ? quality.coverage.observed_count.toLocaleString(
+                                "pt-BR",
+                              )
+                            : "—"}
+                          <small>
+                            {quality.coverage
+                              ? `${quality.coverage.internal_gap_count} gaps internos · ${quality.coverage.missing_at_start} ausentes no início · ${quality.coverage.missing_at_end} ausentes no fim`
+                              : "Cobertura não disponível"}
+                          </small>
+                        </dd>
+                      </div>
+                    </dl>
+
+                    {quality.issues.length > 0 ? (
+                      <div className="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Código</th>
+                              <th>Severidade</th>
+                              <th>Categoria</th>
+                              <th>Open time</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {quality.issues.map((issue, index) => (
+                              <tr
+                                key={`${issue.code}-${issue.open_time ?? "none"}-${index}`}
+                              >
+                                <td>{issue.code}</td>
+                                <td>{issue.severity}</td>
+                                <td>{issue.category}</td>
+                                <td>{formatUtc(issue.open_time)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="operation-notice">
+                        Nenhuma issue foi incluída na amostra persistida.
+                      </p>
+                    )}
+                  </>
+                ) : null}
+              </section>
+
+              <section aria-labelledby="raw-gaps-title">
+                <div className="section-heading">
+                  <div>
+                    <h3 id="raw-gaps-title">Inspeção de gaps</h3>
+                    <span>
+                      Intervalo UTC explícito e limitado a 10.000 candles
+                      esperados por consulta.
+                    </span>
+                  </div>
+                </div>
+
+                <form
+                  className="operation-target-search"
+                  onSubmit={submitGapInspection}
+                >
+                  <label>
+                    Início UTC
+                    <input
+                      value={gapStartInput}
+                      onChange={(event) =>
+                        setGapStartInput(event.target.value)
+                      }
+                      placeholder="2026-08-01T00:00:00Z"
+                      autoComplete="off"
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Fim UTC
+                    <input
+                      value={gapEndInput}
+                      onChange={(event) =>
+                        setGapEndInput(event.target.value)
+                      }
+                      placeholder="2026-08-02T00:00:00Z"
+                      autoComplete="off"
+                      required
+                    />
+                  </label>
+
+                  <button
+                    className="button"
+                    type="submit"
+                    disabled={gapLoading}
+                  >
+                    {gapLoading ? "Consultando…" : "Consultar gaps"}
+                  </button>
+                </form>
+
+                {gapLoading && !gapData ? (
+                  <LoadingState message="Inspecionando gaps RAW…" />
+                ) : gapError ? (
+                  <InlineError message={gapError} />
+                ) : gapData ? (
+                  <>
+                    <dl className="operation-detail-grid">
+                      <div>
+                        <dt>Intervalo verificado</dt>
+                        <dd>
+                          {formatUtc(gapData.checked_start)} →{" "}
+                          {formatUtc(gapData.checked_end)}
+                        </dd>
+                      </div>
+
+                      <div>
+                        <dt>Esperadas / observadas</dt>
+                        <dd>
+                          {gapData.expected_candles.toLocaleString("pt-BR")} /{" "}
+                          {gapData.observed_candles.toLocaleString("pt-BR")}
+                        </dd>
+                      </div>
+
+                      <div>
+                        <dt>Candles ausentes</dt>
+                        <dd>
+                          {gapData.missing_candles.toLocaleString("pt-BR")}
+                        </dd>
+                      </div>
+
+                      <div>
+                        <dt>Ranges de gap</dt>
+                        <dd>{gapData.total_gap_count.toLocaleString("pt-BR")}</dd>
+                      </div>
+                    </dl>
+
+                    {gapData.items.length > 0 ? (
+                      <div className="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Início UTC</th>
+                              <th>Fim UTC</th>
+                              <th>Candles ausentes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {gapData.items.map((gap) => (
+                              <tr key={`${gap.start}-${gap.end}`}>
+                                <td>{formatUtc(gap.start)}</td>
+                                <td>{formatUtc(gap.end)}</td>
+                                <td>
+                                  {gap.missing_candles.toLocaleString("pt-BR")}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="operation-notice">
+                        Nenhum gap foi encontrado no intervalo consultado.
+                      </p>
+                    )}
+
+                    <div
+                      className="operation-pagination"
+                      aria-label="Paginação de gaps RAW"
+                    >
+                      <button
+                        className="button button--ghost button--compact"
+                        type="button"
+                        disabled={gapData.page <= 1 || gapLoading}
+                        onClick={() =>
+                          void loadGaps(
+                            selectedId,
+                            gapStartInput.trim(),
+                            gapEndInput.trim(),
+                            Math.max(1, gapData.page - 1),
+                          )
+                        }
+                      >
+                        Anterior
+                      </button>
+
+                      <span>
+                        {gapTotalPages === 0
+                          ? "Nenhuma página"
+                          : `Página ${gapData.page} de ${gapTotalPages}`}
+                      </span>
+
+                      <button
+                        className="button button--ghost button--compact"
+                        type="button"
+                        disabled={
+                          gapTotalPages === 0 ||
+                          gapData.page >= gapTotalPages ||
+                          gapLoading
+                        }
+                        onClick={() =>
+                          void loadGaps(
+                            selectedId,
+                            gapStartInput.trim(),
+                            gapEndInput.trim(),
+                            gapData.page + 1,
+                          )
+                        }
+                      >
+                        Próxima
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="operation-notice">
+                    Informe o intervalo UTC e execute uma consulta somente
+                    leitura.
+                  </p>
+                )}
+              </section>
             </>
           ) : null}
         </section>
