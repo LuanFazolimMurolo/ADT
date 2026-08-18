@@ -1,6 +1,6 @@
 # ADT Current Development Handoff
 
-Last updated: 2026-08-16
+Last updated: 2026-08-17
 
 ## Current branch
 
@@ -18,14 +18,16 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Last completed track
 
-**7-03 — Persisted RAW Dataset Inspection — CLOSED**
+**7-04 — RAW Gap & Quality Inspection — CLOSED**
 
-Formal closure is supported by the accepted backend and frontend gates,
-independent remote verification, full repository regressions and the final
-structural/safety closure audit.
+Formal closure is supported by the accepted backend, HTTP and frontend gates,
+the final full backend/frontend regressions, independent remote verification
+and the delivery-wide structural and semantic safety audit.
 
-The previous control-plane foundation delivery remains closed:
+Previously closed Phase 7 deliveries remain closed:
 
+- **7-03 — Persisted RAW Dataset Inspection — CLOSED**
+- **7-02 — Market Operation Administrative Console — CLOSED**
 - **7-01 — Control Plane Foundation — CLOSED**
 - **7-01D2C1 — Expired Operation Recovery — CLOSED**
 - **7-01D2C2 — Pre-claim Control Settlement — CLOSED**
@@ -33,7 +35,7 @@ The previous control-plane foundation delivery remains closed:
 
 ## Last validated code milestone
 
-`1445c074e5c02aebb6ef82cbf74acda8df06b286`
+`f155d5a1dc1dfddbca73f1125883c93088a9680d`
 
 ## 7-02 closure evidence
 
@@ -136,98 +138,84 @@ The previous control-plane foundation delivery remains closed:
 
 ## Current delivery
 
-**7-04 — RAW Gap & Quality Inspection — ACTIVE**
+**7-04 — RAW Gap & Quality Inspection — CLOSED**
 
 Starting baseline:
-`8dc3fcc8a524f969f94526ecc1b3c017a6f53900`.
 
-No 7-04 production implementation has been committed yet.
+`8dc3fcc8a524f969f94526ecc1b3c017a6f53900`
 
-**Approved objective**: Extend the authenticated RAW dataset administration
-surface with bounded read-only gap inspection and persisted quality-baseline
-inspection while preserving the 7-03 storage-sanitization and HTTP-latency
-boundaries.
+Implementation milestones:
 
-**Administrative API contract**:
+- Bootstrap:
+  `7665d2921474af02ae98a61ab98fbb7509501ce5`
+- Gate 1A — bounded shared RAW dataset snapshot locking:
+  `7f67f6853533be5fe071af2d0fdf523f4b58df96`
+- Gate 1B — bounded deterministic RAW gap inspection:
+  `9372cf8815d8c1ff8701f96271381a068ad9a8c0`
+- Gate 1C — persisted RAW quality-baseline inspection:
+  `8f9bad3f9198f857b58ccd3466f0b58ff54047a7`
+- Gate 2 — authenticated HTTP schemas, routes and application wiring:
+  `8af75a7e9bee732b91728b6d65f04c83742ee1e3`
+- Gate 3 — generated OpenAPI client and protected RAW administration UI:
+  `f155d5a1dc1dfddbca73f1125883c93088a9680d`
 
-- `GET /api/v1/admin/market-data/datasets/{dataset_id}/gaps`
-- `GET /api/v1/admin/market-data/datasets/{dataset_id}/quality`
-- both endpoints use only the backend-owned canonical `dataset_id`;
-- both endpoints are authenticated administrator-only and `no-store`;
-- neither endpoint submits operations or mutates durable dataset state.
+Protected patch evidence:
 
-**RAW gap inspection contract**:
+- Gate 2 staged patch SHA256:
+  `58fe0b01a1146f66a2b82db5d607c478293f4207488d3403e6cacfcc167647be`
+- Gate 3 staged patch SHA256:
+  `2656320f25b4b324c8d459bfe9c7e13719d1e0f6b36c602e88bdc6f0a5d87a01`
 
-- explicit UTC half-open `start` and `end` are required;
-- both boundaries must be aligned to the dataset timeframe;
-- the requested interval must remain inside the persisted dataset coverage;
-- at most 10,000 expected candles may be inspected per HTTP request;
-- gap ranges use the existing deterministic Phase 2B missing-candle semantics;
-- results are canonically ordered and paginated with page size at most 100;
-- responses expose checked range, expected/observed/missing counts,
-  total gap count, dataset version and bounded gap start/end ranges;
-- HTTP gap inspection must not create a repair plan, job id or operational job;
-- no recovery hook may execute as part of the GET request.
+Closure evidence:
 
-**Read-snapshot locking contract**:
+- Final Ruff check: PASS
+- Final Ruff format check: PASS, 330 files already formatted
+- Final MyPy strict: PASS in 213 source files
+- Full backend: 2469 passed, 1 skipped
+- Backend coverage: 87%
+- Backend pip check: PASS
+- Full frontend Vitest: 28 files, 219 passed
+- Frontend typecheck: PASS
+- Frontend lint: PASS
+- Generated OpenAPI freshness: PASS
+- Production build: PASS
+- Frontend E2E typecheck: PASS
+- Bundle budget: PASS
+- Full Playwright: 50 passed
+- No migration or dependency changes
+- No skip or xfail was added to manufacture a passing gate
+- RAW gap inspection is limited to 10,000 expected candles per HTTP request
+  and page size at most 100
+- Gap inspection reuses the deterministic Phase 2B missing-candle semantics
+- Snapshot readers use bounded non-blocking shared `flock` acquisition while
+  existing writers retain exclusive locking
+- Snapshot readers do not rewrite writer lock metadata or invoke recovery
+- Persisted RAW quality inspection reads and validates the existing
+  `FULL_DATASET` baseline without executing a scanner
+- Quality status is sanitized to `CURRENT`, `STALE`, `MISSING` or `INVALID`
+- Quality issue samples expose only `code`, `severity`, `category` and
+  `open_time`
+- Administrative gap and quality endpoints are administrator-only GET routes
+  with `Cache-Control: no-store`
+- No recovery, repair, backfill, operation submission, quality scan, network
+  access or durable dataset mutation occurs in the new inspection GET paths
+- No `ADT_DATA_DIR`, baseline path, partition path, manifest `relative_path`
+  or partition checksum is exposed by the new browser/API contract
+- The frontend extends the existing protected RAW dataset detail surface and
+  does not create a second dataset authority
+- No scan, repair, backfill or mutation action was added to the RAW inspection
+  UI
+- Final delivery audit contained exactly 21 files relative to the starting
+  `main`
+- At implementation checkpoint
+  `f155d5a1dc1dfddbca73f1125883c93088a9680d`, the feature was 6 commits ahead
+  and 0 behind the starting `main`
+- Working tree was clean at implementation closure
+- No unresolved 7-04 implementation blocker remains
 
-- add a bounded shared dataset snapshot lock using the same kernel flock file
-  as the existing exclusive writer lock;
-- readers use non-blocking `LOCK_SH` acquisition with a monotonic deadline;
-- existing writers retain `LOCK_EX` semantics unchanged;
-- a snapshot reader never truncates or rewrites lock metadata;
-- a snapshot reader never invokes transaction recovery;
-- timeout produces only a sanitized service-unavailable response;
-- dataset snapshot lock precedes any catalog snapshot lock so lock ordering
-  remains deterministic.
+Phase 7 itself remains **ACTIVE**. Closing 7-04 does not close or tag Phase 7.
 
-**Persisted RAW quality contract**:
-
-- HTTP never invokes `AdvancedMarketDataQualityScanner.scan`;
-- HTTP reads only the deterministic persisted `FULL_DATASET` RAW quality
-  baseline created by the existing local quality workflow;
-- baseline envelope/checksum and semantic identity are validated before use;
-- baseline dataset version and version algorithm are correlated with the
-  current catalog snapshot;
-- the sanitized quality status is one of `CURRENT`, `STALE`, `MISSING` or
-  `INVALID`;
-- missing, stale or invalid baselines are reported read-only and never trigger
-  an automatic scan;
-- responses may expose scanner schema/version, sanitized coverage counters,
-  partition count, issue totals and a deterministic bounded issue sample;
-- exposed issue fields are limited to `code`, `severity`, `category` and
-  `open_time`;
-- partition identifiers and baseline filesystem locations are never exposed.
-
-**Frontend contract**:
-
-- extend the existing protected RAW dataset detail surface instead of creating
-  a second dataset authority;
-- gaps use explicit start/end filters and bounded pagination;
-- quality displays persisted-baseline status and sanitized summary;
-- no repair, refresh-scan, backfill or mutation action is added;
-- generated OpenAPI contracts and the typed API client remain authoritative.
-
-**Expected migration**: NO.
-
-**Explicitly out of scope**:
-
-- running FULL or INCREMENTAL quality scans from HTTP;
-- generating or replacing quality baselines from HTTP;
-- RAW gap repair;
-- RAW backfill or incremental submission;
-- operation lifecycle controls already owned by 7-02;
-- DERIVED dataset quality or snapshots;
-- exposing `ADT_DATA_DIR`, filesystem paths, baseline paths, partition paths,
-  manifest `relative_path` or partition checksums;
-- Binance or other network access;
-- PostgreSQL, Parquet or catalog mutation;
-- worker-global control, collectors, paper runners or mandates;
-- machine learning, Telegram, SaaS, deployment and real-capital execution.
-
-**Gate requirement**: Any implementation that performs recovery, repair,
-quality scanning, network access or durable dataset mutation inside either GET
-endpoint is a semantic blocker and cannot pass 7-04.
+No subsequent Phase 7 delivery has been bootstrapped by this handoff.
 
 ## Important repository and process constraints
 
