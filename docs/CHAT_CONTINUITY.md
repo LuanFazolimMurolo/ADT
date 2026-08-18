@@ -4,7 +4,7 @@ Last updated: 2026-08-17
 
 ## Current branch
 
-`feat/phase-7-04-raw-gap-quality-inspection`
+`feat/phase-7-05-worker-runtime-observability`
 
 At the start of every session, verify the local branch and HEAD, then inspect
 the corresponding remote branch. This file records the intended handoff; Git
@@ -36,6 +36,10 @@ Previously closed Phase 7 deliveries remain closed:
 ## Last validated code milestone
 
 `f155d5a1dc1dfddbca73f1125883c93088a9680d`
+
+## Current integrated main baseline
+
+`f0f606e9f7d302c85d7b7a621604f67fc84676a9`
 
 ## 7-02 closure evidence
 
@@ -215,7 +219,39 @@ Closure evidence:
 
 Phase 7 itself remains **ACTIVE**. Closing 7-04 does not close or tag Phase 7.
 
-No subsequent Phase 7 delivery has been bootstrapped by this handoff.
+## Active delivery
+
+**7-05 — Worker Runtime Observability — ACTIVE / BOOTSTRAP**
+
+Starting baseline:
+
+`f0f606e9f7d302c85d7b7a621604f67fc84676a9`
+
+**Objective**: Provide bounded, authenticated and sanitized observability of
+the persistent market-data worker independently of individual operation leases.
+
+**Contract to preserve**:
+
+- worker runtime presence is distinct from an operation lease;
+- an expired heartbeat is not proof that a prior process has terminated;
+- HTTP performs no long-running worker work;
+- HTTP exposes no hostname, PID, filesystem path, `ADT_DATA_DIR`, credentials
+  or storage identifiers;
+- operational events are bounded and sanitized;
+- no worker start, stop or restart control is added;
+- existing market-data operation, local durability and recovery contracts remain
+  authoritative.
+
+**Expected migration**: YES, but no migration may be applied remotely until its
+schema, RLS/revokes and safety boundary are separately reviewed.
+
+**Explicitly deferred from 7-05**:
+
+- worker lifecycle mutation from HTTP;
+- collectors and paper runners;
+- mandates and paper-session configuration;
+- capital-ledger integration and Official Portfolio;
+- machine learning, Telegram, SaaS, deployment and real-capital execution.
 
 ## Important repository and process constraints
 

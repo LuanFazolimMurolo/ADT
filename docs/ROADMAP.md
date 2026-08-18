@@ -864,11 +864,10 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Tracks 7-01 — Control Plane Foundation and 7-02 — Market
-Operation Administrative Console are complete and closed. Track 7-03 —
-Persisted RAW Dataset Inspection is the active delivery. Phase 7 as a whole
-remains active; the exact current handoff is maintained in
-[`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
+**Status**: Active. Tracks 7-01 through 7-04 are complete, closed and
+integrated into `main`. Track 7-05 — Worker Runtime Observability is the active
+delivery. Phase 7 as a whole remains active; the exact current handoff is
+maintained in [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
 - [ ] Define administrator-approved operational mandates for assets, markets
@@ -943,9 +942,9 @@ worker process is online.
 
 
 
-### 7-03 — Persisted RAW Dataset Inspection 🚧
+### 7-03 — Persisted RAW Dataset Inspection ✅
 
-**Status**: Active / bootstrap.
+**Status**: Complete and closed.
 
 **Goal**: Expose a bounded, authenticated and read-only administrative view of
 locally cataloged RAW datasets without leaking storage paths and without
@@ -981,6 +980,62 @@ performing physical market-data work inside HTTP requests.
 - worker-global presence/events;
 - collector or paper-runner lifecycle control;
 - mandates, capital integration and Official Portfolio;
+- machine learning, Telegram, SaaS, deployment and real-capital execution.
+
+---
+
+### 7-04 — RAW Gap & Quality Inspection ✅
+
+**Status**: Complete, closed and integrated into `main`.
+
+**Goal**: Extend persisted RAW dataset administration with bounded read-only
+gap inspection and persisted quality-baseline inspection without performing
+repair, scanning, network access or durable dataset mutation inside HTTP.
+
+**Delivered**:
+
+- bounded shared dataset snapshot locking;
+- deterministic RAW gap inspection limited to 10,000 expected candles;
+- persisted `FULL_DATASET` RAW quality inspection with
+  `CURRENT`, `STALE`, `MISSING` and `INVALID` states;
+- administrator-only GET endpoints with `Cache-Control: no-store`;
+- generated OpenAPI/client contracts;
+- protected RAW administration UI with bounded gap pagination and sanitized
+  quality summaries;
+- no migration or dependency changes.
+
+### 7-05 — Worker Runtime Observability 🚧
+
+**Status**: Active / bootstrap.
+
+**Goal**: Add authoritative, bounded and sanitized runtime observability for the
+persistent market-data worker independently of individual operation leases,
+without adding worker lifecycle controls.
+
+**Approved boundary**:
+
+- persist enough worker-runtime state to observe an idle or active worker;
+- heartbeat/presence state must be distinct from per-operation lease state;
+- expose only sanitized administrator-visible worker health;
+- expose bounded sanitized operational events;
+- preserve the existing one-worker-per-volume deployment contract;
+- do not infer confirmed process death solely from an expired heartbeat;
+- use authenticated administrator-only HTTP reads;
+- frontend polling must remain bounded;
+- no hostname, PID, filesystem path, `ADT_DATA_DIR`, credentials or local
+  storage identifiers may cross the API boundary.
+
+**Expected migration**: YES, subject to schema review before application.
+
+**Explicitly out of scope**:
+
+- starting, stopping or restarting the worker through HTTP;
+- collector or paper-runner lifecycle control;
+- RAW operation submission or lifecycle changes;
+- dataset repair, quality scans or market-data network execution from HTTP;
+- administrator mandates;
+- paper-session creation or configuration;
+- capital-ledger integration or ADT Official Portfolio;
 - machine learning, Telegram, SaaS, deployment and real-capital execution.
 
 ---
