@@ -241,3 +241,31 @@ class InvalidPersistedOperationError(PersistenceError):
 
     code = "invalid_persisted_operation"
     default_message = "O estado persistido da operação de market data é inválido."
+
+
+class InvalidWorkerRuntimeObservabilityError(InvalidDomainInputError):
+    """Worker-runtime observability data violates its closed domain contract."""
+
+    code = "invalid_worker_runtime_observability"
+    default_message = "O estado de observabilidade do worker é inválido."
+
+
+class WorkerRuntimeNotFoundError(ResourceNotFoundError):
+    """The requested worker runtime epoch does not exist."""
+
+    code = "worker_runtime_not_found"
+    default_message = "O runtime do worker não foi encontrado."
+
+
+class WorkerRuntimeTerminalError(DomainConflictError):
+    """A terminal worker runtime epoch cannot be changed."""
+
+    code = "worker_runtime_terminal"
+    default_message = "O runtime do worker já está em estado terminal."
+
+
+class InvalidPersistedWorkerRuntimeError(PersistenceError):
+    """Persisted worker observability data violates the domain contract."""
+
+    code = "invalid_persisted_worker_runtime"
+    default_message = "O estado persistido de observabilidade do worker é inválido."

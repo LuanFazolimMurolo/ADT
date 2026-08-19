@@ -7,12 +7,14 @@ from app.repositories.public_simulations import PublicSimulationRepository
 from app.repositories.settings import SettingsRepository
 from app.repositories.simulations import SimulationRepository
 from app.repositories.strategy_definitions import PostgresStrategyDefinitionRepository
+from app.repositories.worker_observability import PostgresWorkerRuntimeObservabilityRepository
 
 __all__ = [
     "AdminRepository",
     "CapitalMovementRepository",
     "PostgresMarketOperationRepository",
     "PostgresStrategyDefinitionRepository",
+    "PostgresWorkerRuntimeObservabilityRepository",
     "PublicSimulationRepository",
     "SettingsRepository",
     "SimulationRepository",
