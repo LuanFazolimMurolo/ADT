@@ -2882,3 +2882,32 @@ tbody tr:hover {
     grid-template-columns: repeat(auto-fill, minmax(12px, 1fr));
   }
 }
+
+/* Worker runtime observability */
+.worker-observability-note {
+  margin: 1.5rem 0;
+}
+
+.worker-observability-metrics {
+  margin-bottom: 2rem;
+}
+
+.worker-observability-page .section-heading > div > p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.worker-observability-page .table-wrap {
+  margin-top: 1rem;
+}
+
+.worker-observability-page td code {
+  font-size: 0.72rem;
+}
+
+@media (max-width: 760px) {
+  .worker-observability-page .security-note {
+    align-items: flex-start;
+  }
+}

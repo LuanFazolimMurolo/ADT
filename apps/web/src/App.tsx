@@ -15,6 +15,7 @@ import { AppPaperSessionDetailPage } from "./pages/app/AppPaperSessionDetailPage
 import { AppPaperSessionPerformancePage } from "./pages/app/AppPaperSessionPerformancePage";
 import { InstrumentChartPage } from "./pages/admin/InstrumentChartPage";
 import { MarketOperationsPage } from "./pages/admin/MarketOperationsPage";
+import { WorkerObservabilityPage } from "./pages/admin/WorkerObservabilityPage";
 import { RawDatasetsPage } from "./pages/admin/RawDatasetsPage";
 import { PaperPeriodMetricsPage } from "./pages/admin/PaperPeriodMetricsPage";
 import { PaperPortfolioPerformancePage } from "./pages/admin/PaperPortfolioPerformancePage";
@@ -113,6 +114,10 @@ function App() {
                 <Route
                   path="market-operations"
                   element={<MarketOperationsPage />}
+                />
+                <Route
+                  path="worker-observability"
+                  element={<WorkerObservabilityPage />}
                 />
                 <Route path="simulations" element={<SimulationsPage />} />
                 <Route

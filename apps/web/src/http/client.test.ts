@@ -816,12 +816,8 @@ describe("ApiClient", () => {
     expect(requestedUrl.pathname).toBe(
       "/api/v1/admin/market-data/datasets/abc_DEF-123/gaps",
     );
-    expect(requestedUrl.searchParams.get("start")).toBe(
-      "2026-08-01T00:00:00Z",
-    );
-    expect(requestedUrl.searchParams.get("end")).toBe(
-      "2026-08-02T00:00:00Z",
-    );
+    expect(requestedUrl.searchParams.get("start")).toBe("2026-08-01T00:00:00Z");
+    expect(requestedUrl.searchParams.get("end")).toBe("2026-08-02T00:00:00Z");
     expect(requestedUrl.searchParams.get("page")).toBe("2");
     expect(requestedUrl.searchParams.get("page_size")).toBe("100");
 
@@ -882,4 +878,72 @@ describe("ApiClient", () => {
     expect(headers.get("Authorization")).toBe("Bearer token");
   });
 
+  it("consulta runtimes do worker por GET autenticado e bounded", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        observed_at: "2026-08-20T21:00:00Z",
+        stale_after_seconds: 120,
+        count: 0,
+        items: [],
+      }),
+    );
+
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    await client.listWorkerRuntimes(7);
+
+    const requestedUrl = new URL(fetchMock.mock.calls[0]?.[0] as string);
+
+    expect(requestedUrl.pathname).toBe(
+      "/api/v1/admin/market-data/worker-observability/runtimes",
+    );
+    expect(requestedUrl.searchParams.get("limit")).toBe("7");
+
+    const options = fetchMock.mock.calls[0]?.[1];
+    const headers = options?.headers as Headers;
+
+    expect(options?.method).not.toBe("POST");
+    expect(options?.method).not.toBe("PATCH");
+    expect(options?.method).not.toBe("DELETE");
+    expect(options?.body).toBeUndefined();
+    expect(headers.get("Authorization")).toBe("Bearer token");
+  });
+
+  it("consulta eventos do worker por GET autenticado e bounded", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        observed_at: "2026-08-20T21:00:00Z",
+        count: 0,
+        items: [],
+      }),
+    );
+
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    await client.listWorkerRuntimeEvents(9);
+
+    const requestedUrl = new URL(fetchMock.mock.calls[0]?.[0] as string);
+
+    expect(requestedUrl.pathname).toBe(
+      "/api/v1/admin/market-data/worker-observability/events",
+    );
+    expect(requestedUrl.searchParams.get("limit")).toBe("9");
+
+    const options = fetchMock.mock.calls[0]?.[1];
+    const headers = options?.headers as Headers;
+
+    expect(options?.method).not.toBe("POST");
+    expect(options?.method).not.toBe("PATCH");
+    expect(options?.method).not.toBe("DELETE");
+    expect(options?.body).toBeUndefined();
+    expect(headers.get("Authorization")).toBe("Bearer token");
+  });
 });

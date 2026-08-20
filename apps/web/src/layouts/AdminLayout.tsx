@@ -43,6 +43,12 @@ const navigation = [
     icon: "⇄",
     end: false,
   },
+  {
+    to: "/admin/worker-observability",
+    label: "Worker runtime",
+    icon: "◎",
+    end: false,
+  },
   { to: "/admin/settings", label: "Configurações", icon: "⚙", end: false },
 ];
 

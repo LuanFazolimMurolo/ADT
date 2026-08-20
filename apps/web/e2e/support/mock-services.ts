@@ -24,6 +24,8 @@ import type {
   SimulationCreateRequest,
   SimulationDetail,
   SimulationListItem,
+  WorkerRuntimeEventList,
+  WorkerRuntimeList,
 } from "../../src/types/api";
 import type { SystemStatus } from "../../src/types/system";
 import {
@@ -1547,6 +1549,73 @@ export class MockServices {
         return;
       }
       if (!(await this.requireAdmin(route, request))) return;
+    }
+
+    if (
+      request.method() === "GET" &&
+      url.pathname === "/api/v1/admin/market-data/worker-observability/runtimes"
+    ) {
+      const response = {
+        observed_at: "2026-08-20T21:00:00Z",
+        stale_after_seconds: 120,
+        count: 2,
+        items: [
+          {
+            health_state: "HEALTHY",
+            lifecycle_state: "RUNNING",
+            activity_state: "IDLE",
+            started_at: "2026-08-20T20:00:00Z",
+            heartbeat_at: "2026-08-20T20:59:30Z",
+            stopped_at: null,
+            failure_code: null,
+          },
+          {
+            health_state: "FAILED",
+            lifecycle_state: "FAILED",
+            activity_state: "IDLE",
+            started_at: "2026-08-19T20:00:00Z",
+            heartbeat_at: "2026-08-19T20:10:00Z",
+            stopped_at: "2026-08-19T20:10:05Z",
+            failure_code: "LOCAL_STATE_FAILURE",
+          },
+        ],
+      } satisfies WorkerRuntimeList;
+
+      await this.json(route, 200, response, {
+        "Cache-Control": "no-store",
+      });
+      return;
+    }
+
+    if (
+      request.method() === "GET" &&
+      url.pathname === "/api/v1/admin/market-data/worker-observability/events"
+    ) {
+      const response = {
+        observed_at: "2026-08-20T21:00:00Z",
+        count: 2,
+        items: [
+          {
+            event_id: 12,
+            event_type: "OPERATION_SETTLED",
+            occurred_at: "2026-08-20T20:55:00Z",
+            operation_id: "20000000-0000-4000-8000-000000000002",
+            operation_state: "COMPLETED",
+          },
+          {
+            event_id: 11,
+            event_type: "RUNTIME_STARTED",
+            occurred_at: "2026-08-20T20:00:00Z",
+            operation_id: null,
+            operation_state: null,
+          },
+        ],
+      } satisfies WorkerRuntimeEventList;
+
+      await this.json(route, 200, response, {
+        "Cache-Control": "no-store",
+      });
+      return;
     }
 
     if (

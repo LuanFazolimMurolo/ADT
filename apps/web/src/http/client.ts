@@ -45,6 +45,8 @@ import type {
   SimulationCreateRequest,
   SimulationDetail,
   SimulationListResponse,
+  WorkerRuntimeEventList,
+  WorkerRuntimeList,
 } from "../types/api";
 import type { SystemStatus } from "../types/system";
 
@@ -467,6 +469,26 @@ export class ApiClient {
   getRawDatasetQuality(datasetId: string): Promise<RawQualityResponse> {
     return this.request(
       `/api/v1/admin/market-data/datasets/${encodeURIComponent(datasetId)}/quality`,
+    );
+  }
+
+  listWorkerRuntimes(limit = 20): Promise<WorkerRuntimeList> {
+    const params = new URLSearchParams({
+      limit: String(limit),
+    });
+
+    return this.request(
+      `/api/v1/admin/market-data/worker-observability/runtimes?${params.toString()}`,
+    );
+  }
+
+  listWorkerRuntimeEvents(limit = 50): Promise<WorkerRuntimeEventList> {
+    const params = new URLSearchParams({
+      limit: String(limit),
+    });
+
+    return this.request(
+      `/api/v1/admin/market-data/worker-observability/events?${params.toString()}`,
     );
   }
 

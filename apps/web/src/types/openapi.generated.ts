@@ -276,6 +276,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/market-data/worker-observability/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Worker Runtime Events
+         * @description Read bounded recent sanitized worker operational events.
+         */
+        get: operations["list_worker_runtime_events_api_v1_admin_market_data_worker_observability_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/market-data/worker-observability/runtimes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Worker Runtimes
+         * @description Read bounded recent worker runtime health observations.
+         */
+        get: operations["list_worker_runtimes_api_v1_admin_market_data_worker_observability_runtimes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/me": {
         parameters: {
             query?: never;
@@ -3887,6 +3927,107 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /**
+         * WorkerRuntimeActivityState
+         * @description Current coarse activity of one running worker runtime.
+         * @enum {string}
+         */
+        WorkerRuntimeActivityState: "IDLE" | "ACTIVE";
+        /**
+         * WorkerRuntimeEventListResponse
+         * @description Bounded recent sanitized worker operational events.
+         */
+        WorkerRuntimeEventListResponse: {
+            /** Count */
+            count: number;
+            /** Items */
+            items: components["schemas"]["WorkerRuntimeEventResponse"][];
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+        };
+        /**
+         * WorkerRuntimeEventResponse
+         * @description One sanitized event without the internal runtime UUID.
+         */
+        WorkerRuntimeEventResponse: {
+            /** Event Id */
+            event_id: number;
+            event_type: components["schemas"]["WorkerRuntimeEventType"];
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Operation Id */
+            operation_id: string | null;
+            operation_state: components["schemas"]["MarketOperationState"] | null;
+        };
+        /**
+         * WorkerRuntimeEventType
+         * @description Closed append-only operational event taxonomy.
+         * @enum {string}
+         */
+        WorkerRuntimeEventType: "RUNTIME_STARTED" | "RUNTIME_STOPPED" | "RUNTIME_FAILED" | "OPERATION_SETTLED";
+        /**
+         * WorkerRuntimeFailureCode
+         * @description Closed sanitized runtime-level failure taxonomy.
+         * @enum {string}
+         */
+        WorkerRuntimeFailureCode: "DATABASE_FAILURE" | "LOCAL_STATE_FAILURE" | "UNEXPECTED_FAILURE";
+        /**
+         * WorkerRuntimeHealthState
+         * @description Derived presentation health; never a persisted fencing state.
+         * @enum {string}
+         */
+        WorkerRuntimeHealthState: "HEALTHY" | "STALE" | "STOPPED" | "FAILED";
+        /**
+         * WorkerRuntimeLifecycleState
+         * @description Persisted lifecycle state for one worker runtime epoch.
+         * @enum {string}
+         */
+        WorkerRuntimeLifecycleState: "RUNNING" | "STOPPED" | "FAILED";
+        /**
+         * WorkerRuntimeListResponse
+         * @description Bounded recent runtime observations at one server instant.
+         */
+        WorkerRuntimeListResponse: {
+            /** Count */
+            count: number;
+            /** Items */
+            items: components["schemas"]["WorkerRuntimeResponse"][];
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Stale After Seconds */
+            stale_after_seconds: number;
+        };
+        /**
+         * WorkerRuntimeResponse
+         * @description One sanitized runtime observation without the internal runtime UUID.
+         */
+        WorkerRuntimeResponse: {
+            activity_state: components["schemas"]["WorkerRuntimeActivityState"];
+            failure_code: components["schemas"]["WorkerRuntimeFailureCode"] | null;
+            health_state: components["schemas"]["WorkerRuntimeHealthState"];
+            /**
+             * Heartbeat At
+             * Format: date-time
+             */
+            heartbeat_at: string;
+            lifecycle_state: components["schemas"]["WorkerRuntimeLifecycleState"];
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Stopped At */
+            stopped_at: string | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -5557,6 +5698,252 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarketOperationResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_worker_runtime_events_api_v1_admin_market_data_worker_observability_events_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerRuntimeEventListResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_worker_runtimes_api_v1_admin_market_data_worker_observability_runtimes_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerRuntimeListResponse"];
                 };
             };
             /** @description Malformed administrative request. */

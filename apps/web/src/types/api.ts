@@ -104,8 +104,7 @@ export type RawGapRangeResponse = ApiSchemas["RawGapRangeResponse"];
 export type RawGapPageResponse = ApiSchemas["RawGapPageResponse"];
 export type RawQualityCoverageResponse =
   ApiSchemas["RawQualityCoverageResponse"];
-export type RawQualityIssueResponse =
-  ApiSchemas["RawQualityIssueResponse"];
+export type RawQualityIssueResponse = ApiSchemas["RawQualityIssueResponse"];
 export type RawQualityIssueTotalsResponse =
   ApiSchemas["RawQualityIssueTotalsResponse"];
 export type RawQualityResponse = ApiSchemas["RawQualityResponse"];
@@ -141,3 +140,16 @@ export type MarketOperationList = ApiSchemas["MarketOperationListResponse"];
 export type MarketOperationTarget = ApiSchemas["MarketOperationTargetResponse"];
 export type MarketOperationTargetList =
   ApiSchemas["MarketOperationTargetListResponse"];
+
+export type WorkerRuntimeHealthState = ApiSchemas["WorkerRuntimeHealthState"];
+export type WorkerRuntimeLifecycleState =
+  ApiSchemas["WorkerRuntimeLifecycleState"];
+export type WorkerRuntimeActivityState =
+  ApiSchemas["WorkerRuntimeActivityState"];
+export type WorkerRuntimeFailureCode = ApiSchemas["WorkerRuntimeFailureCode"];
+export type WorkerRuntimeEventType = ApiSchemas["WorkerRuntimeEventType"];
+export type WorkerRuntime = ApiSchemas["WorkerRuntimeResponse"];
+export type WorkerRuntimeList = ApiSchemas["WorkerRuntimeListResponse"];
+export type WorkerRuntimeEvent = ApiSchemas["WorkerRuntimeEventResponse"];
+export type WorkerRuntimeEventList =
+  ApiSchemas["WorkerRuntimeEventListResponse"];
