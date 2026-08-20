@@ -27,6 +27,7 @@ from app.api.routes import (
     admin_settings,
     admin_simulations,
     admin_strategies,
+    admin_worker_observability,
     app_market_candles,
     app_paper_session_detail,
     app_paper_session_performance,
@@ -342,6 +343,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(admin_market_candles.router)
     application.include_router(admin_market_datasets.router)
     application.include_router(admin_market_operations.router)
+    application.include_router(admin_worker_observability.router)
     application.include_router(admin_paper_chart_annotations.router)
     application.include_router(admin_paper_dashboard.router)
     application.include_router(admin_paper_journal.router)

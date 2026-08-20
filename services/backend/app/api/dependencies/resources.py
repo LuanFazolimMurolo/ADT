@@ -1,5 +1,6 @@
 """Resolve application resources initialized by the FastAPI lifespan."""
 
+from datetime import UTC, datetime
 from typing import cast
 
 from fastapi import Depends, Request
@@ -26,6 +27,7 @@ from app.repositories import (
     AdminRepository,
     CapitalMovementRepository,
     PostgresStrategyDefinitionRepository,
+    PostgresWorkerRuntimeObservabilityRepository,
     PublicSimulationRepository,
     SettingsRepository,
     SimulationRepository,
@@ -37,6 +39,7 @@ from app.services import (
     PublicSimulationService,
     SettingsService,
     SimulationService,
+    WorkerRuntimeObservabilityService,
 )
 from app.strategies import StrategyDefinitionService, builtin_indicator_capabilities
 
@@ -212,3 +215,14 @@ def get_settings_service(
 ) -> SettingsService:
     """Build the system settings service."""
     return SettingsService(SettingsRepository(database))
+
+
+def get_worker_runtime_observability_service(
+    database: Database = Depends(get_database),
+) -> WorkerRuntimeObservabilityService:
+    """Build the read-only worker-runtime observability service."""
+
+    return WorkerRuntimeObservabilityService(
+        repository=PostgresWorkerRuntimeObservabilityRepository(database),
+        clock=lambda: datetime.now(UTC),
+    )

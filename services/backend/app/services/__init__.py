@@ -6,6 +6,7 @@ from app.services.market_operations import MarketOperationService
 from app.services.public_simulations import PublicSimulationService
 from app.services.settings import SettingsService
 from app.services.simulations import SimulationService
+from app.services.worker_observability import WorkerRuntimeObservabilityService
 
 __all__ = [
     "AdminService",
@@ -14,4 +15,5 @@ __all__ = [
     "PublicSimulationService",
     "SettingsService",
     "SimulationService",
+    "WorkerRuntimeObservabilityService",
 ]

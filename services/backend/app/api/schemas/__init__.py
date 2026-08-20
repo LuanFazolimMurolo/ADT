@@ -81,6 +81,12 @@ from app.api.schemas.strategies import (
     StrategyParameterResponse,
 )
 from app.api.schemas.system import SystemStatus
+from app.api.schemas.worker_observability import (
+    WorkerRuntimeEventListResponse,
+    WorkerRuntimeEventResponse,
+    WorkerRuntimeListResponse,
+    WorkerRuntimeResponse,
+)
 
 __all__ = [
     "AdminMeResponse",
@@ -152,4 +158,8 @@ __all__ = [
     "StrategyParameterInput",
     "StrategyParameterResponse",
     "SystemStatus",
+    "WorkerRuntimeEventListResponse",
+    "WorkerRuntimeEventResponse",
+    "WorkerRuntimeListResponse",
+    "WorkerRuntimeResponse",
 ]
