@@ -17,7 +17,17 @@ import httpx
 
 from app.core.config import Settings
 from app.database import Database
+from app.domain.errors import (
+    PersistenceError,
+    PersistenceUnavailableError,
+)
 from app.market_data.binance import BINANCE_MARKET_DATA_BASE_URL, BinanceSpotAdapter
+from app.market_data.errors import (
+    MarketDataInconsistencyError,
+    MarketDataStorageError,
+    MarketJobLockTimeoutError,
+    MarketJobNotFoundError,
+)
 from app.market_data.http import PublicMarketHttpClient
 from app.market_data.jobs import MarketJobCatalog
 from app.market_data.operation_worker import (
@@ -31,7 +41,18 @@ from app.market_data.operations import (
 from app.market_data.orchestration import BackfillExecutor
 from app.market_data.planning import MarketDataPlanner
 from app.market_data.services import default_local_services
-from app.repositories import PostgresMarketOperationRepository
+from app.market_data.worker_observability import (
+    SETTLED_OPERATION_STATES,
+    WorkerRuntimeActivityState,
+    WorkerRuntimeFailureCode,
+)
+from app.market_data.worker_observability_runtime import (
+    WorkerRuntimePresenceSession,
+)
+from app.repositories import (
+    PostgresMarketOperationRepository,
+    PostgresWorkerRuntimeObservabilityRepository,
+)
 
 MarketOperationRuntimeClock = Callable[[], datetime]
 MarketOperationWorkerSleeper = Callable[[float], Awaitable[None]]
@@ -84,6 +105,45 @@ class MarketOperationSignalLoop(Protocol):
     ) -> object: ...
 
 
+class WorkerRuntimePresenceHeartbeatError(RuntimeError):
+    """The persistent runtime lost its durable presence heartbeat."""
+
+    def __init__(self) -> None:
+        super().__init__("persistent worker observability heartbeat failed")
+
+
+def _worker_runtime_failure_code(
+    error: Exception,
+) -> WorkerRuntimeFailureCode:
+    """Map one process-boundary failure to a closed sanitized code."""
+
+    if isinstance(error, WorkerRuntimePresenceHeartbeatError):
+        return WorkerRuntimeFailureCode.DATABASE_FAILURE
+
+    if isinstance(
+        error,
+        (
+            PersistenceError,
+            PersistenceUnavailableError,
+        ),
+    ):
+        return WorkerRuntimeFailureCode.DATABASE_FAILURE
+
+    if isinstance(
+        error,
+        (
+            MarketDataInconsistencyError,
+            MarketDataStorageError,
+            MarketJobLockTimeoutError,
+            MarketJobNotFoundError,
+            OSError,
+        ),
+    ):
+        return WorkerRuntimeFailureCode.LOCAL_STATE_FAILURE
+
+    return WorkerRuntimeFailureCode.UNEXPECTED_FAILURE
+
+
 class MarketOperationWorkerRuntime:
     """Own long-lived PostgreSQL, HTTP and market-data worker resources."""
 
@@ -101,6 +161,9 @@ class MarketOperationWorkerRuntime:
         self._clock = clock or _utc_now
         self._stack: AsyncExitStack | None = None
         self._worker: MarketOperationWorker | None = None
+        self._presence: WorkerRuntimePresenceSession | None = None
+        self._presence_heartbeat_task: asyncio.Task[None] | None = None
+        self._persistent_observability = False
 
     @property
     def owner_id(self) -> UUID:
@@ -172,6 +235,11 @@ class MarketOperationWorkerRuntime:
             )
 
             repository = PostgresMarketOperationRepository(database)
+            presence = WorkerRuntimePresenceSession(
+                repository=PostgresWorkerRuntimeObservabilityRepository(database),
+                runtime_id=self._owner_id,
+                clock=self._clock,
+            )
             session = MarketOperationWorkerSession(
                 repository=repository,
                 owner_id=self._owner_id,
@@ -188,6 +256,7 @@ class MarketOperationWorkerRuntime:
                 clock=self._clock,
                 heartbeat_interval_seconds=(MARKET_OPERATION_HEARTBEAT_INTERVAL_SECONDS),
             )
+            self._presence = presence
             self._stack = stack
             return self
         except BaseException:
@@ -200,14 +269,102 @@ class MarketOperationWorkerRuntime:
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> bool | None:
+        await self._cancel_presence_heartbeat()
+        self._persistent_observability = False
+
         stack = self._stack
         self._stack = None
         self._worker = None
+        self._presence = None
 
         if stack is None:
             return None
 
         return await stack.__aexit__(exc_type, exc, traceback)
+
+    async def start_persistent_observability(
+        self,
+        *,
+        on_failure: Callable[[], object] | None = None,
+    ) -> None:
+        """Start durable presence only for the persistent worker loop."""
+        worker = self._worker
+        presence = self._presence
+
+        if worker is None or presence is None:
+            raise RuntimeError("market-operation worker runtime is not open")
+        if self._persistent_observability:
+            raise RuntimeError("persistent worker observability is already started")
+
+        await presence.start()
+
+        heartbeat_task = asyncio.create_task(
+            presence.heartbeat_forever(),
+            name="market-operation-worker-presence-heartbeat",
+        )
+        self._presence_heartbeat_task = heartbeat_task
+        self._persistent_observability = True
+
+        def heartbeat_done(task: asyncio.Task[None]) -> None:
+            if task.cancelled():
+                return
+
+            # Retrieve the exception so the background task never creates
+            # an unobserved-task warning. The raw error is not propagated.
+            task.exception()
+
+            if self._persistent_observability and on_failure is not None:
+                on_failure()
+
+        heartbeat_task.add_done_callback(heartbeat_done)
+
+    async def stop_persistent_observability(self) -> None:
+        """Confirm a normal persistent-loop termination as STOPPED."""
+        presence = self._presence
+
+        if presence is None or not self._persistent_observability:
+            raise RuntimeError("persistent worker observability is not started")
+
+        heartbeat_failed = await self._cancel_presence_heartbeat()
+
+        if heartbeat_failed:
+            raise WorkerRuntimePresenceHeartbeatError()
+
+        await presence.stop()
+        self._persistent_observability = False
+
+    async def fail_persistent_observability(
+        self,
+        failure_code: WorkerRuntimeFailureCode,
+    ) -> None:
+        """Confirm one known failed persistent-runtime termination."""
+        presence = self._presence
+
+        if presence is None or not self._persistent_observability:
+            raise RuntimeError("persistent worker observability is not started")
+
+        await self._cancel_presence_heartbeat()
+        await presence.fail(failure_code)
+        self._persistent_observability = False
+
+    async def _cancel_presence_heartbeat(self) -> bool:
+        task = self._presence_heartbeat_task
+        self._presence_heartbeat_task = None
+
+        if task is None:
+            return False
+
+        if not task.done():
+            task.cancel()
+
+        await asyncio.gather(
+            task,
+            return_exceptions=True,
+        )
+
+        # A normal shutdown cancels this task explicitly.
+        # Any other completion is a failed presence heartbeat.
+        return not task.cancelled()
 
     async def run_once(self) -> MarketOperationSnapshot | None:
         """Process at most one queued operation using the open runtime."""
@@ -216,7 +373,27 @@ class MarketOperationWorkerRuntime:
         if worker is None:
             raise RuntimeError("market-operation worker runtime is not open")
 
-        return await worker.run_once()
+        if not self._persistent_observability:
+            return await worker.run_once()
+
+        presence = self._presence
+        if presence is None:
+            raise RuntimeError("persistent worker observability lost its presence session")
+
+        await presence.set_activity(WorkerRuntimeActivityState.ACTIVE)
+
+        try:
+            operation = await worker.run_once()
+
+            if operation is not None and operation.state in SETTLED_OPERATION_STATES:
+                await presence.record_operation_settled(
+                    operation_id=operation.operation_id,
+                    operation_state=operation.state,
+                )
+
+            return operation
+        finally:
+            await presence.set_activity(WorkerRuntimeActivityState.IDLE)
 
 
 class MarketOperationContinuousRunner:
@@ -399,4 +576,23 @@ async def run_market_operation_worker_loop(
 
     with _market_operation_shutdown_signals(runner):
         async with runtime:
-            return await runner.run(max_cycles=max_cycles)
+            await runtime.start_persistent_observability(
+                on_failure=runner.request_stop,
+            )
+
+            try:
+                result = await runner.run(max_cycles=max_cycles)
+                await runtime.stop_persistent_observability()
+                return result
+            except asyncio.CancelledError:
+                # External cancellation does not prove a graceful stop
+                # or a confirmed failure. The epoch becomes stale.
+                raise
+            except Exception as error:
+                try:
+                    await runtime.fail_persistent_observability(_worker_runtime_failure_code(error))
+                except Exception:
+                    # If terminal persistence also fails, preserve the
+                    # original failure and allow the epoch to become stale.
+                    pass
+                raise

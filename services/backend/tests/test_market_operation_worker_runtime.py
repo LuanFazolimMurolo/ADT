@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import signal
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -33,6 +34,9 @@ from app.market_data.operations import (
     OperationResult,
 )
 from app.market_data.timeframes import get_timeframe
+from app.market_data.worker_observability import (
+    WorkerRuntimeFailureCode,
+)
 
 OWNER_ID = UUID("44444444-4444-4444-8444-444444444444")
 REQUESTER_ID = UUID("30000000-0000-4000-8000-000000000001")
@@ -412,6 +416,17 @@ async def test_loop_function_uses_one_runtime_context_and_stable_owner(
         ) -> None:
             events.append("runtime-exit")
 
+        async def start_persistent_observability(
+            self,
+            *,
+            on_failure: object = None,
+        ) -> None:
+            assert callable(on_failure)
+            events.append("observability-start")
+
+        async def stop_persistent_observability(self) -> None:
+            events.append("observability-stop")
+
         async def run_once(self) -> MarketOperationSnapshot | None:
             self.calls += 1
             events.append(f"poll-{self.calls}")
@@ -442,8 +457,10 @@ async def test_loop_function_uses_one_runtime_context_and_stable_owner(
     assert events == [
         "runtime-init",
         "runtime-enter",
+        "observability-start",
         "poll-1",
         "poll-2",
+        "observability-stop",
         "runtime-exit",
     ]
     assert result.cycles_completed == 2
@@ -544,7 +561,11 @@ async def test_continuous_runner_stop_wakes_idle_sleep_without_another_poll() ->
     assert not any(
         task is not asyncio.current_task() and not task.done()
         for task in asyncio.all_tasks()
-        if task.get_coro().__qualname__.endswith("wait_for_stop")
+        if getattr(
+            task.get_coro(),
+            "__qualname__",
+            "",
+        ).endswith("wait_for_stop")
     )
 
 
@@ -583,6 +604,8 @@ async def test_continuous_runner_stop_cancels_and_joins_active_poll() -> None:
                 await asyncio.sleep(0)
                 poll_joined.set()
                 raise
+
+            raise AssertionError("blocking poll unexpectedly resumed")
 
     runtime = BlockingRuntime()
     runner = runtime_module.MarketOperationContinuousRunner(
@@ -731,6 +754,8 @@ async def test_runtime_resources_close_only_after_active_poll_is_joined() -> Non
                 events.append("poll-joined")
                 raise
 
+            raise AssertionError("resource poll unexpectedly resumed")
+
     runtime = ResourceRuntime()
     runner = runtime_module.MarketOperationContinuousRunner(
         runtime=runtime,
@@ -775,6 +800,23 @@ async def test_loop_process_boundary_propagates_unexpected_application_error(
         ) -> None:
             events.append("runtime-exit")
 
+        async def start_persistent_observability(
+            self,
+            *,
+            on_failure: object = None,
+        ) -> None:
+            assert callable(on_failure)
+            events.append("observability-start")
+
+        async def stop_persistent_observability(self) -> None:
+            events.append("observability-stop")
+
+        async def fail_persistent_observability(
+            self,
+            failure_code: WorkerRuntimeFailureCode,
+        ) -> None:
+            events.append(f"observability-fail:{failure_code.value}")
+
         async def run_once(self) -> MarketOperationSnapshot | None:
             events.append("poll")
             raise RuntimeError("synthetic worker failure")
@@ -782,7 +824,7 @@ async def test_loop_process_boundary_propagates_unexpected_application_error(
     @contextmanager
     def fake_signals(
         _runner: runtime_module.MarketOperationContinuousRunner,
-    ) -> object:
+    ) -> Iterator[None]:
         events.append("signals-enter")
         try:
             yield
@@ -802,7 +844,9 @@ async def test_loop_process_boundary_propagates_unexpected_application_error(
         "runtime-init",
         "signals-enter",
         "runtime-enter",
+        "observability-start",
         "poll",
+        "observability-fail:UNEXPECTED_FAILURE",
         "runtime-exit",
         "signals-exit",
     ]
