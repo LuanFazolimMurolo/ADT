@@ -864,10 +864,11 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Tracks 7-01 through 7-04 are complete, closed and
-integrated into `main`. Track 7-05 — Worker Runtime Observability is the active
-delivery. Phase 7 as a whole remains active; the exact current handoff is
-maintained in [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
+**Status**: Active. Tracks 7-01 through 7-05 are complete and closed. Tracks
+7-01 through 7-04 are integrated into `main`; 7-05 closed on its feature branch
+at implementation milestone `0c53c96c9d2500b01d0dfab0e1dd74531e1e8d9c`.
+Phase 7 as a whole remains active; the exact current handoff is maintained in
+[`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
 - [ ] Define administrator-approved operational mandates for assets, markets
@@ -882,7 +883,7 @@ maintained in [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 - [ ] Establish the ledger and session foundations required by a future ADT
       Official Portfolio and official paper capital without claiming that
       portfolio is already implemented
-- [ ] Show worker health, leases, progress, errors and audit events
+- [x] Show worker health, leases, progress, errors and audit events
 - [x] Preserve CLI workflows and explicit operator confirmation
 - [x] Preserve auditable start, pause, resume, cancel and recovery transitions
 - [ ] Complete the previously approved Phase 2D operational administration scope
@@ -1004,28 +1005,70 @@ repair, scanning, network access or durable dataset mutation inside HTTP.
   quality summaries;
 - no migration or dependency changes.
 
-### 7-05 — Worker Runtime Observability 🚧
+### 7-05 — Worker Runtime Observability ✅
 
-**Status**: Active / bootstrap.
+**Status**: Complete and closed.
 
 **Goal**: Add authoritative, bounded and sanitized runtime observability for the
 persistent market-data worker independently of individual operation leases,
 without adding worker lifecycle controls.
 
-**Approved boundary**:
+**Delivered**:
 
-- persist enough worker-runtime state to observe an idle or active worker;
-- heartbeat/presence state must be distinct from per-operation lease state;
-- expose only sanitized administrator-visible worker health;
-- expose bounded sanitized operational events;
-- preserve the existing one-worker-per-volume deployment contract;
-- do not infer confirmed process death solely from an expired heartbeat;
-- use authenticated administrator-only HTTP reads;
-- frontend polling must remain bounded;
-- no hostname, PID, filesystem path, `ADT_DATA_DIR`, credentials or local
-  storage identifiers may cross the API boundary.
+- reviewed PostgreSQL persistence for worker-runtime presence and bounded
+  operational events, with RLS enabled, Data API privileges revoked and no
+  Data API access;
+- domain contracts, ports and PostgreSQL repository support for runtime and
+  event observability;
+- persistent worker-runtime wiring with heartbeat and presence maintained
+  independently while the worker is idle or executing an operation;
+- explicit `HEALTHY`, `STALE`, `STOPPED` and `FAILED` health states, plus
+  separate `IDLE` and `ACTIVE` activity states;
+- semantics that a stale heartbeat does not prove that the prior process is
+  dead, while `STOPPED` and `FAILED` require confirmed termination evidence;
+- bounded, sanitized operational events;
+- exactly two administrator-only, `Cache-Control: no-store` GET observability
+  routes, `/runtimes` and `/events`;
+- an HTTP contract that exposes no internal runtime UUID, hostname, PID,
+  filesystem path, `ADT_DATA_DIR`, credentials or storage identifiers;
+- generated OpenAPI and TypeScript client contracts;
+- protected read-only `/admin/worker-observability` frontend with bounded
+  30-second polling, runtime limit 20 and event limit 50;
+- browser regression coverage that explicitly handles React StrictMode double
+  mounting; and
+- no worker lifecycle mutation or long-running worker work through HTTP.
 
-**Expected migration**: YES, subject to schema review before application.
+**Safety boundary**:
+
+- runtime presence remains distinct from operation leases;
+- a stale heartbeat does not prove that the process is dead;
+- the existing one-worker-per-volume deployment contract remains authoritative;
+- observability does not become fencing or takeover authority;
+- HTTP remains bounded, read-only and administrator-only; and
+- no worker lifecycle mutation, host/process/filesystem disclosure or
+  long-running worker work is permitted through HTTP.
+
+**Closure evidence**:
+
+- Ruff check, Ruff format and pip check: PASS;
+- MyPy strict: PASS in 220 source files;
+- full backend: 2579 passed, 1 skipped, with 87% coverage;
+- targeted 7-05 closure: 110 passed;
+- full frontend Vitest: 29 files, 225 passed;
+- frontend typecheck, E2E typecheck, ESLint, generated OpenAPI freshness and
+  production build: PASS;
+- full Playwright: 53 passed;
+- 6 implementation commits and 37 delivery files relative to the starting
+  `main` baseline;
+- final implementation milestone:
+  `0c53c96c9d2500b01d0dfab0e1dd74531e1e8d9c`; and
+- no unresolved 7-05 implementation blocker.
+
+**Migration status**: The reviewed
+`supabase/migrations/20260819000000_phase_7_05_worker_runtime_observability.sql`
+migration was not applied remotely. Remote migration application remains an
+operational/deployment step and was not required for local implementation
+closure.
 
 **Explicitly out of scope**:
 

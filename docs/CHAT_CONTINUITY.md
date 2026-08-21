@@ -1,6 +1,6 @@
 # ADT Current Development Handoff
 
-Last updated: 2026-08-17
+Last updated: 2026-08-21
 
 ## Current branch
 
@@ -18,14 +18,16 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Last completed track
 
-**7-04 — RAW Gap & Quality Inspection — CLOSED**
+**7-05 — Worker Runtime Observability — CLOSED**
 
-Formal closure is supported by the accepted backend, HTTP and frontend gates,
-the final full backend/frontend regressions, independent remote verification
-and the delivery-wide structural and semantic safety audit.
+Gate 5 — Delivery-wide Closure Audit passed and closed the implementation. The
+accepted persistence, repository, runtime, HTTP and frontend gates, final full
+backend/frontend/browser regressions and delivery-wide safety audit support the
+closure.
 
 Previously closed Phase 7 deliveries remain closed:
 
+- **7-04 — RAW Gap & Quality Inspection — CLOSED**
 - **7-03 — Persisted RAW Dataset Inspection — CLOSED**
 - **7-02 — Market Operation Administrative Console — CLOSED**
 - **7-01 — Control Plane Foundation — CLOSED**
@@ -33,9 +35,9 @@ Previously closed Phase 7 deliveries remain closed:
 - **7-01D2C2 — Pre-claim Control Settlement — CLOSED**
 - **7-01D2C3 — Structured Cancellation & Graceful Shutdown — CLOSED**
 
-## Last validated code milestone
+## Last validated implementation milestone
 
-`f155d5a1dc1dfddbca73f1125883c93088a9680d`
+`0c53c96c9d2500b01d0dfab0e1dd74531e1e8d9c`
 
 ## Current integrated main baseline
 
@@ -140,7 +142,7 @@ Previously closed Phase 7 deliveries remain closed:
 - Working tree clean after implementation checkpoints
 - No unresolved 7-03 blocker
 
-## Current delivery
+## 7-04 closure evidence
 
 **7-04 — RAW Gap & Quality Inspection — CLOSED**
 
@@ -219,39 +221,114 @@ Closure evidence:
 
 Phase 7 itself remains **ACTIVE**. Closing 7-04 does not close or tag Phase 7.
 
-## Active delivery
+## Last completed delivery
 
-**7-05 — Worker Runtime Observability — ACTIVE / BOOTSTRAP**
+**7-05 — Worker Runtime Observability — CLOSED**
 
 Starting baseline:
 
 `f0f606e9f7d302c85d7b7a621604f67fc84676a9`
 
-**Objective**: Provide bounded, authenticated and sanitized observability of
-the persistent market-data worker independently of individual operation leases.
+This is the starting integrated `main` baseline for 7-05, not an implementation
+milestone.
 
-**Contract to preserve**:
+Implementation milestones:
+
+- Bootstrap:
+  `c288cd6b44fb36625b506cec5bc9a3b8d9c248af`
+- Persistence foundation:
+  `70367174f3d4afc69e1e9bc1b90a157a25b113ef`
+- Repository/domain contract:
+  `1367d56040ab3ed2414aaaa2b25db03df320db68`
+- Persistent runtime wiring:
+  `8346195fd08c607c97ec05f9e5e24d06eaf8b4e1`
+- Administrative observability API:
+  `ecca557b51b02fdcac28920b32a15fe755a85882`
+- Administrative observability frontend:
+  `0c53c96c9d2500b01d0dfab0e1dd74531e1e8d9c`
+
+Protected patch evidence:
+
+- Gate 2A persistence patch SHA256:
+  `ba19c1769e4563df0054a2d02d2891b9611df11e8f69f727e0b194038d70e149`
+- Gate 2B repository patch SHA256:
+  `a877b7db631e2b0a2abe0b96eb6b58a2b0dfeece0a699a5a659aeb8ab4a50289`
+- Gate 2C runtime wiring patch SHA256:
+  `779368015f23a787d8409f821e9d8f42cca199c402c9be7afd95ed5fb0c1bd5f`
+- Gate 3 API patch SHA256:
+  `52c7834a0bf3b237e24f0431193fa0d29e56608724b0b8d149051f7b6bbae5e1`
+- Gate 4 frontend patch SHA256:
+  `f87fdfebd669e9214420f4ae5cfd3d98d6ba3a07d7ed99ec38ddf2c72f46e181`
+
+Closure evidence:
+
+- Gate 5 — Delivery-wide Closure Audit: PASS / CLOSED
+- Ruff check: PASS
+- Ruff format: PASS, 345 files already formatted
+- MyPy strict: PASS in 220 source files
+- Full backend: 2579 passed, 1 skipped
+- Backend coverage: 87%
+- pip check: PASS
+- Targeted 7-05 closure: 110 passed
+- Full frontend Vitest: 29 files, 225 passed
+- Frontend typecheck, E2E typecheck, ESLint, generated OpenAPI freshness and
+  production build: PASS
+- Full Playwright: 53 passed
+- Exactly two authenticated administrator-only GET observability routes:
+  `/runtimes` and `/events`
+- HTTP/API reads are bounded, sanitized and use `Cache-Control: no-store`
+- The migration remained unchanged after persistence Gate 2A
+- RLS and Data API privilege revokes were reviewed for both observability tables
+- The migration was not applied remotely
+- Final delivery audit contained 37 files relative to the starting `main`
+- The implementation contains 6 commits relative to that baseline
+- The remote branch was verified at the final implementation milestone
+- The working tree was clean at implementation closure
+- No unresolved 7-05 implementation blocker remains
+
+Delivered boundary:
+
+- PostgreSQL-backed worker runtime presence and bounded operational events
+- Domain contracts, ports, repository and persistent runtime wiring
+- Independent heartbeat while the worker is `IDLE` or `ACTIVE`
+- `HEALTHY`, `STALE`, `STOPPED` and `FAILED` health projections
+- Generated OpenAPI/client contracts and a protected read-only
+  `/admin/worker-observability` frontend
+- Bounded 30-second polling with runtime limit 20 and event limit 50
+- React StrictMode-safe browser regression coverage
+
+Contract and safety boundaries preserved:
 
 - worker runtime presence is distinct from an operation lease;
 - an expired heartbeat is not proof that a prior process has terminated;
 - HTTP performs no long-running worker work;
-- HTTP exposes no hostname, PID, filesystem path, `ADT_DATA_DIR`, credentials
-  or storage identifiers;
+- HTTP exposes no internal runtime UUID, hostname, PID, filesystem path,
+  `ADT_DATA_DIR`, credentials or storage identifiers;
 - operational events are bounded and sanitized;
-- no worker start, stop or restart control is added;
+- no worker lifecycle mutation is exposed through HTTP;
+- observability is not worker fencing or takeover authority;
+- one worker per persistent volume remains a deployment contract;
 - existing market-data operation, local durability and recovery contracts remain
   authoritative.
 
-**Expected migration**: YES, but no migration may be applied remotely until its
-schema, RLS/revokes and safety boundary are separately reviewed.
+Migration status:
 
-**Explicitly deferred from 7-05**:
+`supabase/migrations/20260819000000_phase_7_05_worker_runtime_observability.sql`
+was reviewed with RLS enabled and Data API privileges revoked, but it was not
+applied remotely. Remote application remains a separate operational/deployment
+step.
+
+Explicitly deferred after 7-05:
 
 - worker lifecycle mutation from HTTP;
 - collectors and paper runners;
 - mandates and paper-session configuration;
 - capital-ledger integration and Official Portfolio;
 - machine learning, Telegram, SaaS, deployment and real-capital execution.
+
+Phase 7 remains **ACTIVE** and has no Phase 7 tag. The next Phase 7 delivery has
+not yet been selected or bootstrapped; the remaining items in
+[`ROADMAP.md`](./ROADMAP.md) continue to govern the next scope.
 
 ## Important repository and process constraints
 
