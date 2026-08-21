@@ -864,10 +864,12 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Tracks 7-01 through 7-05 are complete and closed. Tracks
-7-01 through 7-04 are integrated into `main`; 7-05 closed on its feature branch
-at implementation milestone `0c53c96c9d2500b01d0dfab0e1dd74531e1e8d9c`.
-Phase 7 as a whole remains active; the exact current handoff is maintained in
+**Status**: Active. Tracks 7-01 through 7-05 are complete, closed and integrated
+into `main`. Track 7-05 was integrated by fast-forward; its final implementation
+milestone remains `0c53c96c9d2500b01d0dfab0e1dd74531e1e8d9c`, and the current
+integrated closure/main milestone is
+`8a9c6eaaadf8e2fd07f56c69ae497d5b3563c003`. Phase 7 as a whole remains
+active; the exact current handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
@@ -1063,6 +1065,10 @@ without adding worker lifecycle controls.
 - final implementation milestone:
   `0c53c96c9d2500b01d0dfab0e1dd74531e1e8d9c`; and
 - no unresolved 7-05 implementation blocker.
+
+The delivery was integrated into `main` by fast-forward. The resulting `main`
+and feature branch were verified at the same closure HEAD,
+`8a9c6eaaadf8e2fd07f56c69ae497d5b3563c003`.
 
 **Migration status**: The reviewed
 `supabase/migrations/20260819000000_phase_7_05_worker_runtime_observability.sql`

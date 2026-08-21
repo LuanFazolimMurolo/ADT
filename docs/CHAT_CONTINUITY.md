@@ -4,7 +4,7 @@ Last updated: 2026-08-21
 
 ## Current branch
 
-`feat/phase-7-05-worker-runtime-observability`
+`main`
 
 At the start of every session, verify the local branch and HEAD, then inspect
 the corresponding remote branch. This file records the intended handoff; Git
@@ -39,9 +39,9 @@ Previously closed Phase 7 deliveries remain closed:
 
 `0c53c96c9d2500b01d0dfab0e1dd74531e1e8d9c`
 
-## Current integrated main baseline
+## Current integrated main milestone
 
-`f0f606e9f7d302c85d7b7a621604f67fc84676a9`
+`8a9c6eaaadf8e2fd07f56c69ae497d5b3563c003`
 
 ## 7-02 closure evidence
 
@@ -285,6 +285,15 @@ Closure evidence:
 - The remote branch was verified at the final implementation milestone
 - The working tree was clean at implementation closure
 - No unresolved 7-05 implementation blocker remains
+
+Post-integration evidence:
+
+- Documentation closure commit:
+  `8a9c6eaaadf8e2fd07f56c69ae497d5b3563c003`
+- 7-05 was integrated into `main` by fast-forward
+- `origin/main` and the 7-05 feature branch were verified identical at
+  `8a9c6eaaadf8e2fd07f56c69ae497d5b3563c003`
+- No merge commit was created
 
 Delivered boundary:
 
