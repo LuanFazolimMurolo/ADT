@@ -55,6 +55,15 @@ The next-delivery selection audit passed. Mandates were selected because they
 are the missing authorization authority for later paper-session configuration,
 policy selection and durable runtime control.
 
+Gate 1 — Architecture & Revision Model: **PASS / CLOSED after accepted boundary
+amendment**. The original audit returned **CONDITIONAL PASS — BOUNDARY AMENDMENT
+REQUIRED**. The accepted minimal lifecycle amendment is:
+
+- `DRAFT -> APPROVED`;
+- `DRAFT -> ARCHIVED`;
+- `APPROVED -> ARCHIVED`;
+- `ARCHIVED -> none`.
+
 Frozen boundary:
 
 - create a durable, authenticated and auditable administrator-approved mandate
@@ -66,13 +75,34 @@ Frozen boundary:
   precision from mandate authority;
 - reject unsupported exchange/market combinations and preserve Binance Spot as
   the only currently supported operational boundary;
-- use the one-way `DRAFT -> APPROVED -> ARCHIVED` lifecycle;
-- persist immutable specification revisions, append a revision when editing a
-  draft and use `expected_revision` for concurrent updates;
-- atomically approve one exact revision and specification checksum; approved
-  mandates cannot be edited in place;
+- forbid `APPROVED -> DRAFT`, forbid specification revision append after
+  approval, and keep `ARCHIVED` terminal; a draft may be archived without prior
+  approval, with nullable approval metadata preserving that distinction;
+- introduce no `CANCELLED` or `ABANDONED` state in 7-06;
+- use a stable UUID mandate identity independent of specification content;
+- persist immutable specification revisions starting at revision 1, with name
+  and description inside the revisioned specification;
+- keep specification revision distinct from aggregate `record_version`:
+  changed draft replacement requires `expected_revision` and
+  `expected_record_version`, approval also requires the expected checksum, and
+  archive uses `expected_record_version`;
+- treat a semantically identical replacement as `NOOP`, creating no revision
+  and incrementing neither token; stale concurrency tokens still conflict;
+- calculate a deterministic lowercase SHA-256 checksum over canonical
+  specification semantics, excluding transaction and aggregate metadata;
+- use actor-scoped create idempotency with an explicit key and deterministic
+  fingerprint: exact replay returns the same mandate, divergent key reuse
+  conflicts, and a new key represents a separate administrator intent;
+- persist the mandate aggregate, immutable specification revisions and their
+  immutable canonical instrument rows; instrument count is derived rather than
+  persisted and remains bounded to 1 through 100 instruments per revision;
+- require no separate idempotency table for current create-only idempotency;
+- atomically approve one exact revision and specification checksum;
 - record auditable administrator actors and timestamps; one administrator may
   create and approve in this delivery;
+- use the authenticated UUID referencing `auth.users` as durable actor
+  authority; names, emails and JWT payloads are not durable authority, and
+  mutable `app_admins` membership is not historical mandate state;
 - perform approval without Binance/network access or live-availability checks;
 - allow future consumers to bind to `mandate_id + approved_revision +
   specification_checksum`;
@@ -95,7 +125,8 @@ Telegram; SaaS; deployment expansion; and real-capital execution.
 
 Migration expected: **YES**. It may be designed, reviewed and validated locally
 in later gates, but remote application is prohibited until separately reviewed.
-No 7-06 implementation files or implementation milestone exist yet.
+No 7-06 implementation files or implementation milestone exist yet. Gate 2 has
+not started.
 
 ## 7-02 closure evidence
 

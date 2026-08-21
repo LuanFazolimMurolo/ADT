@@ -1114,14 +1114,52 @@ policies.
   current operational capability set;
 - current real supported boundary is Binance Spot; do not claim support for
   forex, equity or futures merely because `MarketType` enumerates them;
-- lifecycle: `DRAFT -> APPROVED -> ARCHIVED`;
-- no reverse lifecycle transition;
-- every persisted specification revision is immutable;
-- editing a draft appends a new revision;
-- `expected_revision` protects concurrent draft updates;
-- approval atomically seals one exact revision and specification checksum;
-- approved mandates cannot be edited in place;
+- allowed lifecycle transitions are:
+  - `DRAFT -> APPROVED`;
+  - `DRAFT -> ARCHIVED`;
+  - `APPROVED -> ARCHIVED`;
+  - `ARCHIVED -> no transition`;
+- `APPROVED -> DRAFT` is forbidden, and an `APPROVED` mandate cannot append
+  another specification revision;
+- `ARCHIVED` is a terminal inactive/retired mandate record;
+- a `DRAFT` may be archived without ever being approved; nullable approval
+  metadata distinguishes it from a previously approved mandate later archived;
+- no `CANCELLED` or `ABANDONED` state is introduced in 7-06;
+- `mandate_id` is a stable UUID independent of specification content;
+- specification revisions are immutable, start at revision 1, and contain the
+  revisioned name and description;
+- specification revision and aggregate record version are distinct concepts:
+  `current_revision` identifies the current immutable specification revision,
+  while `record_version` protects lifecycle and aggregate concurrency;
+- a changed `DRAFT` replacement requires `expected_revision` and
+  `expected_record_version` and appends exactly one immutable revision;
+- approval requires `expected_revision`, the expected specification checksum
+  and `expected_record_version`, and atomically seals the exact revision;
+- archive uses `expected_record_version`;
+- a semantically identical replacement is `NOOP`: it creates no revision and
+  increments neither concurrency token; stale tokens still conflict even when
+  the submitted specification would otherwise be a semantic no-op;
+- the specification checksum is deterministic lowercase SHA-256 over canonical
+  specification semantics and excludes actors, timestamps, aggregate state,
+  `record_version` and revision metadata;
+- create-draft uses an explicit idempotency key plus a deterministic request
+  fingerprint: the same actor/key/fingerprint is an idempotent replay, the same
+  actor/key with a different fingerprint conflicts, and a new key with the same
+  specification creates a distinct mandate for a separate administrator intent;
+- persistence authority is the mandate aggregate, immutable specification
+  revisions and immutable canonical instruments belonging to each revision;
+- instrument count is derived from revision instrument rows, is not a second
+  persisted source of truth, and remains bounded to 1 through 100 instruments
+  per revision;
+- historical revision and instrument rows are immutable; no separate
+  idempotency table is currently required because create-only idempotency
+  belongs to the aggregate;
 - administrator actor and timestamps are auditable;
+- durable actor identity is the authenticated UUID referencing `auth.users`;
+  names, emails and JWT payloads are not durable authority;
+- current administrator authorization is enforced by the authenticated backend
+  service/API boundary before mutation; mandate persistence triggers do not
+  treat mutable `app_admins` membership as historical mandate state;
 - one administrator may both create and approve in this delivery;
 - approval performs no Binance/network call and must not depend on live market
   availability;
@@ -1132,7 +1170,8 @@ policies.
   approving and archiving mandates;
 - backend remains the only authority for validation and transition legality;
 - PostgreSQL is the operational persistence authority for mandates;
-- RLS enabled and Data API privileges revoked;
+- RLS is enabled, browser/Data API write authority is absent, and Data API
+  privileges are revoked;
 - no hostname, PID, filesystem path, `ADT_DATA_DIR`, credentials or storage
   identifiers may cross the HTTP boundary;
 - no long-running work inside HTTP.
