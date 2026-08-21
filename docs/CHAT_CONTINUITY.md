@@ -4,7 +4,7 @@ Last updated: 2026-08-21
 
 ## Current branch
 
-`main`
+`feat/phase-7-06-operational-mandate-foundation`
 
 At the start of every session, verify the local branch and HEAD, then inspect
 the corresponding remote branch. This file records the intended handoff; Git
@@ -41,7 +41,61 @@ Previously closed Phase 7 deliveries remain closed:
 
 ## Current integrated main milestone
 
-`8a9c6eaaadf8e2fd07f56c69ae497d5b3563c003`
+`d912b44867f111c73759077f86c072eb2a0c2542`
+
+## Active delivery
+
+**7-06 — Operational Mandate Foundation — ACTIVE / BOOTSTRAP**
+
+Starting main baseline:
+
+`d912b44867f111c73759077f86c072eb2a0c2542`
+
+The next-delivery selection audit passed. Mandates were selected because they
+are the missing authorization authority for later paper-session configuration,
+policy selection and durable runtime control.
+
+Frozen boundary:
+
+- create a durable, authenticated and auditable administrator-approved mandate
+  authority for a bounded set of canonical instruments;
+- derive asset and market projections from authorized instruments instead of
+  maintaining independent authorization lists;
+- identify authorization by exchange, market type and canonical trading pair;
+- exclude mutable adapter metadata such as native symbol, active flag and
+  precision from mandate authority;
+- reject unsupported exchange/market combinations and preserve Binance Spot as
+  the only currently supported operational boundary;
+- use the one-way `DRAFT -> APPROVED -> ARCHIVED` lifecycle;
+- persist immutable specification revisions, append a revision when editing a
+  draft and use `expected_revision` for concurrent updates;
+- atomically approve one exact revision and specification checksum; approved
+  mandates cannot be edited in place;
+- record auditable administrator actors and timestamps; one administrator may
+  create and approve in this delivery;
+- perform approval without Binance/network access or live-availability checks;
+- allow future consumers to bind to `mandate_id + approved_revision +
+  specification_checksum`;
+- expose only bounded administrator APIs and a protected administrative
+  frontend for listing, drafting, reviewing, approving and archiving;
+- keep backend validation and transition legality authoritative;
+- use PostgreSQL as mandate authority with RLS enabled and Data API privileges
+  revoked;
+- expose no hostname, PID, filesystem path, `ADT_DATA_DIR`, credentials or
+  storage identifiers, and perform no long-running work inside HTTP.
+
+Explicitly out of scope are timeframes and trading horizons; strategies,
+sizing, fees, slippage and risk policies; initial or official capital;
+paper-session creation or configuration; collector, paper-runner or worker
+lifecycle; market-data ingestion or repair; network execution from
+administrative HTTP; live availability as an approval prerequisite;
+dual-control approval; approved-mandate mutation or supersession graphs;
+capital-ledger integration; ADT Official Portfolio; ADT Confidence Score; ML;
+Telegram; SaaS; deployment expansion; and real-capital execution.
+
+Migration expected: **YES**. It may be designed, reviewed and validated locally
+in later gates, but remote application is prohibited until separately reviewed.
+No 7-06 implementation files or implementation milestone exist yet.
 
 ## 7-02 closure evidence
 
@@ -335,9 +389,9 @@ Explicitly deferred after 7-05:
 - capital-ledger integration and Official Portfolio;
 - machine learning, Telegram, SaaS, deployment and real-capital execution.
 
-Phase 7 remains **ACTIVE** and has no Phase 7 tag. The next Phase 7 delivery has
-not yet been selected or bootstrapped; the remaining items in
-[`ROADMAP.md`](./ROADMAP.md) continue to govern the next scope.
+Phase 7 remains **ACTIVE** and has no Phase 7 tag. Delivery 7-06 is selected and
+bootstrapped on its frozen documentation boundary; the remaining items in
+[`ROADMAP.md`](./ROADMAP.md) continue to govern later scope.
 
 ## Important repository and process constraints
 

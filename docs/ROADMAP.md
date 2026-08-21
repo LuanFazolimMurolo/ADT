@@ -866,10 +866,11 @@ HTTP requests.
 
 **Status**: Active. Tracks 7-01 through 7-05 are complete, closed and integrated
 into `main`. Track 7-05 was integrated by fast-forward; its final implementation
-milestone remains `0c53c96c9d2500b01d0dfab0e1dd74531e1e8d9c`, and the current
-integrated closure/main milestone is
-`8a9c6eaaadf8e2fd07f56c69ae497d5b3563c003`. Phase 7 as a whole remains
-active; the exact current handoff is maintained in
+milestone remains `0c53c96c9d2500b01d0dfab0e1dd74531e1e8d9c`, and its integrated
+closure milestone is `8a9c6eaaadf8e2fd07f56c69ae497d5b3563c003`. The current
+post-integration documentation/main baseline is
+`d912b44867f111c73759077f86c072eb2a0c2542`. Phase 7 as a whole remains active;
+the exact current handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
@@ -1086,6 +1087,93 @@ closure.
 - paper-session creation or configuration;
 - capital-ledger integration or ADT Official Portfolio;
 - machine learning, Telegram, SaaS, deployment and real-capital execution.
+
+### 7-06 — Operational Mandate Foundation 🚧
+
+**Status**: Active / bootstrap.
+
+**Goal**:
+
+Create a durable, authenticated and auditable administrator-approved authority
+for the canonical instruments that future ADT operational workflows are allowed
+to use, without creating sessions, starting processes or selecting trading
+policies.
+
+**Frozen scope**:
+
+- canonical mandate identity;
+- bounded name and description;
+- explicit bounded set of canonical authorized instruments;
+- assets and markets are derived projections of the authorized instrument set,
+  not independent authorization lists;
+- canonical instrument authorization uses exchange + market type + canonical
+  trading pair;
+- mutable adapter metadata such as native symbol, active flag and precision is
+  not part of mandate authority;
+- backend rejects exchange/market combinations not actually supported by the
+  current operational capability set;
+- current real supported boundary is Binance Spot; do not claim support for
+  forex, equity or futures merely because `MarketType` enumerates them;
+- lifecycle: `DRAFT -> APPROVED -> ARCHIVED`;
+- no reverse lifecycle transition;
+- every persisted specification revision is immutable;
+- editing a draft appends a new revision;
+- `expected_revision` protects concurrent draft updates;
+- approval atomically seals one exact revision and specification checksum;
+- approved mandates cannot be edited in place;
+- administrator actor and timestamps are auditable;
+- one administrator may both create and approve in this delivery;
+- approval performs no Binance/network call and must not depend on live market
+  availability;
+- future consumers must be able to bind to `mandate_id + approved_revision +
+  specification_checksum`;
+- administrator-only bounded API;
+- protected administrative frontend for listing, drafting, reviewing,
+  approving and archiving mandates;
+- backend remains the only authority for validation and transition legality;
+- PostgreSQL is the operational persistence authority for mandates;
+- RLS enabled and Data API privileges revoked;
+- no hostname, PID, filesystem path, `ADT_DATA_DIR`, credentials or storage
+  identifiers may cross the HTTP boundary;
+- no long-running work inside HTTP.
+
+**Expected migration**: YES.
+
+The migration may be designed, reviewed and validated locally in later gates,
+but MUST NOT be applied remotely as part of the implementation closure.
+
+**Explicitly out of scope**:
+
+- timeframes and trading horizons;
+- strategy selection;
+- sizing;
+- fees;
+- slippage policy;
+- risk policies;
+- initial or official capital;
+- paper-session creation or configuration;
+- collector lifecycle;
+- paper-runner lifecycle;
+- starting/stopping/restarting workers;
+- market-data ingestion or repair;
+- Binance/network execution from administrative HTTP;
+- live instrument availability as an approval prerequisite;
+- dual-control/four-eyes approval;
+- mutation of an approved mandate;
+- mandate supersession graph;
+- capital-ledger integration;
+- ADT Official Portfolio;
+- ADT Confidence Score;
+- ML;
+- Telegram;
+- SaaS;
+- deployment expansion;
+- real-capital execution.
+
+**Architectural rule**:
+
+The mandate authorizes a canonical operational universe. It does not itself
+execute work and it does not yet define a complete trading session.
 
 ---
 
