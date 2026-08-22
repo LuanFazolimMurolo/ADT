@@ -32,10 +32,12 @@ from app.repositories import (
     SettingsRepository,
     SimulationRepository,
 )
+from app.repositories.operational_mandates import PostgresOperationalMandateRepository
 from app.services import (
     AdminService,
     CapitalMovementService,
     MarketOperationService,
+    OperationalMandateService,
     PublicSimulationService,
     SettingsService,
     SimulationService,
@@ -224,5 +226,16 @@ def get_worker_runtime_observability_service(
 
     return WorkerRuntimeObservabilityService(
         repository=PostgresWorkerRuntimeObservabilityRepository(database),
+        clock=lambda: datetime.now(UTC),
+    )
+
+
+def get_operational_mandate_service(
+    database: Database = Depends(get_database),
+) -> OperationalMandateService:
+    """Build the operational-mandate application service."""
+
+    return OperationalMandateService(
+        repository=PostgresOperationalMandateRepository(database),
         clock=lambda: datetime.now(UTC),
     )
