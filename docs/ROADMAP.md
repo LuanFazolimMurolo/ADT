@@ -1090,9 +1090,15 @@ closure.
 
 ### 7-06 — Operational Mandate Foundation 🚧
 
-**Status**: Active implementation. Gates 2A–2C are remotely published and
-closed. Gate 2D — Bounded Mandate Query Completion is selected next and has not
-started.
+**Status**: Active implementation. Phase 7 and delivery 7-06 remain active.
+Gates 2A–2E are remotely published and closed. Gate 3 — Protected Administrator
+API is selected next and has not started.
+
+Starting integrated `main` baseline:
+`d912b44867f111c73759077f86c072eb2a0c2542`.
+
+Latest published implementation milestone:
+`a610212075172c1d1d706ba4d475e76b0f3dce58`.
 
 **Gate progress**:
 
@@ -1101,7 +1107,10 @@ started.
 - Gate 2A — Pure Domain Contract: remotely published and closed;
 - Gate 2B — Local Persistence Foundation: remotely published and closed;
 - Gate 2C — PostgreSQL Repository Contract: remotely published and closed;
-- Gate 2D — Bounded Mandate Query Completion: selected and not started.
+- Gate 2D — Bounded Mandate Query Completion: remotely published and closed;
+- Gate 2E — Operational Mandate Application Service: remotely published and
+  closed;
+- Gate 3 — Protected Administrator API: selected and not started.
 
 **Goal**:
 
@@ -1195,11 +1204,14 @@ versioned at
 remains unapplied to linked/remote Supabase; remote application is separately
 controlled operational work and is not part of this implementation checkpoint.
 
-**Selected next gate**: Gate 2D completes the bounded persistence query surface
-needed for the administrator catalog and immutable revision-history review
-before service/API work. The selected future repository additions are
-`list_current(...)` and `list_revisions(...)`; they are not yet implemented.
-No 7-06 service, administrator API or frontend implementation has started.
+**Published implementation boundary**: Gate 2D completed the bounded
+persistence query surface for the current-mandate catalog and immutable
+revision history. Gate 2E completed the transport-independent application
+service for bounded reads and create/replace/approve/archive orchestration.
+
+**Selected next gate**: Gate 3 — Protected Administrator API. It is selected and
+has not started. No Gate 3 administrator API or Gate 4 frontend implementation
+has started.
 
 **Explicitly out of scope**:
 

@@ -37,7 +37,7 @@ Previously closed Phase 7 deliveries remain closed:
 
 ## Last validated implementation milestone
 
-`7963dfc13d461d2de6990e6d856bfecd16e30323`
+`a610212075172c1d1d706ba4d475e76b0f3dce58`
 
 ## Current integrated main milestone
 
@@ -62,7 +62,10 @@ Gate progress:
 - Gate 2A — Pure Domain Contract: **REMOTE PUBLISHED / CLOSED**;
 - Gate 2B — Local Persistence Foundation: **REMOTE PUBLISHED / CLOSED**;
 - Gate 2C — PostgreSQL Repository Contract: **REMOTE PUBLISHED / CLOSED**;
-- Gate 2D — Bounded Mandate Query Completion: **SELECTED / NOT STARTED**.
+- Gate 2D — Bounded Mandate Query Completion: **REMOTE PUBLISHED / CLOSED**;
+- Gate 2E — Operational Mandate Application Service: **REMOTE PUBLISHED /
+  CLOSED**;
+- Gate 3 — Protected Administrator API: **SELECTED / NOT STARTED**.
 
 Gate 1 — Architecture & Revision Model: **PASS / CLOSED after accepted boundary
 amendment**. The original audit returned **CONDITIONAL PASS — BOUNDARY AMENDMENT
@@ -145,18 +148,40 @@ Published implementation boundary:
   replacement and semantic no-op, revision/record-version concurrency,
   approval, archive, exact replay behavior, safe database-error translation and
   strict runtime input validation.
+- Gate 2D provides a bounded current-mandate catalog with optional lifecycle
+  state filtering, deterministic ordering and independent total counts; bounded
+  immutable revision history; exact current-revision reconstruction; batched
+  revision/instrument loading without N+1 queries; same-statement total/page
+  snapshot consistency under `READ COMMITTED`; and strict validation and
+  corruption safety.
+- Gate 2E provides the transport-independent `OperationalMandateService` with
+  bounded list, get, history and exact-revision use cases plus
+  create/replace/approve/archive orchestration. It uses an injected
+  authoritative clock, propagates actor, idempotency, concurrency and checksum
+  inputs exactly, maps stable point-read absence to not-found, and preserves
+  domain and persistence errors unchanged. It performs no administrator
+  authorization lookup, HTTP handling, SQL or network work.
+
+Published implementation milestones:
+
+- Gate 2D — `6349153821611c93eab55fe137bc197169fb6757` —
+  `feat(phase-7): add bounded mandate queries`;
+- Gate 2E — `a610212075172c1d1d706ba4d475e76b0f3dce58` —
+  `feat(phase-7): add operational mandate service`.
 
 Migration status: **VERSIONED / REMOTELY UNAPPLIED**. The migration exists at
 `supabase/migrations/20260821000000_phase_7_06_operational_mandates.sql` and is
 versioned in Git. It remains unapplied to linked/remote Supabase; remote
 application is separately controlled operational work.
 
-Next selected gate: **Gate 2D — Bounded Mandate Query Completion**. Its objective
-is to complete the bounded persistence query surface required for the
-administrator catalog and immutable revision-history review before service/API
-work. The selected future repository additions are `list_current(...)` and
-`list_revisions(...)`; neither is documented as implemented. No 7-06 service,
-API or frontend implementation has started.
+Next selected gate: **Gate 3 — Protected Administrator API** (**NOT STARTED**).
+Its purpose is to expose the completed domain, repository and service contract
+through the existing authenticated administrator HTTP boundary. That boundary
+will enforce existing administrator membership, pass the authenticated actor
+UUID to `OperationalMandateService`, expose bounded list/get/revision and
+create/replace/approve/archive operations, and own transport/error translation.
+No Gate 3 API or Gate 4 frontend implementation has started. HTTP must perform
+no long-running work or market/network execution.
 
 ## 7-02 closure evidence
 
@@ -450,10 +475,10 @@ Explicitly deferred after 7-05:
 - capital-ledger integration and Official Portfolio;
 - machine learning, Telegram, SaaS, deployment and real-capital execution.
 
-Phase 7 remains **ACTIVE** and has no Phase 7 tag. Delivery 7-06 is active with
-Gates 2A–2C remotely published and closed; Gate 2D is selected and not started.
-The remaining items in [`ROADMAP.md`](./ROADMAP.md) continue to govern later
-scope.
+Phase 7 remains **ACTIVE** and has no Phase 7 tag. Delivery 7-06 remains
+**ACTIVE**, with Gates 2A–2E remotely published and closed; Gate 3 — Protected
+Administrator API is selected and not started. The remaining items in
+[`ROADMAP.md`](./ROADMAP.md) continue to govern later scope.
 
 ## Important repository and process constraints
 
