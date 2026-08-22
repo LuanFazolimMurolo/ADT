@@ -864,17 +864,19 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Tracks 7-01 through 7-05 are complete, closed and integrated
+**Status**: Active. Tracks 7-01 through 7-06 are complete, closed and integrated
 into `main`. Track 7-05 was integrated by fast-forward; its final implementation
 milestone remains `0c53c96c9d2500b01d0dfab0e1dd74531e1e8d9c`, and its integrated
-closure milestone is `8a9c6eaaadf8e2fd07f56c69ae497d5b3563c003`. The current
-post-integration documentation/main baseline is
-`d912b44867f111c73759077f86c072eb2a0c2542`. Phase 7 as a whole remains active;
-the exact current handoff is maintained in
+closure milestone is `8a9c6eaaadf8e2fd07f56c69ae497d5b3563c003`. Track 7-06's latest
+implementation milestone is `3568e8c399c235b3641af64f49768598c063e7e3`, and
+its integrated delivery milestone is
+`c674a128866233a2e6ac34edcf4d99e62b1ab4fb`. Phase 7 as a whole remains active;
+no subsequent delivery is selected by this closure record. The exact current
+handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
-- [ ] Define administrator-approved operational mandates for assets, markets
+- [x] Define administrator-approved operational mandates for assets, markets
       and instruments
 - [ ] Create and validate paper-session configurations through the frontend
 - [ ] Configure timeframes and trading horizons as their contracts mature
@@ -1088,18 +1090,20 @@ closure.
 - capital-ledger integration or ADT Official Portfolio;
 - machine learning, Telegram, SaaS, deployment and real-capital execution.
 
-### 7-06 — Operational Mandate Foundation 🚧
+### 7-06 — Operational Mandate Foundation ✅
 
-**Status**: Active — Gate 5 closure candidate. Phase 7 and delivery 7-06 remain
-active. Gates 2A–2E, Gate 3 and Gate 4 are remotely published and closed. Gate
-5 — Integration and 7-06 Closure is the active closure candidate; it is not yet
-closed and the feature is not integrated into `main`.
+**Status**: Complete and closed. Gates 2A–2E, Gate 3 and Gate 4 are remotely
+published and closed, and Gate 5 is closed. The delivery was integrated into
+`main` by verified pure fast-forward. Phase 7 remains active.
 
 Starting integrated `main` baseline:
 `d912b44867f111c73759077f86c072eb2a0c2542`.
 
 Latest published implementation milestone:
 `3568e8c399c235b3641af64f49768598c063e7e3`.
+
+Pre-integration documentation candidate and integrated main milestone:
+`c674a128866233a2e6ac34edcf4d99e62b1ab4fb`.
 
 **Gate progress**:
 
@@ -1113,7 +1117,7 @@ Latest published implementation milestone:
   closed;
 - Gate 3 — Protected Administrator API: remotely published and closed;
 - Gate 4 — Protected Administrative Frontend: remotely published and closed;
-- Gate 5 — Integration and 7-06 Closure: active closure candidate.
+- Gate 5 — Integration and 7-06 Closure: closed.
 
 **Goal**:
 
@@ -1205,7 +1209,8 @@ Gate 2B closed the persistence foundation. The migration exists and is
 versioned at
 `supabase/migrations/20260821000000_phase_7_06_operational_mandates.sql`. It
 remains unapplied to linked/remote Supabase; remote application is separately
-controlled operational work and is not part of this implementation checkpoint.
+controlled operational work and was not required for local implementation or
+integration closure.
 
 **Published implementation boundary**: Gate 2D completed the bounded
 persistence query surface for the current-mandate catalog and immutable
@@ -1219,11 +1224,14 @@ authenticated client surface and the protected administrative mandate workflow
 at `3568e8c399c235b3641af64f49768598c063e7e3` (`feat(phase-7): add operational
 mandate admin frontend`).
 
-**Active gate**: Gate 5 — Integration and 7-06 Closure. The 2026-08-22 closure
-candidate passed the complete implementation matrix:
+**Gate 5 closure evidence**: the 2026-08-22 closure candidate passed the complete
+implementation matrix against implementation milestone
+`3568e8c399c235b3641af64f49768598c063e7e3`, before documentation candidate
+`c674a128866233a2e6ac34edcf4d99e62b1ab4fb` was added:
 
-- Git and live remote evidence: 11 commits ahead and 0 behind integrated
-  baseline `d912b44867f111c73759077f86c072eb2a0c2542`;
+- Git and live remote evidence at the implementation-matrix checkpoint: 11
+  commits ahead and 0 behind integrated baseline
+  `d912b44867f111c73759077f86c072eb2a0c2542`;
 - Ruff and format: PASS, 357 files formatted; strict MyPy: PASS in 227 source
   files; pip check: PASS;
 - full backend: 2,852 passed, 1 skipped, 0 failed, 87% coverage in 317.04s;
@@ -1239,9 +1247,17 @@ candidate passed the complete implementation matrix:
 - generated-contract post-test immutability and implementation worktree
   cleanliness: PASS.
 
-Gate 5 and 7-06 remain open pending protected documentation audit, commit,
-publication and later separately authorized integration. The feature has not
-been integrated into `main`.
+The documentation candidate was then published, bringing the delivery to 12
+commits from the starting baseline. `main` advanced from
+`d912b44867f111c73759077f86c072eb2a0c2542` to
+`c674a128866233a2e6ac34edcf4d99e62b1ab4fb` by verified pure fast-forward; no
+merge commit was created. Remote `main` and the feature were independently
+verified identical at the integrated milestone, with tree
+`54d3c3050366083d0a35fa51e56c46272a4b4d58`. Integration changed no
+implementation bytes relative to the validated feature candidate. Gate 5 and
+7-06 are closed; Phase 7 remains active. The migration remains **VERSIONED /
+REMOTELY UNAPPLIED**. No subsequent Phase 7 delivery is selected by this
+closure record.
 
 **Explicitly out of scope**:
 

@@ -4,7 +4,7 @@ Last updated: 2026-08-22
 
 ## Current branch
 
-`feat/phase-7-06-operational-mandate-foundation`
+`main`
 
 At the start of every session, verify the local branch and HEAD, then inspect
 the corresponding remote branch. This file records the intended handoff; Git
@@ -18,15 +18,15 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Last completed track
 
-**7-05 — Worker Runtime Observability — CLOSED**
+**7-06 — Operational Mandate Foundation — COMPLETE / CLOSED**
 
-Gate 5 — Delivery-wide Closure Audit passed and closed the implementation. The
-accepted persistence, repository, runtime, HTTP and frontend gates, final full
-backend/frontend/browser regressions and delivery-wide safety audit support the
-closure.
+Gate 5 passed the implementation closure matrix, the documentation candidate
+was published, and `main` was advanced by verified pure fast-forward to the
+published delivery milestone. Phase 7 remains active.
 
 Previously closed Phase 7 deliveries remain closed:
 
+- **7-05 — Worker Runtime Observability — CLOSED**
 - **7-04 — RAW Gap & Quality Inspection — CLOSED**
 - **7-03 — Persisted RAW Dataset Inspection — CLOSED**
 - **7-02 — Market Operation Administrative Console — CLOSED**
@@ -39,13 +39,13 @@ Previously closed Phase 7 deliveries remain closed:
 
 `3568e8c399c235b3641af64f49768598c063e7e3`
 
-## Current integrated main milestone
+## Integrated 7-06 delivery milestone
 
-`d912b44867f111c73759077f86c072eb2a0c2542`
+`c674a128866233a2e6ac34edcf4d99e62b1ab4fb`
 
-## Active delivery
+## Closed delivery record
 
-**7-06 — Operational Mandate Foundation — ACTIVE — GATE 5 CLOSURE CANDIDATE**
+**7-06 — Operational Mandate Foundation — COMPLETE / CLOSED**
 
 Starting main baseline:
 
@@ -67,7 +67,7 @@ Gate progress:
   CLOSED**;
 - Gate 3 — Protected Administrator API: **REMOTE PUBLISHED / CLOSED**;
 - Gate 4 — Protected Administrative Frontend: **REMOTE PUBLISHED / CLOSED**;
-- Gate 5 — Integration and 7-06 Closure: **ACTIVE CLOSURE CANDIDATE**.
+- Gate 5 — Integration and 7-06 Closure: **CLOSED**.
 
 Gate 1 — Architecture & Revision Model: **PASS / CLOSED after accepted boundary
 amendment**. The original audit returned **CONDITIONAL PASS — BOUNDARY AMENDMENT
@@ -185,20 +185,30 @@ Published implementation milestones:
 - Gate 4 — `3568e8c399c235b3641af64f49768598c063e7e3` —
   `feat(phase-7): add operational mandate admin frontend`.
 
+Pre-integration documentation candidate:
+
+- `c674a128866233a2e6ac34edcf4d99e62b1ab4fb` —
+  `docs(phase-7): prepare operational mandate closure`.
+
+Integrated 7-06 main milestone:
+
+- `c674a128866233a2e6ac34edcf4d99e62b1ab4fb`.
+
 Migration status: **VERSIONED / REMOTELY UNAPPLIED**. The migration exists at
 `supabase/migrations/20260821000000_phase_7_06_operational_mandates.sql` and is
 versioned in Git. It remains unapplied to linked/remote Supabase; remote
 application is separately controlled operational work.
 
-Current gate: **Gate 5 — Integration and 7-06 Closure — ACTIVE CLOSURE
-CANDIDATE**. Gates 3 and 4 are remotely published and closed, but Gate 5 and
-delivery 7-06 are not yet closed and the feature is not integrated into
-`main`.
+Gate 5 — Integration and 7-06 Closure: **CLOSED**. Delivery 7-06 is **COMPLETE /
+CLOSED**. Gates 3 and 4 remain remotely published and closed.
 
-Gate 5 closure-candidate evidence from 2026-08-22:
+Gate 5 closure-candidate evidence produced on 2026-08-22 against implementation
+milestone `3568e8c399c235b3641af64f49768598c063e7e3`, before the final
+documentation candidate was added:
 
-- Git and live remote proof: feature HEAD and remote feature are
-  `3568e8c399c235b3641af64f49768598c063e7e3`; the branch is 11 commits ahead
+- Git and live remote proof at the implementation-matrix checkpoint: feature
+  HEAD and remote feature were
+  `3568e8c399c235b3641af64f49768598c063e7e3`; the branch was 11 commits ahead
   and 0 behind integrated baseline
   `d912b44867f111c73759077f86c072eb2a0c2542`;
 - complete delivery inventory: 11 commits and 30 implementation/history paths
@@ -219,6 +229,22 @@ Gate 5 closure-candidate evidence from 2026-08-22:
   out-of-scope audits: PASS; and
 - implementation remained byte-clean after the matrix. The migration remains
   versioned and remotely unapplied.
+
+Final integration record:
+
+- starting main baseline:
+  `d912b44867f111c73759077f86c072eb2a0c2542`;
+- pre-integration documentation candidate and integrated delivery milestone:
+  `c674a128866233a2e6ac34edcf4d99e62b1ab4fb`;
+- 12 commits were ultimately integrated from the starting baseline;
+- `main` advanced by pure fast-forward, with no merge commit;
+- remote `main` and the feature were independently verified identical at the
+  integrated delivery milestone;
+- integrated tree: `54d3c3050366083d0a35fa51e56c46272a4b4d58`;
+- integration changed no implementation bytes relative to the validated
+  feature candidate; and
+- the migration remained remotely unapplied, with no Supabase remote mutation
+  during closure.
 
 ## 7-02 closure evidence
 
@@ -512,11 +538,11 @@ Explicitly deferred after 7-05:
 - capital-ledger integration and Official Portfolio;
 - machine learning, Telegram, SaaS, deployment and real-capital execution.
 
-Phase 7 remains **ACTIVE** and has no Phase 7 tag. Delivery 7-06 remains
-**ACTIVE — GATE 5 CLOSURE CANDIDATE**, with Gates 2A–2E, Gate 3 and Gate 4
-remotely published and closed. Gate 5 and delivery 7-06 are not yet closed, and
-the feature is not integrated into `main`. The remaining items in
-[`ROADMAP.md`](./ROADMAP.md) continue to govern later scope.
+Phase 7 remains **ACTIVE** and has no Phase 7 tag. Delivery 7-06 is **COMPLETE /
+CLOSED**, with Gates 2A–2E, Gate 3 and Gate 4 remotely published and closed and
+Gate 5 closed. No subsequent Phase 7 delivery is selected by this closure
+record; [`ROADMAP.md`](./ROADMAP.md) governs the separate next-delivery
+selection step.
 
 ## Important repository and process constraints
 
