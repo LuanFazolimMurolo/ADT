@@ -16,6 +16,16 @@ import type {
   HealthResponse,
   MovementCreateRequest,
   MovementListResponse,
+  OperationalMandate,
+  OperationalMandateApproveRequest,
+  OperationalMandateArchiveRequest,
+  OperationalMandateCreateRequest,
+  OperationalMandateCurrent,
+  OperationalMandateList,
+  OperationalMandateReplaceRequest,
+  OperationalMandateRevision,
+  OperationalMandateRevisionList,
+  OperationalMandateState,
   MarketCandlePageResponse,
   RawDatasetPageResponse,
   RawDatasetResponse,
@@ -159,6 +169,17 @@ export interface MarketOperationListQuery {
   state?: MarketOperationState;
   requestedBy?: string;
   datasetId?: string;
+}
+
+export interface OperationalMandateListQuery {
+  limit?: number;
+  offset?: number;
+  state?: OperationalMandateState;
+}
+
+export interface OperationalMandateRevisionListQuery {
+  limit?: number;
+  offset?: number;
 }
 
 export interface PaperChartAnnotationQuery {
@@ -424,6 +445,86 @@ export class ApiClient {
 
   getAdminMe(): Promise<AdminMe> {
     return this.request("/api/v1/admin/me");
+  }
+
+  listOperationalMandates(
+    query: OperationalMandateListQuery = {},
+  ): Promise<OperationalMandateList> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    appendQueryValue(params, "state", query.state);
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request(`/api/v1/admin/operational-mandates${suffix}`);
+  }
+
+  getOperationalMandate(
+    mandateId: string,
+  ): Promise<OperationalMandateCurrent> {
+    return this.request(
+      `/api/v1/admin/operational-mandates/${encodeURIComponent(mandateId)}`,
+    );
+  }
+
+  listOperationalMandateRevisions(
+    mandateId: string,
+    query: OperationalMandateRevisionListQuery = {},
+  ): Promise<OperationalMandateRevisionList> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request(
+      `/api/v1/admin/operational-mandates/${encodeURIComponent(mandateId)}/revisions${suffix}`,
+    );
+  }
+
+  getOperationalMandateRevision(
+    mandateId: string,
+    revision: number,
+  ): Promise<OperationalMandateRevision> {
+    return this.request(
+      `/api/v1/admin/operational-mandates/${encodeURIComponent(mandateId)}/revisions/${encodeURIComponent(String(revision))}`,
+    );
+  }
+
+  createOperationalMandate(
+    payload: OperationalMandateCreateRequest,
+  ): Promise<OperationalMandateCurrent> {
+    return this.request("/api/v1/admin/operational-mandates", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  replaceOperationalMandateDraft(
+    mandateId: string,
+    payload: OperationalMandateReplaceRequest,
+  ): Promise<OperationalMandateCurrent> {
+    return this.request(
+      `/api/v1/admin/operational-mandates/${encodeURIComponent(mandateId)}`,
+      { method: "PATCH", body: JSON.stringify(payload) },
+    );
+  }
+
+  approveOperationalMandate(
+    mandateId: string,
+    payload: OperationalMandateApproveRequest,
+  ): Promise<OperationalMandate> {
+    return this.request(
+      `/api/v1/admin/operational-mandates/${encodeURIComponent(mandateId)}/approve`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  }
+
+  archiveOperationalMandate(
+    mandateId: string,
+    payload: OperationalMandateArchiveRequest,
+  ): Promise<OperationalMandate> {
+    return this.request(
+      `/api/v1/admin/operational-mandates/${encodeURIComponent(mandateId)}/archive`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
   }
 
   listRawDatasets(

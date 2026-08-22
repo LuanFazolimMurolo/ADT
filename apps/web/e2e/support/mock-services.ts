@@ -9,6 +9,12 @@ import type {
   CapitalMovement,
   JsonValue,
   MovementCreateRequest,
+  OperationalMandateApproveRequest,
+  OperationalMandateArchiveRequest,
+  OperationalMandateCreateRequest,
+  OperationalMandateCurrent,
+  OperationalMandateReplaceRequest,
+  OperationalMandateRevision,
   MarketCandlePageResponse,
   MarketOperation,
   MarketOperationPlanPreview,
@@ -82,6 +88,54 @@ export const ADMIN_PAPER_SESSION_ID = "a".repeat(64);
 export const ADMIN_PAPER_TRADE_ID = "e".repeat(64);
 export const ADMIN_MARKET_OPERATION_ID = "20000000-0000-4000-8000-000000000002";
 export const ADMIN_MARKET_DATASET_ID = "e2e-backend-owned-dataset-id";
+export const ADMIN_OPERATIONAL_MANDATE_ID =
+  "10000000-0000-4000-8000-000000000001";
+
+function operationalMandateRevision(
+  revision: number,
+  name = "Mandato BTC principal",
+): OperationalMandateRevision {
+  return {
+    mandate_id: ADMIN_OPERATIONAL_MANDATE_ID,
+    revision,
+    specification: {
+      schema_version: 1,
+      name,
+      description: "Escopo Binance Spot revisado pelo administrador.",
+      instruments: [
+        {
+          exchange: "binance",
+          market_type: "spot",
+          base_asset: "BTC",
+          quote_asset: "USDT",
+        },
+      ],
+    },
+    specification_checksum: (revision === 1 ? "a" : "b").repeat(64),
+    created_by: ADMIN_ID,
+    created_at: `2026-08-2${revision}T10:00:00Z`,
+  };
+}
+
+function operationalMandateCurrent(): OperationalMandateCurrent {
+  return {
+    mandate: {
+      mandate_id: ADMIN_OPERATIONAL_MANDATE_ID,
+      state: "DRAFT",
+      current_revision: 2,
+      record_version: 4,
+      approved_revision: null,
+      approved_checksum: null,
+      created_by: ADMIN_ID,
+      created_at: "2026-08-21T10:00:00Z",
+      approved_by: null,
+      approved_at: null,
+      archived_by: null,
+      archived_at: null,
+    },
+    revision: operationalMandateRevision(2),
+  };
+}
 
 function marketOperationPreview(): MarketOperationPlanPreview {
   return {
@@ -587,6 +641,7 @@ export class MockServices {
   private pendingAdminUnauthorizedResponses = 0;
   private pendingAdminForbiddenResponses = 0;
   private marketOperationControlConflict = false;
+  private operationalMandateMutationConflict = false;
   private tokenSequence = 0;
   private movementSequence = 0;
   private readonly tokenRoles = new Map<string, MockRole>();
@@ -596,6 +651,7 @@ export class MockServices {
   private readonly movements = new Map<string, CapitalMovement[]>();
   private settings: Setting[] = createSettings();
   private currentMarketOperation: MarketOperation = marketOperation();
+  private currentOperationalMandate = operationalMandateCurrent();
 
   lastIssuedAccessToken: string | null = null;
   recoveredEmail: string | null = null;
@@ -661,6 +717,10 @@ export class MockServices {
 
   conflictNextMarketOperationControl(): void {
     this.marketOperationControlConflict = true;
+  }
+
+  conflictNextOperationalMandateMutation(): void {
+    this.operationalMandateMutationConflict = true;
   }
 
   requestsFor(method: string, pathname: string): RecordedRequest[] {
@@ -1549,6 +1609,204 @@ export class MockServices {
         return;
       }
       if (!(await this.requireAdmin(route, request))) return;
+    }
+
+    if (
+      request.method() === "GET" &&
+      url.pathname === "/api/v1/admin/operational-mandates"
+    ) {
+      const state = url.searchParams.get("state");
+      const items =
+        state && state !== this.currentOperationalMandate.mandate.state
+          ? []
+          : [this.currentOperationalMandate];
+      await this.json(route, 200, {
+        items,
+        limit: Number(url.searchParams.get("limit") ?? "20"),
+        offset: Number(url.searchParams.get("offset") ?? "0"),
+        total: items.length,
+      });
+      return;
+    }
+
+    if (
+      request.method() === "POST" &&
+      url.pathname === "/api/v1/admin/operational-mandates"
+    ) {
+      const body = this.requestBody<OperationalMandateCreateRequest>(request);
+      this.currentOperationalMandate = {
+        mandate: {
+          ...operationalMandateCurrent().mandate,
+          current_revision: 1,
+          record_version: 1,
+        },
+        revision: {
+          ...operationalMandateRevision(1, body.specification.name),
+          specification: body.specification,
+          specification_checksum: "c".repeat(64),
+        },
+      };
+      await this.json(route, 201, this.currentOperationalMandate);
+      return;
+    }
+
+    const operationalMandateRevisionMatch =
+      /^\/api\/v1\/admin\/operational-mandates\/([0-9a-f-]{36})\/revisions(?:\/(\d+))?$/.exec(
+        url.pathname,
+      );
+    if (
+      operationalMandateRevisionMatch?.[1] === ADMIN_OPERATIONAL_MANDATE_ID &&
+      request.method() === "GET"
+    ) {
+      const exactRevision = operationalMandateRevisionMatch[2];
+      if (exactRevision) {
+        const revisionNumber = Number(exactRevision);
+        const response =
+          revisionNumber === this.currentOperationalMandate.revision.revision
+            ? this.currentOperationalMandate.revision
+            : operationalMandateRevision(revisionNumber, "Mandato histórico");
+        await this.json(route, 200, response);
+        return;
+      }
+      const revisions = [
+        this.currentOperationalMandate.revision,
+        ...(this.currentOperationalMandate.revision.revision > 1
+          ? [operationalMandateRevision(1, "Mandato histórico")]
+          : []),
+      ];
+      await this.json(route, 200, {
+        items: revisions,
+        limit: Number(url.searchParams.get("limit") ?? "20"),
+        offset: Number(url.searchParams.get("offset") ?? "0"),
+        total: revisions.length,
+      });
+      return;
+    }
+
+    const operationalMandateMatch =
+      /^\/api\/v1\/admin\/operational-mandates\/([0-9a-f-]{36})(?:\/(approve|archive))?$/.exec(
+        url.pathname,
+      );
+    if (operationalMandateMatch?.[1] === ADMIN_OPERATIONAL_MANDATE_ID) {
+      const action = operationalMandateMatch[2];
+      if (request.method() === "GET" && !action) {
+        await this.json(route, 200, this.currentOperationalMandate);
+        return;
+      }
+      if (
+        this.operationalMandateMutationConflict &&
+        (request.method() === "PATCH" ||
+          (request.method() === "POST" && action !== undefined))
+      ) {
+        this.operationalMandateMutationConflict = false;
+        this.currentOperationalMandate = {
+          ...this.currentOperationalMandate,
+          mandate: {
+            ...this.currentOperationalMandate.mandate,
+            record_version:
+              this.currentOperationalMandate.mandate.record_version + 1,
+          },
+        };
+        await this.apiError(
+          route,
+          409,
+          "operational_mandate_record_version_conflict",
+          "O mandato mudou no servidor.",
+        );
+        return;
+      }
+      if (request.method() === "PATCH" && !action) {
+        const body = this.requestBody<OperationalMandateReplaceRequest>(request);
+        if (
+          body.expected_revision !==
+            this.currentOperationalMandate.mandate.current_revision ||
+          body.expected_record_version !==
+            this.currentOperationalMandate.mandate.record_version
+        ) {
+          await this.apiError(
+            route,
+            409,
+            "operational_mandate_revision_conflict",
+            "O mandato mudou no servidor.",
+          );
+          return;
+        }
+        const nextRevision = body.expected_revision + 1;
+        this.currentOperationalMandate = {
+          mandate: {
+            ...this.currentOperationalMandate.mandate,
+            current_revision: nextRevision,
+            record_version: body.expected_record_version + 1,
+          },
+          revision: {
+            ...operationalMandateRevision(nextRevision, body.specification.name),
+            specification: body.specification,
+            specification_checksum: "d".repeat(64),
+          },
+        };
+        await this.json(route, 200, this.currentOperationalMandate);
+        return;
+      }
+      if (request.method() === "POST" && action === "approve") {
+        const body = this.requestBody<OperationalMandateApproveRequest>(request);
+        if (
+          body.expected_revision !==
+            this.currentOperationalMandate.revision.revision ||
+          body.expected_checksum !==
+            this.currentOperationalMandate.revision.specification_checksum ||
+          body.expected_record_version !==
+            this.currentOperationalMandate.mandate.record_version
+        ) {
+          await this.apiError(
+            route,
+            409,
+            "operational_mandate_revision_conflict",
+            "O mandato mudou no servidor.",
+          );
+          return;
+        }
+        this.currentOperationalMandate = {
+          ...this.currentOperationalMandate,
+          mandate: {
+            ...this.currentOperationalMandate.mandate,
+            state: "APPROVED",
+            record_version: body.expected_record_version + 1,
+            approved_revision: body.expected_revision,
+            approved_checksum: body.expected_checksum,
+            approved_by: ADMIN_ID,
+            approved_at: "2026-08-22T12:00:00Z",
+          },
+        };
+        await this.json(route, 200, this.currentOperationalMandate.mandate);
+        return;
+      }
+      if (request.method() === "POST" && action === "archive") {
+        const body = this.requestBody<OperationalMandateArchiveRequest>(request);
+        if (
+          body.expected_record_version !==
+          this.currentOperationalMandate.mandate.record_version
+        ) {
+          await this.apiError(
+            route,
+            409,
+            "operational_mandate_record_version_conflict",
+            "O mandato mudou no servidor.",
+          );
+          return;
+        }
+        this.currentOperationalMandate = {
+          ...this.currentOperationalMandate,
+          mandate: {
+            ...this.currentOperationalMandate.mandate,
+            state: "ARCHIVED",
+            record_version: body.expected_record_version + 1,
+            archived_by: ADMIN_ID,
+            archived_at: "2026-08-22T12:05:00Z",
+          },
+        };
+        await this.json(route, 200, this.currentOperationalMandate.mandate);
+        return;
+      }
     }
 
     if (

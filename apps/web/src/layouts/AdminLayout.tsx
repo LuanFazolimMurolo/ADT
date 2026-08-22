@@ -44,6 +44,12 @@ const navigation = [
     end: false,
   },
   {
+    to: "/admin/operational-mandates",
+    label: "Mandatos operacionais",
+    icon: "◈",
+    end: false,
+  },
+  {
     to: "/admin/worker-observability",
     label: "Worker runtime",
     icon: "◎",

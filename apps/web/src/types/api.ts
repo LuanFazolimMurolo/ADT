@@ -153,3 +153,24 @@ export type WorkerRuntimeList = ApiSchemas["WorkerRuntimeListResponse"];
 export type WorkerRuntimeEvent = ApiSchemas["WorkerRuntimeEventResponse"];
 export type WorkerRuntimeEventList =
   ApiSchemas["WorkerRuntimeEventListResponse"];
+
+export type OperationalMandateState = ApiSchemas["OperationalMandateState"];
+export type OperationalMandateSpecificationRequest =
+  ApiSchemas["OperationalMandateSpecificationRequest"];
+export type OperationalMandateCreateRequest =
+  ApiSchemas["OperationalMandateCreateRequest"];
+export type OperationalMandateReplaceRequest =
+  ApiSchemas["OperationalMandateReplaceRequest"];
+export type OperationalMandateApproveRequest =
+  ApiSchemas["OperationalMandateApproveRequest"];
+export type OperationalMandateArchiveRequest =
+  ApiSchemas["OperationalMandateArchiveRequest"];
+export type OperationalMandate = ApiSchemas["OperationalMandateResponse"];
+export type OperationalMandateRevision =
+  ApiSchemas["OperationalMandateRevisionResponse"];
+export type OperationalMandateCurrent =
+  ApiSchemas["OperationalMandateCurrentResponse"];
+export type OperationalMandateList =
+  ApiSchemas["OperationalMandateListResponse"];
+export type OperationalMandateRevisionList =
+  ApiSchemas["OperationalMandateRevisionListResponse"];

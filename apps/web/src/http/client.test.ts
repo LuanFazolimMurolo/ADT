@@ -946,4 +946,124 @@ describe("ApiClient", () => {
     expect(options?.body).toBeUndefined();
     expect(headers.get("Authorization")).toBe("Bearer token");
   });
+
+  it("consulta catálogo, detalhe e revisões de mandatos por GET bounded", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(200, {})));
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    await client.listOperationalMandates({
+      limit: 20,
+      offset: 40,
+      state: "APPROVED",
+    });
+    await client.getOperationalMandate("mandate/id");
+    await client.listOperationalMandateRevisions("mandate/id", {
+      limit: 10,
+      offset: 20,
+    });
+    await client.getOperationalMandateRevision("mandate/id", 3);
+
+    const urls = fetchMock.mock.calls.map((call) =>
+      new URL(call[0] as string),
+    );
+    expect(urls.map((url) => url.pathname)).toEqual([
+      "/api/v1/admin/operational-mandates",
+      "/api/v1/admin/operational-mandates/mandate%2Fid",
+      "/api/v1/admin/operational-mandates/mandate%2Fid/revisions",
+      "/api/v1/admin/operational-mandates/mandate%2Fid/revisions/3",
+    ]);
+    expect(urls[0].search).toBe("?limit=20&offset=40&state=APPROVED");
+    expect(urls[2].search).toBe("?limit=10&offset=20");
+    for (const call of fetchMock.mock.calls) {
+      expect(call[1]?.method).toBeUndefined();
+      expect((call[1]?.headers as Headers).get("Authorization")).toBe(
+        "Bearer token",
+      );
+    }
+  });
+
+  it("envia somente os contratos publicados nas quatro mutações de mandato", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(200, {})));
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+    const specification = {
+      schema_version: 1,
+      name: "Principal",
+      description: "Escopo operacional",
+      instruments: [
+        {
+          exchange: "binance" as const,
+          market_type: "spot" as const,
+          base_asset: "BTC",
+          quote_asset: "USDT",
+        },
+      ],
+    };
+
+    await client.createOperationalMandate({
+      specification,
+      idempotency_key: "intent-key",
+    });
+    await client.replaceOperationalMandateDraft("mandate/id", {
+      specification,
+      expected_revision: 2,
+      expected_record_version: 4,
+    });
+    await client.approveOperationalMandate("mandate/id", {
+      expected_revision: 2,
+      expected_checksum: "a".repeat(64),
+      expected_record_version: 4,
+    });
+    await client.archiveOperationalMandate("mandate/id", {
+      expected_record_version: 5,
+    });
+
+    expect(
+      fetchMock.mock.calls.map((call) => [
+        new URL(call[0] as string).pathname,
+        call[1]?.method,
+        JSON.parse(String(call[1]?.body)),
+      ]),
+    ).toEqual([
+      [
+        "/api/v1/admin/operational-mandates",
+        "POST",
+        { specification, idempotency_key: "intent-key" },
+      ],
+      [
+        "/api/v1/admin/operational-mandates/mandate%2Fid",
+        "PATCH",
+        {
+          specification,
+          expected_revision: 2,
+          expected_record_version: 4,
+        },
+      ],
+      [
+        "/api/v1/admin/operational-mandates/mandate%2Fid/approve",
+        "POST",
+        {
+          expected_revision: 2,
+          expected_checksum: "a".repeat(64),
+          expected_record_version: 4,
+        },
+      ],
+      [
+        "/api/v1/admin/operational-mandates/mandate%2Fid/archive",
+        "POST",
+        { expected_record_version: 5 },
+      ],
+    ]);
+  });
 });
