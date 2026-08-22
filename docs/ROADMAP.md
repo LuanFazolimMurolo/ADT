@@ -1090,15 +1090,16 @@ closure.
 
 ### 7-06 — Operational Mandate Foundation 🚧
 
-**Status**: Active implementation. Phase 7 and delivery 7-06 remain active.
-Gates 2A–2E are remotely published and closed. Gate 3 — Protected Administrator
-API is selected next and has not started.
+**Status**: Active — Gate 5 closure candidate. Phase 7 and delivery 7-06 remain
+active. Gates 2A–2E, Gate 3 and Gate 4 are remotely published and closed. Gate
+5 — Integration and 7-06 Closure is the active closure candidate; it is not yet
+closed and the feature is not integrated into `main`.
 
 Starting integrated `main` baseline:
 `d912b44867f111c73759077f86c072eb2a0c2542`.
 
 Latest published implementation milestone:
-`a610212075172c1d1d706ba4d475e76b0f3dce58`.
+`3568e8c399c235b3641af64f49768598c063e7e3`.
 
 **Gate progress**:
 
@@ -1110,7 +1111,9 @@ Latest published implementation milestone:
 - Gate 2D — Bounded Mandate Query Completion: remotely published and closed;
 - Gate 2E — Operational Mandate Application Service: remotely published and
   closed;
-- Gate 3 — Protected Administrator API: selected and not started.
+- Gate 3 — Protected Administrator API: remotely published and closed;
+- Gate 4 — Protected Administrative Frontend: remotely published and closed;
+- Gate 5 — Integration and 7-06 Closure: active closure candidate.
 
 **Goal**:
 
@@ -1208,10 +1211,37 @@ controlled operational work and is not part of this implementation checkpoint.
 persistence query surface for the current-mandate catalog and immutable
 revision history. Gate 2E completed the transport-independent application
 service for bounded reads and create/replace/approve/archive orchestration.
+Gate 3 published eight bounded administrator-only API operations through the
+existing authenticated administrator boundary at
+`2beb55db16c03ebb8fde3e5e61390bb2424e5c79` (`feat(phase-7): add operational
+mandate admin api`). Gate 4 published generated frontend contracts, the
+authenticated client surface and the protected administrative mandate workflow
+at `3568e8c399c235b3641af64f49768598c063e7e3` (`feat(phase-7): add operational
+mandate admin frontend`).
 
-**Selected next gate**: Gate 3 — Protected Administrator API. It is selected and
-has not started. No Gate 3 administrator API or Gate 4 frontend implementation
-has started.
+**Active gate**: Gate 5 — Integration and 7-06 Closure. The 2026-08-22 closure
+candidate passed the complete implementation matrix:
+
+- Git and live remote evidence: 11 commits ahead and 0 behind integrated
+  baseline `d912b44867f111c73759077f86c072eb2a0c2542`;
+- Ruff and format: PASS, 357 files formatted; strict MyPy: PASS in 227 source
+  files; pip check: PASS;
+- full backend: 2,852 passed, 1 skipped, 0 failed, 87% coverage in 317.04s;
+- targeted 7-06 backend: 273 passed, 0 failed in 26.90s;
+- generated OpenAPI, frontend typecheck, lint and E2E typecheck: PASS;
+- full frontend Vitest: 30 files, 237 passed, 0 failed in 41.49s;
+- production build: PASS, 133 modules; explicit bundle budget: PASS with
+  JavaScript 789,134 bytes raw / 223,868 bytes gzip and CSS 50,546 bytes raw /
+  9,115 bytes gzip;
+- full Playwright: 56 passed, 0 failed in 1.9 minutes;
+- architecture, migration, cross-layer, authorization, secret and out-of-scope
+  audits: PASS; and
+- generated-contract post-test immutability and implementation worktree
+  cleanliness: PASS.
+
+Gate 5 and 7-06 remain open pending protected documentation audit, commit,
+publication and later separately authorized integration. The feature has not
+been integrated into `main`.
 
 **Explicitly out of scope**:
 

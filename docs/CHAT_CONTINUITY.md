@@ -37,7 +37,7 @@ Previously closed Phase 7 deliveries remain closed:
 
 ## Last validated implementation milestone
 
-`a610212075172c1d1d706ba4d475e76b0f3dce58`
+`3568e8c399c235b3641af64f49768598c063e7e3`
 
 ## Current integrated main milestone
 
@@ -45,7 +45,7 @@ Previously closed Phase 7 deliveries remain closed:
 
 ## Active delivery
 
-**7-06 — Operational Mandate Foundation — ACTIVE**
+**7-06 — Operational Mandate Foundation — ACTIVE — GATE 5 CLOSURE CANDIDATE**
 
 Starting main baseline:
 
@@ -65,7 +65,9 @@ Gate progress:
 - Gate 2D — Bounded Mandate Query Completion: **REMOTE PUBLISHED / CLOSED**;
 - Gate 2E — Operational Mandate Application Service: **REMOTE PUBLISHED /
   CLOSED**;
-- Gate 3 — Protected Administrator API: **SELECTED / NOT STARTED**.
+- Gate 3 — Protected Administrator API: **REMOTE PUBLISHED / CLOSED**;
+- Gate 4 — Protected Administrative Frontend: **REMOTE PUBLISHED / CLOSED**;
+- Gate 5 — Integration and 7-06 Closure: **ACTIVE CLOSURE CANDIDATE**.
 
 Gate 1 — Architecture & Revision Model: **PASS / CLOSED after accepted boundary
 amendment**. The original audit returned **CONDITIONAL PASS — BOUNDARY AMENDMENT
@@ -161,27 +163,62 @@ Published implementation boundary:
   inputs exactly, maps stable point-read absence to not-found, and preserves
   domain and persistence errors unchanged. It performs no administrator
   authorization lookup, HTTP handling, SQL or network work.
+- Gate 3 provides eight bounded administrator-only HTTP operations through the
+  existing Bearer authentication and database-backed administrator boundary.
+  The authenticated durable user UUID is the mutation actor, transport schemas
+  preserve idempotency and concurrency inputs, and the routes delegate to the
+  application service without SQL, Binance access or long-running work.
+- Gate 4 provides generated OpenAPI aliases, the authenticated `ApiClient`
+  surface and the protected `/admin/operational-mandates` workflow for bounded
+  catalog/history review and explicit create, replace, approve and archive
+  actions. Server checksums remain authoritative, ambiguous create retry reuses
+  one frozen key/payload, and a 409 requires authoritative reload and re-review.
 
 Published implementation milestones:
 
 - Gate 2D — `6349153821611c93eab55fe137bc197169fb6757` —
   `feat(phase-7): add bounded mandate queries`;
 - Gate 2E — `a610212075172c1d1d706ba4d475e76b0f3dce58` —
-  `feat(phase-7): add operational mandate service`.
+  `feat(phase-7): add operational mandate service`;
+- Gate 3 — `2beb55db16c03ebb8fde3e5e61390bb2424e5c79` —
+  `feat(phase-7): add operational mandate admin api`;
+- Gate 4 — `3568e8c399c235b3641af64f49768598c063e7e3` —
+  `feat(phase-7): add operational mandate admin frontend`.
 
 Migration status: **VERSIONED / REMOTELY UNAPPLIED**. The migration exists at
 `supabase/migrations/20260821000000_phase_7_06_operational_mandates.sql` and is
 versioned in Git. It remains unapplied to linked/remote Supabase; remote
 application is separately controlled operational work.
 
-Next selected gate: **Gate 3 — Protected Administrator API** (**NOT STARTED**).
-Its purpose is to expose the completed domain, repository and service contract
-through the existing authenticated administrator HTTP boundary. That boundary
-will enforce existing administrator membership, pass the authenticated actor
-UUID to `OperationalMandateService`, expose bounded list/get/revision and
-create/replace/approve/archive operations, and own transport/error translation.
-No Gate 3 API or Gate 4 frontend implementation has started. HTTP must perform
-no long-running work or market/network execution.
+Current gate: **Gate 5 — Integration and 7-06 Closure — ACTIVE CLOSURE
+CANDIDATE**. Gates 3 and 4 are remotely published and closed, but Gate 5 and
+delivery 7-06 are not yet closed and the feature is not integrated into
+`main`.
+
+Gate 5 closure-candidate evidence from 2026-08-22:
+
+- Git and live remote proof: feature HEAD and remote feature are
+  `3568e8c399c235b3641af64f49768598c063e7e3`; the branch is 11 commits ahead
+  and 0 behind integrated baseline
+  `d912b44867f111c73759077f86c072eb2a0c2542`;
+- complete delivery inventory: 11 commits and 30 implementation/history paths
+  relative to the integrated baseline, all classified and explained;
+- backend Ruff and format: PASS, 357 files already formatted;
+- backend strict MyPy: PASS in 227 source files; pip check: PASS;
+- full backend: 2,852 passed, 1 skipped, 0 failed, 87% coverage in 317.04s;
+- targeted 7-06 backend: 273 passed, 0 failed in 26.90s;
+- generated OpenAPI check before and after tests: PASS;
+- frontend typecheck, lint and E2E typecheck: PASS;
+- full frontend Vitest: 30 files, 237 passed, 0 failed in 41.49s;
+- production build: PASS, 133 modules; the known Vite chunk warning remains
+  non-blocking under the explicit passing bundle budget;
+- bundle budget: PASS — JavaScript 789,134 bytes raw / 223,868 bytes gzip and
+  CSS 50,546 bytes raw / 9,115 bytes gzip;
+- full Playwright: 56 passed, 0 failed in 1.9 minutes;
+- architecture, migration integrity, cross-layer, authorization, secret and
+  out-of-scope audits: PASS; and
+- implementation remained byte-clean after the matrix. The migration remains
+  versioned and remotely unapplied.
 
 ## 7-02 closure evidence
 
@@ -476,8 +513,9 @@ Explicitly deferred after 7-05:
 - machine learning, Telegram, SaaS, deployment and real-capital execution.
 
 Phase 7 remains **ACTIVE** and has no Phase 7 tag. Delivery 7-06 remains
-**ACTIVE**, with Gates 2A–2E remotely published and closed; Gate 3 — Protected
-Administrator API is selected and not started. The remaining items in
+**ACTIVE — GATE 5 CLOSURE CANDIDATE**, with Gates 2A–2E, Gate 3 and Gate 4
+remotely published and closed. Gate 5 and delivery 7-06 are not yet closed, and
+the feature is not integrated into `main`. The remaining items in
 [`ROADMAP.md`](./ROADMAP.md) continue to govern later scope.
 
 ## Important repository and process constraints
