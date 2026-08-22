@@ -1090,7 +1090,18 @@ closure.
 
 ### 7-06 — Operational Mandate Foundation 🚧
 
-**Status**: Active / bootstrap.
+**Status**: Active implementation. Gates 2A–2C are remotely published and
+closed. Gate 2D — Bounded Mandate Query Completion is selected next and has not
+started.
+
+**Gate progress**:
+
+- Gate 1 — Architecture & Revision Model: closed;
+- Gate 1A — Boundary Amendment: closed;
+- Gate 2A — Pure Domain Contract: remotely published and closed;
+- Gate 2B — Local Persistence Foundation: remotely published and closed;
+- Gate 2C — PostgreSQL Repository Contract: remotely published and closed;
+- Gate 2D — Bounded Mandate Query Completion: selected and not started.
 
 **Goal**:
 
@@ -1178,8 +1189,17 @@ policies.
 
 **Expected migration**: YES.
 
-The migration may be designed, reviewed and validated locally in later gates,
-but MUST NOT be applied remotely as part of the implementation closure.
+Gate 2B closed the persistence foundation. The migration exists and is
+versioned at
+`supabase/migrations/20260821000000_phase_7_06_operational_mandates.sql`. It
+remains unapplied to linked/remote Supabase; remote application is separately
+controlled operational work and is not part of this implementation checkpoint.
+
+**Selected next gate**: Gate 2D completes the bounded persistence query surface
+needed for the administrator catalog and immutable revision-history review
+before service/API work. The selected future repository additions are
+`list_current(...)` and `list_revisions(...)`; they are not yet implemented.
+No 7-06 service, administrator API or frontend implementation has started.
 
 **Explicitly out of scope**:
 

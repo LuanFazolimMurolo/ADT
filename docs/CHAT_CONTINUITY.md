@@ -1,6 +1,6 @@
 # ADT Current Development Handoff
 
-Last updated: 2026-08-21
+Last updated: 2026-08-22
 
 ## Current branch
 
@@ -37,7 +37,7 @@ Previously closed Phase 7 deliveries remain closed:
 
 ## Last validated implementation milestone
 
-`0c53c96c9d2500b01d0dfab0e1dd74531e1e8d9c`
+`7963dfc13d461d2de6990e6d856bfecd16e30323`
 
 ## Current integrated main milestone
 
@@ -45,7 +45,7 @@ Previously closed Phase 7 deliveries remain closed:
 
 ## Active delivery
 
-**7-06 — Operational Mandate Foundation — ACTIVE / BOOTSTRAP**
+**7-06 — Operational Mandate Foundation — ACTIVE**
 
 Starting main baseline:
 
@@ -54,6 +54,15 @@ Starting main baseline:
 The next-delivery selection audit passed. Mandates were selected because they
 are the missing authorization authority for later paper-session configuration,
 policy selection and durable runtime control.
+
+Gate progress:
+
+- Gate 1 — Architecture & Revision Model: **CLOSED**;
+- Gate 1A — Boundary Amendment: **CLOSED**;
+- Gate 2A — Pure Domain Contract: **REMOTE PUBLISHED / CLOSED**;
+- Gate 2B — Local Persistence Foundation: **REMOTE PUBLISHED / CLOSED**;
+- Gate 2C — PostgreSQL Repository Contract: **REMOTE PUBLISHED / CLOSED**;
+- Gate 2D — Bounded Mandate Query Completion: **SELECTED / NOT STARTED**.
 
 Gate 1 — Architecture & Revision Model: **PASS / CLOSED after accepted boundary
 amendment**. The original audit returned **CONDITIONAL PASS — BOUNDARY AMENDMENT
@@ -123,10 +132,31 @@ dual-control approval; approved-mandate mutation or supersession graphs;
 capital-ledger integration; ADT Official Portfolio; ADT Confidence Score; ML;
 Telegram; SaaS; deployment expansion; and real-capital execution.
 
-Migration expected: **YES**. It may be designed, reviewed and validated locally
-in later gates, but remote application is prohibited until separately reviewed.
-No 7-06 implementation files or implementation milestone exist yet. Gate 2 has
-not started.
+Published implementation boundary:
+
+- Gate 2A provides canonical mandate specifications and instruments, lifecycle
+  transitions, immutable revision semantics, canonical checksum/equality,
+  actor-scoped create fingerprint/idempotency semantics and safe domain errors.
+- Gate 2B provides the `operational_mandates` aggregate, immutable revisions and
+  canonical instruments, database constraints/triggers, RLS, Data API privilege
+  denial and persistence transition defenses.
+- Gate 2C provides the PostgreSQL repository with strict row reconstruction,
+  create/idempotency and rollback-safe concurrent create, point reads, draft
+  replacement and semantic no-op, revision/record-version concurrency,
+  approval, archive, exact replay behavior, safe database-error translation and
+  strict runtime input validation.
+
+Migration status: **VERSIONED / REMOTELY UNAPPLIED**. The migration exists at
+`supabase/migrations/20260821000000_phase_7_06_operational_mandates.sql` and is
+versioned in Git. It remains unapplied to linked/remote Supabase; remote
+application is separately controlled operational work.
+
+Next selected gate: **Gate 2D — Bounded Mandate Query Completion**. Its objective
+is to complete the bounded persistence query surface required for the
+administrator catalog and immutable revision-history review before service/API
+work. The selected future repository additions are `list_current(...)` and
+`list_revisions(...)`; neither is documented as implemented. No 7-06 service,
+API or frontend implementation has started.
 
 ## 7-02 closure evidence
 
@@ -420,9 +450,10 @@ Explicitly deferred after 7-05:
 - capital-ledger integration and Official Portfolio;
 - machine learning, Telegram, SaaS, deployment and real-capital execution.
 
-Phase 7 remains **ACTIVE** and has no Phase 7 tag. Delivery 7-06 is selected and
-bootstrapped on its frozen documentation boundary; the remaining items in
-[`ROADMAP.md`](./ROADMAP.md) continue to govern later scope.
+Phase 7 remains **ACTIVE** and has no Phase 7 tag. Delivery 7-06 is active with
+Gates 2A–2C remotely published and closed; Gate 2D is selected and not started.
+The remaining items in [`ROADMAP.md`](./ROADMAP.md) continue to govern later
+scope.
 
 ## Important repository and process constraints
 
