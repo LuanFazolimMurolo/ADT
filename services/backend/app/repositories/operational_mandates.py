@@ -28,6 +28,7 @@ from app.operational_mandates.domain import (
 )
 from app.operational_mandates.errors import (
     InvalidOperationalMandateSpecificationError,
+    OperationalMandateBoundsExceededError,
     OperationalMandateChecksumMismatchError,
     OperationalMandateIdempotencyConflictError,
     OperationalMandateNotFoundError,
@@ -252,6 +253,20 @@ def _require_mandate_id(value: object) -> UUID:
     return value
 
 
+def _require_pagination(limit: object, offset: object) -> tuple[int, int]:
+    if type(limit) is not int or type(offset) is not int:
+        raise InvalidOperationalMandateSpecificationError()
+    if not 1 <= limit <= 100 or offset < 0:
+        raise OperationalMandateBoundsExceededError()
+    return limit, offset
+
+
+def _require_state(value: object) -> OperationalMandateState | None:
+    if value is not None and not isinstance(value, OperationalMandateState):
+        raise InvalidOperationalMandateSpecificationError()
+    return value
+
+
 def _require_actor_id(value: object) -> UUID:
     if not isinstance(value, UUID) or value.int == 0:
         raise InvalidOperationalMandateSpecificationError()
@@ -394,6 +409,138 @@ async def _load_current_revision(
     return revision
 
 
+def _total_from_row(row: Mapping[str, object] | None) -> int:
+    if row is None:
+        raise PersistenceError()
+    try:
+        total = _row_int(row, "total")
+    except TypeError as error:
+        raise PersistenceError() from error
+    if total < 0:
+        raise PersistenceError()
+    return total
+
+
+def _page_rows_and_total(
+    rows: Sequence[Mapping[str, object]],
+) -> tuple[list[Mapping[str, object]], int]:
+    if not rows:
+        raise PersistenceError()
+
+    total = _total_from_row(rows[0])
+    page_rows: list[Mapping[str, object]] = []
+    for row in rows:
+        if _total_from_row(row) != total:
+            raise PersistenceError()
+        try:
+            mandate_id = _row_value(row, "mandate_id")
+        except TypeError as error:
+            raise PersistenceError() from error
+        if mandate_id is None:
+            if len(rows) != 1:
+                raise PersistenceError()
+            continue
+        page_rows.append(row)
+    return page_rows, total
+
+
+def _revision_identity(row: Mapping[str, object]) -> tuple[UUID, int]:
+    try:
+        return _row_uuid(row, "mandate_id"), _row_int(row, "revision")
+    except TypeError as error:
+        raise PersistenceError() from error
+
+
+async def _revisions_by_identity(
+    connection: DatabaseConnection,
+    revision_rows: Sequence[Mapping[str, object]],
+) -> dict[tuple[UUID, int], OperationalMandateRevision]:
+    if not revision_rows:
+        return {}
+
+    identities = [_revision_identity(row) for row in revision_rows]
+    if len(set(identities)) != len(identities):
+        raise PersistenceError()
+
+    mandate_ids = [mandate_id for mandate_id, _ in identities]
+    revisions = [revision for _, revision in identities]
+    instrument_cursor = await connection.execute(
+        """
+        select
+            instrument.mandate_id,
+            instrument.revision,
+            instrument.exchange,
+            instrument.market_type,
+            instrument.base_asset,
+            instrument.quote_asset
+        from public.operational_mandate_revision_instruments as instrument
+        join unnest(%s::uuid[], %s::bigint[]) as requested(mandate_id, revision)
+          on requested.mandate_id = instrument.mandate_id
+         and requested.revision = instrument.revision
+        order by
+            instrument.mandate_id,
+            instrument.revision,
+            instrument.exchange,
+            instrument.market_type,
+            instrument.base_asset,
+            instrument.quote_asset
+        """,
+        (mandate_ids, revisions),
+    )
+    instrument_rows = await instrument_cursor.fetchall()
+    grouped_instruments: dict[
+        tuple[UUID, int],
+        list[Mapping[str, object]],
+    ] = {identity: [] for identity in identities}
+    for instrument_row in instrument_rows:
+        identity = _revision_identity(instrument_row)
+        if identity not in grouped_instruments:
+            raise PersistenceError()
+        grouped_instruments[identity].append(instrument_row)
+
+    return {
+        identity: operational_mandate_revision_from_rows(
+            row,
+            grouped_instruments[identity],
+        )
+        for identity, row in zip(identities, revision_rows, strict=True)
+    }
+
+
+async def _load_revisions_batch(
+    connection: DatabaseConnection,
+    identities: Sequence[tuple[UUID, int]],
+) -> dict[tuple[UUID, int], OperationalMandateRevision]:
+    if not identities:
+        return {}
+
+    mandate_ids = [mandate_id for mandate_id, _ in identities]
+    revisions = [revision for _, revision in identities]
+    cursor = await connection.execute(
+        """
+        select
+            revision_record.mandate_id,
+            revision_record.revision,
+            revision_record.schema_version,
+            revision_record.specification_checksum,
+            revision_record.name,
+            revision_record.description,
+            revision_record.created_by,
+            revision_record.created_at
+        from public.operational_mandate_revisions as revision_record
+        join unnest(%s::uuid[], %s::bigint[]) as requested(mandate_id, revision)
+          on requested.mandate_id = revision_record.mandate_id
+         and requested.revision = revision_record.revision
+        """,
+        (mandate_ids, revisions),
+    )
+    rows = await cursor.fetchall()
+    result = await _revisions_by_identity(connection, rows)
+    if set(result) != set(identities):
+        raise PersistenceError()
+    return result
+
+
 async def _insert_revision(
     connection: DatabaseConnection,
     *,
@@ -533,6 +680,141 @@ class PostgresOperationalMandateRepository:
                 return await _current_pair_from_row(connection, row)
         except Error as error:
             _raise_mandate_database_error(error)
+
+    async def list_current(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        state: OperationalMandateState | None = None,
+    ) -> tuple[
+        list[tuple[OperationalMandate, OperationalMandateRevision]],
+        int,
+    ]:
+        """Return a bounded stable page with each exact current revision."""
+
+        limit, offset = _require_pagination(limit, offset)
+        state = _require_state(state)
+        where_clause = "" if state is None else "where state = %s"
+        filter_parameters: tuple[object, ...] = () if state is None else (state.value,)
+        try:
+            async with self._database.transaction() as connection:
+                page_cursor = await connection.execute(
+                    f"""
+                    with filtered as (
+                        select {_AGGREGATE_COLUMNS}
+                        from public.operational_mandates
+                        {where_clause}
+                    ),
+                    page as (
+                        select *
+                        from filtered
+                        order by created_at desc, mandate_id desc
+                        limit %s offset %s
+                    ),
+                    total as (
+                        select count(*) as total
+                        from filtered
+                    )
+                    select
+                        total.total,
+                        page.mandate_id,
+                        page.state,
+                        page.current_revision,
+                        page.record_version,
+                        page.approved_revision,
+                        page.approved_checksum,
+                        page.created_by,
+                        page.created_at,
+                        page.approved_by,
+                        page.approved_at,
+                        page.archived_by,
+                        page.archived_at,
+                        page.create_idempotency_key,
+                        page.create_request_fingerprint
+                    from total
+                    left join page on true
+                    order by created_at desc, mandate_id desc
+                    """,  # noqa: S608 - where_clause is a closed internal fragment.
+                    (*filter_parameters, limit, offset),
+                )
+                rows, total = _page_rows_and_total(await page_cursor.fetchall())
+                mandates = [operational_mandate_from_row(row) for row in rows]
+                identities = [
+                    (mandate.mandate_id, mandate.current_revision) for mandate in mandates
+                ]
+                revisions = await _load_revisions_batch(connection, identities)
+        except Error as error:
+            _raise_mandate_database_error(error)
+
+        return [
+            (mandate, revisions[(mandate.mandate_id, mandate.current_revision)])
+            for mandate in mandates
+        ], total
+
+    async def list_revisions(
+        self,
+        mandate_id: UUID,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[OperationalMandateRevision], int]:
+        """Return one mandate's bounded immutable history newest-first."""
+
+        mandate_id = _require_mandate_id(mandate_id)
+        limit, offset = _require_pagination(limit, offset)
+        try:
+            async with self._database.transaction() as connection:
+                exists_cursor = await connection.execute(
+                    """
+                    select 1
+                    from public.operational_mandates
+                    where mandate_id = %s
+                    """,
+                    (mandate_id,),
+                )
+                if await exists_cursor.fetchone() is None:
+                    raise OperationalMandateNotFoundError()
+
+                page_cursor = await connection.execute(
+                    f"""
+                    with filtered as (
+                        select {_REVISION_COLUMNS}
+                        from public.operational_mandate_revisions
+                        where mandate_id = %s
+                    ),
+                    page as (
+                        select *
+                        from filtered
+                        order by revision desc
+                        limit %s offset %s
+                    ),
+                    total as (
+                        select count(*) as total
+                        from filtered
+                    )
+                    select
+                        total.total,
+                        page.mandate_id,
+                        page.revision,
+                        page.schema_version,
+                        page.specification_checksum,
+                        page.name,
+                        page.description,
+                        page.created_by,
+                        page.created_at
+                    from total
+                    left join page on true
+                    order by revision desc
+                    """,
+                    (mandate_id, limit, offset),
+                )
+                rows, total = _page_rows_and_total(await page_cursor.fetchall())
+                revisions = await _revisions_by_identity(connection, rows)
+        except Error as error:
+            _raise_mandate_database_error(error)
+
+        return [revisions[_revision_identity(row)] for row in rows], total
 
     async def create(
         self,

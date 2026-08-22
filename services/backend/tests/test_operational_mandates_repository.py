@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import fields
 from datetime import UTC, datetime, timedelta, timezone
-from typing import cast
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import psycopg
@@ -14,11 +16,13 @@ import pytest
 import app.operational_mandates.domain as mandate_domain
 import app.repositories.operational_mandates as repository_module
 from app.database import Database
+from app.database.pool import DatabaseConnection
 from app.domain.errors import PersistenceError
 from app.market_data.domain import Exchange, MarketType, TradingPair
 from app.operational_mandates import (
     InvalidOperationalMandateSpecificationError,
     OperationalMandate,
+    OperationalMandateBoundsExceededError,
     OperationalMandateChecksumMismatchError,
     OperationalMandateIdempotencyConflictError,
     OperationalMandateInstrument,
@@ -130,13 +134,98 @@ class _DatabaseMustNotBeAccessed:
         raise AssertionError("invalid mandate_id reached persistence")
 
 
+class _CountingConnection:
+    def __init__(
+        self,
+        connection: DatabaseConnection,
+        owner: _CountingDatabase,
+    ) -> None:
+        self._connection = connection
+        self._owner = owner
+
+    async def execute(
+        self,
+        query: Any,
+        params: Any = None,
+        **kwargs: Any,
+    ) -> Any:
+        self._owner.statement_count += 1
+        return await self._connection.execute(query, params, **kwargs)
+
+
+class _CountingDatabase:
+    def __init__(self, database: Database) -> None:
+        self._database = database
+        self.statement_count = 0
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[DatabaseConnection]:
+        async with self._database.transaction() as connection:
+            yield cast(
+                DatabaseConnection,
+                _CountingConnection(connection, self),
+            )
+
+
+class _SnapshotPauseConnection:
+    def __init__(
+        self,
+        connection: DatabaseConnection,
+        owner: _SnapshotPauseDatabase,
+    ) -> None:
+        self._connection = connection
+        self._owner = owner
+
+    async def execute(
+        self,
+        query: Any,
+        params: Any = None,
+        **kwargs: Any,
+    ) -> Any:
+        cursor = await self._connection.execute(query, params, **kwargs)
+        if not self._owner.paused and self._owner.should_pause(str(query)):
+            self._owner.paused = True
+            self._owner.snapshot_ready.set()
+            await self._owner.resume.wait()
+        return cursor
+
+
+class _SnapshotPauseDatabase:
+    def __init__(
+        self,
+        database: Database,
+        should_pause: Callable[[str], bool],
+    ) -> None:
+        self._database = database
+        self.should_pause = should_pause
+        self.snapshot_ready = asyncio.Event()
+        self.resume = asyncio.Event()
+        self.paused = False
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[DatabaseConnection]:
+        async with self._database.transaction() as connection:
+            yield cast(
+                DatabaseConnection,
+                _SnapshotPauseConnection(connection, self),
+            )
+
+
 @pytest.mark.parametrize(
     "invalid_mandate_id",
     [None, "550e8400-e29b-41d4-a716-446655440000", 123, object()],
 )
 @pytest.mark.parametrize(
     "method_name",
-    ["get", "get_revision", "get_current", "replace_draft", "approve", "archive"],
+    [
+        "get",
+        "get_revision",
+        "get_current",
+        "list_revisions",
+        "replace_draft",
+        "approve",
+        "archive",
+    ],
 )
 async def test_invalid_mandate_id_is_rejected_before_persistence(
     invalid_mandate_id: object,
@@ -152,6 +241,8 @@ async def test_invalid_mandate_id_is_rejected_before_persistence(
             await repository.get_revision(mandate_id, 1)
         elif method_name == "get_current":
             await repository.get_current(mandate_id)
+        elif method_name == "list_revisions":
+            await repository.list_revisions(mandate_id, limit=20, offset=0)
         elif method_name == "replace_draft":
             await repository.replace_draft(
                 mandate_id,
@@ -177,6 +268,50 @@ async def test_invalid_mandate_id_is_rejected_before_persistence(
                 actor_id=uuid4(),
                 now=BASE_TIME,
             )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value", "error_type"),
+    [
+        ("limit", None, InvalidOperationalMandateSpecificationError),
+        ("limit", True, InvalidOperationalMandateSpecificationError),
+        ("limit", "10", InvalidOperationalMandateSpecificationError),
+        ("limit", 0, OperationalMandateBoundsExceededError),
+        ("limit", -1, OperationalMandateBoundsExceededError),
+        ("limit", 101, OperationalMandateBoundsExceededError),
+        ("offset", None, InvalidOperationalMandateSpecificationError),
+        ("offset", True, InvalidOperationalMandateSpecificationError),
+        ("offset", "0", InvalidOperationalMandateSpecificationError),
+        ("offset", -1, OperationalMandateBoundsExceededError),
+    ],
+)
+async def test_invalid_list_pagination_is_rejected_before_persistence(
+    field_name: str,
+    invalid_value: object,
+    error_type: type[Exception],
+) -> None:
+    repository = PostgresOperationalMandateRepository(cast(Database, _DatabaseMustNotBeAccessed()))
+    limit = cast(int, invalid_value) if field_name == "limit" else 20
+    offset = cast(int, invalid_value) if field_name == "offset" else 0
+
+    with pytest.raises(error_type):
+        await repository.list_current(limit=limit, offset=offset)
+    with pytest.raises(error_type):
+        await repository.list_revisions(uuid4(), limit=limit, offset=offset)
+
+
+@pytest.mark.parametrize("invalid_state", ["DRAFT", 1, object()])
+async def test_invalid_list_state_is_rejected_before_persistence(
+    invalid_state: object,
+) -> None:
+    repository = PostgresOperationalMandateRepository(cast(Database, _DatabaseMustNotBeAccessed()))
+
+    with pytest.raises(InvalidOperationalMandateSpecificationError):
+        await repository.list_current(
+            limit=20,
+            offset=0,
+            state=cast(OperationalMandateState, invalid_state),
+        )
 
 
 async def test_missing_reads_return_none(database: Database) -> None:
@@ -217,6 +352,475 @@ async def test_create_round_trip_reconstructs_exact_state(
     assert await repository.get(aggregate.mandate_id) == aggregate
     assert await repository.get_revision(aggregate.mandate_id, 1) == revision
     assert await repository.get_current(aggregate.mandate_id) == (aggregate, revision)
+
+
+async def test_list_current_empty_and_single_catalog(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresOperationalMandateRepository(database)
+
+    assert await repository.list_current(limit=20, offset=0) == ([], 0)
+
+    created = await _create(
+        repository,
+        admin_user_id,
+        specification=_specification(
+            instruments=(_instrument("ETH"), _instrument("BTC")),
+        ),
+    )
+
+    assert await repository.list_current(limit=20, offset=0) == ([created], 1)
+
+
+async def test_list_current_has_stable_order_and_complete_pagination(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresOperationalMandateRepository(database)
+    created = [
+        await _create(
+            repository,
+            admin_user_id,
+            idempotency_key=f"ordered-{index}",
+            now=BASE_TIME + timedelta(seconds=created_second),
+        )
+        for index, created_second in enumerate((0, 1, 2, 2, 3))
+    ]
+    expected = sorted(
+        created,
+        key=lambda pair: (pair[0].created_at, pair[0].mandate_id),
+        reverse=True,
+    )
+
+    first, first_total = await repository.list_current(limit=2, offset=0)
+    middle, middle_total = await repository.list_current(limit=2, offset=2)
+    final, final_total = await repository.list_current(limit=2, offset=4)
+    beyond, beyond_total = await repository.list_current(limit=2, offset=100)
+
+    assert first == expected[:2]
+    assert middle == expected[2:4]
+    assert final == expected[4:]
+    assert beyond == []
+    assert {first_total, middle_total, final_total, beyond_total} == {5}
+
+
+async def test_list_current_filters_each_state_with_matching_totals(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresOperationalMandateRepository(database)
+    draft = await _create(
+        repository,
+        admin_user_id,
+        idempotency_key="state-draft",
+        now=BASE_TIME,
+    )
+    approved_pair = await _create(
+        repository,
+        admin_user_id,
+        idempotency_key="state-approved",
+        now=BASE_TIME + timedelta(seconds=1),
+    )
+    archived_pair = await _create(
+        repository,
+        admin_user_id,
+        idempotency_key="state-archived",
+        now=BASE_TIME + timedelta(seconds=2),
+    )
+    approved = await repository.approve(
+        approved_pair[0].mandate_id,
+        expected_revision=1,
+        expected_checksum=approved_pair[1].specification_checksum,
+        expected_record_version=1,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=3),
+    )
+    archived = await repository.archive(
+        archived_pair[0].mandate_id,
+        expected_record_version=1,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=3),
+    )
+
+    all_items, all_total = await repository.list_current(limit=20, offset=0)
+    draft_items, draft_total = await repository.list_current(
+        limit=20,
+        offset=0,
+        state=OperationalMandateState.DRAFT,
+    )
+    approved_items, approved_total = await repository.list_current(
+        limit=20,
+        offset=0,
+        state=OperationalMandateState.APPROVED,
+    )
+    archived_items, archived_total = await repository.list_current(
+        limit=20,
+        offset=0,
+        state=OperationalMandateState.ARCHIVED,
+    )
+
+    assert all_total == 3
+    assert {item[0].mandate_id for item in all_items} == {
+        draft[0].mandate_id,
+        approved.mandate_id,
+        archived.mandate_id,
+    }
+    assert draft_items == [draft]
+    assert draft_total == 1
+    assert approved_items == [(approved, approved_pair[1])]
+    assert approved_total == 1
+    assert archived_items == [(archived, archived_pair[1])]
+    assert archived_total == 1
+
+
+async def test_list_current_uses_exact_replaced_revision_without_instrument_mixing(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresOperationalMandateRepository(database)
+    first = await _create(
+        repository,
+        admin_user_id,
+        specification=_specification(
+            name="First",
+            instruments=(_instrument("ETH"), _instrument("BTC")),
+        ),
+        idempotency_key="catalog-first",
+    )
+    second = await _create(
+        repository,
+        admin_user_id,
+        specification=_specification(
+            name="Second",
+            instruments=(_instrument("XRP"), _instrument("DOGE")),
+        ),
+        idempotency_key="catalog-second",
+        now=BASE_TIME + timedelta(seconds=1),
+    )
+    replaced = await repository.replace_draft(
+        first[0].mandate_id,
+        _specification(
+            name="First revised",
+            instruments=(_instrument("SOL"), _instrument("ADA")),
+        ),
+        expected_revision=1,
+        expected_record_version=1,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=2),
+    )
+
+    page, total = await repository.list_current(limit=20, offset=0)
+    by_id = {aggregate.mandate_id: (aggregate, revision) for aggregate, revision in page}
+
+    assert total == 2
+    assert by_id[first[0].mandate_id] == replaced
+    assert by_id[second[0].mandate_id] == second
+    assert replaced[1].revision == replaced[0].current_revision == 2
+    assert tuple(item.pair.base for item in replaced[1].specification.instruments) == (
+        "ADA",
+        "SOL",
+    )
+    assert tuple(item.pair.base for item in second[1].specification.instruments) == (
+        "DOGE",
+        "XRP",
+    )
+
+
+async def test_list_revisions_returns_revision_one_and_missing_parent_is_not_found(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresOperationalMandateRepository(database)
+    created = await _create(repository, admin_user_id)
+
+    assert await repository.list_revisions(
+        created[0].mandate_id,
+        limit=20,
+        offset=0,
+    ) == ([created[1]], 1)
+    with pytest.raises(OperationalMandateNotFoundError):
+        await repository.list_revisions(uuid4(), limit=20, offset=0)
+
+
+async def test_list_revisions_is_newest_first_paginated_and_isolated(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresOperationalMandateRepository(database)
+    created = await _create(
+        repository,
+        admin_user_id,
+        specification=_specification(
+            name="Revision one",
+            instruments=(_instrument("ETH"), _instrument("BTC")),
+        ),
+        idempotency_key="history-primary",
+    )
+    second = await repository.replace_draft(
+        created[0].mandate_id,
+        _specification(
+            name="Revision two",
+            instruments=(_instrument("SOL"), _instrument("ADA")),
+        ),
+        expected_revision=1,
+        expected_record_version=1,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=1),
+    )
+    third = await repository.replace_draft(
+        created[0].mandate_id,
+        _specification(
+            name="Revision three",
+            instruments=(_instrument("XRP"),),
+        ),
+        expected_revision=2,
+        expected_record_version=2,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=2),
+    )
+    other = await _create(
+        repository,
+        admin_user_id,
+        specification=_specification(instruments=(_instrument("DOGE"),)),
+        idempotency_key="history-other",
+    )
+
+    first_page, first_total = await repository.list_revisions(
+        created[0].mandate_id,
+        limit=1,
+        offset=0,
+    )
+    middle_page, middle_total = await repository.list_revisions(
+        created[0].mandate_id,
+        limit=1,
+        offset=1,
+    )
+    final_page, final_total = await repository.list_revisions(
+        created[0].mandate_id,
+        limit=1,
+        offset=2,
+    )
+    empty_page, empty_total = await repository.list_revisions(
+        created[0].mandate_id,
+        limit=1,
+        offset=100,
+    )
+
+    assert first_page == [third[1]]
+    assert middle_page == [second[1]]
+    assert final_page == [created[1]]
+    assert empty_page == []
+    assert {first_total, middle_total, final_total, empty_total} == {3}
+    assert tuple(item.pair.base for item in middle_page[0].specification.instruments) == (
+        "ADA",
+        "SOL",
+    )
+    assert all(
+        instrument.pair.base != "DOGE"
+        for revision in first_page + middle_page + final_page
+        for instrument in revision.specification.instruments
+    )
+    assert await repository.list_revisions(other[0].mandate_id, limit=20, offset=0) == (
+        [other[1]],
+        1,
+    )
+
+
+async def test_listing_is_read_only_and_lifecycle_does_not_rewrite_history(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresOperationalMandateRepository(database)
+    created = await _create(repository, admin_user_id)
+    replaced = await repository.replace_draft(
+        created[0].mandate_id,
+        _specification(name="Revision two", instruments=(_instrument("ETH"),)),
+        expected_revision=1,
+        expected_record_version=1,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=1),
+    )
+    history_before, _ = await repository.list_revisions(
+        created[0].mandate_id,
+        limit=20,
+        offset=0,
+    )
+    approved = await repository.approve(
+        created[0].mandate_id,
+        expected_revision=2,
+        expected_checksum=replaced[1].specification_checksum,
+        expected_record_version=2,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=2),
+    )
+    archived = await repository.archive(
+        created[0].mandate_id,
+        expected_record_version=approved.record_version,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=3),
+    )
+    counts_before = await _total_rows(database)
+
+    current_page, current_total = await repository.list_current(limit=20, offset=0)
+    history_after, history_total = await repository.list_revisions(
+        created[0].mandate_id,
+        limit=20,
+        offset=0,
+    )
+
+    assert current_page == [(archived, replaced[1])]
+    assert current_total == 1
+    assert history_after == history_before
+    assert history_total == 2
+    assert await _total_rows(database) == counts_before
+    assert await repository.get(created[0].mandate_id) == archived
+
+
+async def test_list_current_total_and_page_share_one_statement_snapshot(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    mutation_repository = PostgresOperationalMandateRepository(database)
+    created = await _create(mutation_repository, admin_user_id)
+    pause_database = _SnapshotPauseDatabase(
+        database,
+        lambda query: (
+            "from public.operational_mandates" in query.lower()
+            and "count(*) as total" in query.lower()
+        ),
+    )
+    listing_repository = PostgresOperationalMandateRepository(cast(Database, pause_database))
+    listing_task = asyncio.create_task(
+        listing_repository.list_current(
+            limit=20,
+            offset=0,
+            state=OperationalMandateState.DRAFT,
+        )
+    )
+
+    try:
+        await asyncio.wait_for(pause_database.snapshot_ready.wait(), timeout=2)
+        await mutation_repository.approve(
+            created[0].mandate_id,
+            expected_revision=1,
+            expected_checksum=created[1].specification_checksum,
+            expected_record_version=1,
+            actor_id=admin_user_id,
+            now=BASE_TIME + timedelta(seconds=1),
+        )
+    finally:
+        pause_database.resume.set()
+
+    items, total = await listing_task
+
+    assert items == [created]
+    assert total == 1
+    current = await mutation_repository.get(created[0].mandate_id)
+    assert current is not None
+    assert current.state is OperationalMandateState.APPROVED
+
+
+async def test_list_revisions_total_and_page_share_one_statement_snapshot(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    mutation_repository = PostgresOperationalMandateRepository(database)
+    created = await _create(mutation_repository, admin_user_id)
+    pause_database = _SnapshotPauseDatabase(
+        database,
+        lambda query: (
+            "from public.operational_mandate_revisions" in query.lower()
+            and "count(*) as total" in query.lower()
+        ),
+    )
+    listing_repository = PostgresOperationalMandateRepository(cast(Database, pause_database))
+    listing_task = asyncio.create_task(
+        listing_repository.list_revisions(
+            created[0].mandate_id,
+            limit=20,
+            offset=0,
+        )
+    )
+
+    try:
+        await asyncio.wait_for(pause_database.snapshot_ready.wait(), timeout=2)
+        await mutation_repository.replace_draft(
+            created[0].mandate_id,
+            _specification(name="Revision two", instruments=(_instrument("ETH"),)),
+            expected_revision=1,
+            expected_record_version=1,
+            actor_id=admin_user_id,
+            now=BASE_TIME + timedelta(seconds=1),
+        )
+    finally:
+        pause_database.resume.set()
+
+    revisions, total = await listing_task
+
+    assert revisions == [created[1]]
+    assert total == 1
+    current = await mutation_repository.get(created[0].mandate_id)
+    assert current is not None
+    assert current.current_revision == 2
+
+
+async def test_listing_query_count_is_bounded_independently_of_page_size(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    setup_repository = PostgresOperationalMandateRepository(database)
+    primary = await _create(
+        setup_repository,
+        admin_user_id,
+        idempotency_key="query-count-primary",
+    )
+    current = primary
+    for revision in range(2, 5):
+        current = await setup_repository.replace_draft(
+            primary[0].mandate_id,
+            _specification(
+                name=f"Revision {revision}",
+                instruments=(_instrument(f"ASSET{revision}"),),
+            ),
+            expected_revision=revision - 1,
+            expected_record_version=revision - 1,
+            actor_id=admin_user_id,
+            now=BASE_TIME + timedelta(seconds=revision),
+        )
+    for index in range(1, 5):
+        await _create(
+            setup_repository,
+            admin_user_id,
+            idempotency_key=f"query-count-{index}",
+            now=BASE_TIME + timedelta(minutes=index),
+        )
+
+    counting_database = _CountingDatabase(database)
+    repository = PostgresOperationalMandateRepository(cast(Database, counting_database))
+
+    await repository.list_current(limit=1, offset=0)
+    small_catalog_count = counting_database.statement_count
+    counting_database.statement_count = 0
+    await repository.list_current(limit=5, offset=0)
+    large_catalog_count = counting_database.statement_count
+
+    counting_database.statement_count = 0
+    await repository.list_revisions(primary[0].mandate_id, limit=1, offset=0)
+    small_history_count = counting_database.statement_count
+    counting_database.statement_count = 0
+    revisions, total = await repository.list_revisions(
+        primary[0].mandate_id,
+        limit=4,
+        offset=0,
+    )
+    large_history_count = counting_database.statement_count
+
+    assert current[0].current_revision == 4
+    assert [revision.revision for revision in revisions] == [4, 3, 2, 1]
+    assert total == 4
+    assert 0 < small_catalog_count == large_catalog_count <= 4
+    assert 0 < small_history_count == large_history_count <= 4
 
 
 async def test_create_persists_canonical_hashes_order_and_deduplication(
@@ -306,6 +910,10 @@ async def test_persisted_checksum_corruption_becomes_persistence_error(
         await repository.get_revision(aggregate.mandate_id, 1)
     with pytest.raises(PersistenceError):
         await repository.get_current(aggregate.mandate_id)
+    with pytest.raises(PersistenceError):
+        await repository.list_current(limit=20, offset=0)
+    with pytest.raises(PersistenceError):
+        await repository.list_revisions(aggregate.mandate_id, limit=20, offset=0)
 
 
 async def test_same_actor_key_and_fingerprint_returns_original_without_rewrite(
