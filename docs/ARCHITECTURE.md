@@ -1166,3 +1166,74 @@ Supabase Bearer token through the existing client.
 
 This boundary introduces no PostgreSQL migration, WebSocket, exchange account,
 API key, live order, strategy promotion or automatic session subscription.
+
+## Phase 7-07 operational paper-session profile boundary
+
+Phase 7-07 introduces a PostgreSQL-backed configuration authority between an
+approved operational mandate and the existing executable local
+`PaperSessionConfig`:
+
+```text
+exact approved mandate
+    + one selected mandate instrument and canonical timeframe
+    + frozen strategy-definition snapshot
+    + deterministic non-capital policy/constraint snapshot
+    -> approved OperationalPaperSessionProfile
+    + future authoritative capital binding
+    + future materialization authority/version
+    -> existing immutable local PaperSessionConfig
+    -> deterministic local session_id
+```
+
+`OperationalPaperSessionProfile` is a stable UUID aggregate with immutable
+specification revisions, a canonical specification checksum and a separate
+aggregate `record_version`. Its UUID is administrative identity and never
+equals, aliases or predicts the local content-addressed `session_id`.
+
+The profile binds to the exact 7-06
+`mandate_id + approved_revision + specification_checksum` and selects one
+canonical Binance Spot instrument from that revision. It stores no independent
+instrument authorization list. It selects one timeframe from the existing
+`TIMEFRAMES` registry and adds no trading-horizon label.
+
+Because the Phase 3C strategy-definition row is revised in place, the profile
+freezes the source definition ID/revision, plugin and schema/lifecycle identity,
+canonical parameters and checksums. The source revision is frozen historical
+snapshot evidence, not a foreign key to an immutable strategy-revision row;
+later source revisions remain legal. Approval seals only after one bounded
+PostgreSQL transaction obtains commit-time consistency across the draft
+profile, exact approved mandate binding and current active strategy source,
+while the exact plugin remains resolvable in the server registry. Later edits
+or archival do not rewrite an already approved profile; future use consumes
+the frozen snapshot and still requires the exact plugin to remain registered.
+
+The profile freezes current paper-engine inputs except capital: evaluation
+start and warmup, fees, fixed-basis-point slippage, sizing, explicit simulation
+constraints, risk/stop-loss policy, engine bounds and optional market-regime
+policy. Instrument constraints are explicit administrator-authored simulation
+assumptions, as in the existing CLI. They are neither live Binance metadata nor
+mandate authority, and every value is backend-validated and frozen.
+
+Capital is deliberately absent. A profile is categorically non-runnable and
+cannot create a local config/session ID, write paper-session files, execute a
+strategy, allocate capital or control a runner/collector. Future
+materialization must bind authoritative capital and an explicit materialization
+version, then revalidate the approved profile, active bound mandate and
+registered strategy plugin before constructing the existing canonical local
+configuration.
+
+Profile lifecycle is `DRAFT -> APPROVED`, `DRAFT -> ARCHIVED` and `APPROVED ->
+ARCHIVED`; approved specifications cannot change and archive is terminal.
+Archiving the profile or its bound mandate prevents future materialization
+without mutating history. Create is actor-scoped and idempotent; changed draft
+replacement uses revision and record-version guards; semantic equality is a
+token-preserving `NOOP`; approval seals one exact revision/checksum/version.
+Create idempotency fingerprints the stable versioned administrator intent,
+including the expected strategy revision, before mutable source resolution, so
+an exact committed ambiguous retry returns its original aggregate even if the
+source strategy has subsequently changed.
+
+Future HTTP is administrator-only bounded CRUD/lifecycle transport. It performs
+no Binance call, RAW scan, filesystem materialization, replay, capital mutation
+or long-running work. The complete authority decision is recorded in
+[`adr/0002-phase-7-07-operational-paper-session-profile-authority.md`](./adr/0002-phase-7-07-operational-paper-session-profile-authority.md).

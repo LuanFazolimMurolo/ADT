@@ -870,9 +870,11 @@ milestone remains `0c53c96c9d2500b01d0dfab0e1dd74531e1e8d9c`, and its integrated
 closure milestone is `8a9c6eaaadf8e2fd07f56c69ae497d5b3563c003`. Track 7-06's latest
 implementation milestone is `3568e8c399c235b3641af64f49768598c063e7e3`, and
 its integrated delivery milestone is
-`c674a128866233a2e6ac34edcf4d99e62b1ab4fb`. Phase 7 as a whole remains active;
-no subsequent delivery is selected by this closure record. The exact current
-handoff is maintained in
+`c674a128866233a2e6ac34edcf4d99e62b1ab4fb`. Track 7-07 is selected and active
+from starting baseline `369225f16653c15f400adae854d12f9345f9ca5a`; its Gate
+1 architecture authority model is accepted and closed, Gate 1A was not
+required, and implementation gates have not started. Phase 7 as a whole
+remains active. The exact current handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
@@ -1291,6 +1293,102 @@ closure record.
 
 The mandate authorizes a canonical operational universe. It does not itself
 execute work and it does not yet define a complete trading session.
+
+### 7-07 — Operational Paper-Session Configuration Foundation 🚧
+
+**Status**: Active — Gate 1 architecture accepted and closed; Gate 1A not
+required; implementation gates not started.
+
+Starting `main` baseline:
+`369225f16653c15f400adae854d12f9345f9ca5a`.
+
+**Goal**:
+
+Create a durable, authenticated, auditable administrator-approved operational
+paper-session profile inside an exact approved mandate, without allocating
+capital, materializing a local paper session or starting runtime work.
+
+**Gate progress**:
+
+- Gate 1 — Architecture & Authority Model: **CLOSED / ACCEPTED**;
+- Gate 1A — Boundary Amendment: **NOT REQUIRED**;
+- Gate 2A — Pure Domain Contract: **NOT STARTED**;
+- Gate 2B — Local Persistence Foundation: **NOT STARTED**;
+- Gate 2C — PostgreSQL Repository Contract: **NOT STARTED**;
+- Gate 2D — Bounded Query Completion: **NOT STARTED**;
+- Gate 2E — Application Service: **NOT STARTED**;
+- Gate 3 — Protected Administrator API: **NOT STARTED**;
+- Gate 4 — Protected Administrative Frontend: **NOT STARTED**;
+- Gate 5 — Integration and Closure: **NOT STARTED**.
+
+**Accepted Gate 1 boundary**:
+
+- the aggregate name is `OperationalPaperSessionProfile`, deliberately
+  distinct from the existing executable local `PaperSessionConfig`;
+- `profile_id` is a stable PostgreSQL UUID and never equals or predicts the
+  local content-addressed `session_id`;
+- immutable specification revisions, canonical lowercase SHA-256 checksum and
+  separate aggregate `record_version` preserve audit and concurrency;
+- the profile binds exactly to `mandate_id + approved_revision +
+  specification_checksum` and selects exactly one instrument from that
+  immutable approved mandate revision;
+- the profile selects exactly one timeframe from the existing canonical
+  registry and creates no independent timeframe authority;
+- the strategy is frozen as a snapshot of the source definition ID/revision,
+  plugin/schema/lifecycle identity, canonical normalized parameters and
+  checksums because Phase 3C revisions overwrite the current row rather than
+  preserving every payload separately;
+- current deterministic non-capital paper inputs are frozen: evaluation start,
+  warmup, fees, slippage, position sizing, explicit simulation constraints,
+  risk/stop-loss policy, engine bounds and optional market-regime policy;
+- execution constraints are explicit administrator-supplied deterministic
+  paper assumptions, matching the current CLI contract; they are not mandate
+  authority or live Binance metadata, and approval performs no network call;
+- capital is absent, so draft and approved profiles are categorically
+  non-runnable and create no local config, session ID, file or runtime state;
+- lifecycle is `DRAFT -> APPROVED`, `DRAFT -> ARCHIVED`, `APPROVED ->
+  ARCHIVED`, with `ARCHIVED` terminal, no post-approval specification revision
+  and no automatic state mutation when source records are archived;
+- later mandate archival leaves history unchanged but makes future
+  materialization fail closed; later strategy-definition edits/archival leave
+  the approved frozen snapshot unchanged, while the exact plugin must still be
+  registered when a future materializer consumes it;
+- actor-scoped create idempotency, stale-token-first optimistic concurrency,
+  semantic draft `NOOP`, exact approval guards and bounded history follow the
+  profile-specific contract; the stable create-intent fingerprint includes the
+  expected strategy revision and recognizes an exact committed retry without
+  re-resolving a source row that may since have moved revision;
+- approval seals only after one atomic PostgreSQL transaction revalidates and
+  protects the exact draft profile, approved mandate authority and current
+  active strategy source against concurrent lifecycle or revision mutation;
+- the frozen strategy source revision is historical snapshot evidence because
+  Phase 3C retains no immutable revision rows; it is not a composite foreign-key
+  target, and later source revisions do not rewrite or violate older profile
+  snapshots; and
+- future HTTP remains bounded administrator CRUD/lifecycle only, with no
+  strategy execution, Binance call, RAW scan, filesystem materialization,
+  runner/collector control, capital mutation or long-running work.
+
+Expected migration: **YES**, but Gate 1 creates no migration. Local future
+implementation may test the versioned migration chain against disposable
+PostgreSQL; linked/remote application remains separately reviewed operational
+work. The existing 7-06 migration remains **VERSIONED / REMOTELY UNAPPLIED**.
+
+**Explicitly out of scope**:
+
+- initial, per-session or official capital authority;
+- local `PaperSessionConfig` materialization or `session_id` derivation;
+- paper-session file publication, replay or runner subscription;
+- collector, paper-runner or worker lifecycle control;
+- trading-horizon labels such as day trade or swing trade;
+- dynamic strategy code, automatic strategy selection or promotion;
+- live availability or Binance metadata as an approval prerequisite;
+- capital-ledger integration, ADT Official Portfolio or capital eras;
+- market-data ingestion/repair, deployment, ML, Telegram, SaaS and real-capital
+  execution.
+
+Accepted architecture decision:
+[`docs/adr/0002-phase-7-07-operational-paper-session-profile-authority.md`](./adr/0002-phase-7-07-operational-paper-session-profile-authority.md)
 
 ---
 

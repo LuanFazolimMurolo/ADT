@@ -1,10 +1,10 @@
 # ADT Current Development Handoff
 
-Last updated: 2026-08-22
+Last updated: 2026-08-23
 
 ## Current branch
 
-`main`
+`feat/phase-7-07-operational-paper-session-configuration-foundation`
 
 At the start of every session, verify the local branch and HEAD, then inspect
 the corresponding remote branch. This file records the intended handoff; Git
@@ -15,6 +15,38 @@ remains the evidence of the repository's actual state.
 **Phase 7 — Operational Control Plane — ACTIVE**
 
 Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
+
+## Current delivery
+
+**7-07 — Operational Paper-Session Configuration Foundation — ACTIVE**
+
+Starting `main` baseline:
+
+`369225f16653c15f400adae854d12f9345f9ca5a`
+
+The post-7-06 selection audit approved 7-07 as the next delivery. Gate 1's
+semantic audit passed and its architecture authority model is frozen. At this
+status-synchronization checkpoint, the documentation remains an unstaged
+working candidate: no Gate 1 commit or remote 7-07 branch exists yet, and
+publication follows through the protected Git workflow. No 7-07
+implementation, migration or implementation test exists yet.
+
+Gate progress:
+
+- Gate 1 — Architecture & Authority Model: **CLOSED / ACCEPTED**;
+- Gate 1A — Boundary Amendment: **NOT REQUIRED**;
+- Gates 2A–5: **NOT STARTED**.
+
+The candidate names the durable aggregate `OperationalPaperSessionProfile`.
+It freezes an exact approved-mandate binding, one selected mandate instrument,
+one canonical timeframe, a historical strategy snapshot and the current
+deterministic non-capital paper-policy inputs. It remains categorically
+non-runnable: capital binding, local `PaperSessionConfig` materialization,
+deterministic local `session_id`, file publication and runner/collector control
+belong to later reviewed deliveries.
+
+Accepted architecture record:
+[`docs/adr/0002-phase-7-07-operational-paper-session-profile-authority.md`](./adr/0002-phase-7-07-operational-paper-session-profile-authority.md)
 
 ## Last completed track
 
