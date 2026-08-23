@@ -25,15 +25,13 @@ Starting `main` baseline:
 `369225f16653c15f400adae854d12f9345f9ca5a`
 
 The post-7-06 selection audit approved 7-07 as the next delivery. Gate 1's
-semantic audit passed and its architecture authority model is frozen. At this
-status-synchronization checkpoint, the documentation remains an unstaged
-working candidate: no Gate 1 commit or remote 7-07 branch exists yet, and
-publication follows through the protected Git workflow. No 7-07
-implementation, migration or implementation test exists yet.
+semantic audit passed, its architecture authority model is frozen, and its
+architecture documentation has been remotely published on the 7-07 feature
+branch. No 7-07 implementation, migration or implementation test exists yet.
 
 Gate progress:
 
-- Gate 1 — Architecture & Authority Model: **CLOSED / ACCEPTED**;
+- Gate 1 — Architecture & Authority Model: **REMOTE PUBLISHED / CLOSED**;
 - Gate 1A — Boundary Amendment: **NOT REQUIRED**;
 - Gates 2A–5: **NOT STARTED**.
 
