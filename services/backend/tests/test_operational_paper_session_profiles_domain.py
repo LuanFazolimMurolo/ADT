@@ -65,6 +65,8 @@ STRATEGY_ID = UUID("30000000-0000-4000-8000-000000000003")
 ACTOR_ID = UUID("40000000-0000-4000-8000-000000000004")
 NOW = datetime(2026, 8, 23, 12, tzinfo=UTC)
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+POSTGRESQL_INTEGER_MAX = (1 << 31) - 1
+POSTGRESQL_BIGINT_MAX = (1 << 63) - 1
 
 
 def _binding(**changes: object) -> OperationalPaperSessionProfileMandateBinding:
@@ -238,6 +240,14 @@ def test_mandate_binding_rejects_invalid_evidence(changes: dict[str, object]) ->
         _binding(**changes)
 
 
+def test_mandate_binding_matches_postgresql_bigint_width() -> None:
+    assert _binding(approved_revision=POSTGRESQL_BIGINT_MAX).approved_revision == (
+        POSTGRESQL_BIGINT_MAX
+    )
+    with pytest.raises(OperationalPaperSessionProfileBoundsExceededError):
+        _binding(approved_revision=POSTGRESQL_BIGINT_MAX + 1)
+
+
 def test_instrument_and_timeframe_are_canonical() -> None:
     assert (
         _spec(selected_instrument=_instrument("eth")).selected_instrument.pair.symbol == "ETH/USDT"
@@ -277,12 +287,53 @@ def test_every_strategy_identity_dimension_changes_checksum(field: str, value: o
     assert _strategy(**{field: value}).snapshot_checksum != _strategy().snapshot_checksum
 
 
+@pytest.mark.parametrize(
+    ("field", "maximum"),
+    [
+        ("source_revision", POSTGRESQL_BIGINT_MAX),
+        ("plugin_schema_version", POSTGRESQL_INTEGER_MAX),
+    ],
+)
+def test_strategy_snapshot_source_evidence_matches_postgresql_width(
+    field: str,
+    maximum: int,
+) -> None:
+    assert getattr(_strategy(**{field: maximum}), field) == maximum
+    with pytest.raises(OperationalPaperSessionProfileBoundsExceededError):
+        _strategy(**{field: maximum + 1})
+
+
+def test_strategy_lifecycle_width_guard_preserves_supported_versions() -> None:
+    assert _strategy(strategy_lifecycle_version=2).strategy_lifecycle_version == 2
+    with pytest.raises(InvalidOperationalPaperSessionProfileStrategySnapshotError):
+        _strategy(strategy_lifecycle_version=POSTGRESQL_INTEGER_MAX)
+    with pytest.raises(OperationalPaperSessionProfileBoundsExceededError):
+        _strategy(strategy_lifecycle_version=POSTGRESQL_INTEGER_MAX + 1)
+
+
 def test_snapshot_checksum_mismatch_and_corruption_are_rejected() -> None:
     snapshot = _strategy()
     with pytest.raises(OperationalPaperSessionProfileChecksumMismatchError):
         replace(snapshot, snapshot_checksum="0" * 64)
     object.__setattr__(snapshot, "plugin_name", "corrupted name")
     with pytest.raises(InvalidOperationalPaperSessionProfileSpecificationError):
+        _spec(strategy_snapshot=snapshot)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("source_revision", POSTGRESQL_BIGINT_MAX + 1),
+        ("plugin_schema_version", POSTGRESQL_INTEGER_MAX + 1),
+    ],
+)
+def test_parent_specification_rejects_corrupted_strategy_width(
+    field: str,
+    value: int,
+) -> None:
+    snapshot = _strategy()
+    object.__setattr__(snapshot, field, value)
+    with pytest.raises(OperationalPaperSessionProfileBoundsExceededError):
         _spec(strategy_snapshot=snapshot)
 
 
@@ -517,6 +568,22 @@ def test_create_intent_fingerprint_is_stable_and_tracks_all_inputs() -> None:
     assert "profile_id" not in {field.name for field in fields(_intent())}
 
 
+def test_create_intent_expected_revision_matches_postgresql_bigint_width() -> None:
+    intent = _intent(expected_strategy_definition_revision=POSTGRESQL_BIGINT_MAX)
+    assert intent.expected_strategy_definition_revision == POSTGRESQL_BIGINT_MAX
+    with pytest.raises(OperationalPaperSessionProfileBoundsExceededError):
+        _intent(expected_strategy_definition_revision=POSTGRESQL_BIGINT_MAX + 1)
+
+
+def test_previously_valid_canonical_identities_are_unchanged() -> None:
+    assert _strategy().snapshot_checksum == (
+        "14fdcfbce3dfc59ed886b5774000b8c41e28ae65b6c7befad7d07395394ee41f"
+    )
+    assert operational_paper_session_profile_create_intent_fingerprint(_intent()) == (
+        "89b26ab2a4565d9f83477f7151abf5def2a39ba0ee2b8669cfe9646f8f91275a"
+    )
+
+
 @pytest.mark.parametrize("key", ["create:1", "A", "A" * 128])
 def test_safe_idempotency_key_is_preserved(key: str) -> None:
     assert validate_operational_paper_session_profile_idempotency_key(key) == key
@@ -546,6 +613,31 @@ def test_revision_verifies_canonical_checksum() -> None:
     assert revision.revision == 1
     with pytest.raises(OperationalPaperSessionProfileChecksumMismatchError):
         replace(revision, specification_checksum="0" * 64)
+
+
+def test_profile_revision_matches_postgresql_bigint_width() -> None:
+    specification = _spec()
+    checksum = operational_paper_session_profile_specification_checksum(specification)
+    assert (
+        OperationalPaperSessionProfileRevision(
+            PROFILE_ID,
+            POSTGRESQL_BIGINT_MAX,
+            specification,
+            checksum,
+            ACTOR_ID,
+            NOW,
+        ).revision
+        == POSTGRESQL_BIGINT_MAX
+    )
+    with pytest.raises(OperationalPaperSessionProfileBoundsExceededError):
+        OperationalPaperSessionProfileRevision(
+            PROFILE_ID,
+            POSTGRESQL_BIGINT_MAX + 1,
+            specification,
+            checksum,
+            ACTOR_ID,
+            NOW,
+        )
 
 
 def test_specification_checksum_verification_helper() -> None:
@@ -633,6 +725,40 @@ def test_valid_aggregate_metadata_matrix() -> None:
     assert approved.approved_at == approved_at
     assert archived_from_draft.approved_revision is None
     assert archived_after_approval.archived_at == archived_at
+
+
+def test_aggregate_revision_versions_match_postgresql_bigint_width() -> None:
+    assert _aggregate(current_revision=POSTGRESQL_BIGINT_MAX).current_revision == (
+        POSTGRESQL_BIGINT_MAX
+    )
+    assert _aggregate(record_version=POSTGRESQL_BIGINT_MAX).record_version == (
+        POSTGRESQL_BIGINT_MAX
+    )
+    approved = _aggregate(
+        state=OperationalPaperSessionProfileState.APPROVED,
+        current_revision=POSTGRESQL_BIGINT_MAX,
+        record_version=POSTGRESQL_BIGINT_MAX,
+        approved_revision=POSTGRESQL_BIGINT_MAX,
+        approved_checksum="e" * 64,
+        approved_by=MANDATE_ID,
+        approved_at=NOW + timedelta(minutes=1),
+    )
+    assert approved.approved_revision == POSTGRESQL_BIGINT_MAX
+
+    for changes in (
+        {"current_revision": POSTGRESQL_BIGINT_MAX + 1},
+        {"record_version": POSTGRESQL_BIGINT_MAX + 1},
+        {
+            "state": OperationalPaperSessionProfileState.APPROVED,
+            "current_revision": POSTGRESQL_BIGINT_MAX,
+            "approved_revision": POSTGRESQL_BIGINT_MAX + 1,
+            "approved_checksum": "e" * 64,
+            "approved_by": MANDATE_ID,
+            "approved_at": NOW + timedelta(minutes=1),
+        },
+    ):
+        with pytest.raises(OperationalPaperSessionProfileBoundsExceededError):
+            _aggregate(**changes)
 
 
 @pytest.mark.parametrize(

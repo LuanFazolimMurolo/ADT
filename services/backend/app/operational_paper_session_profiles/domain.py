@@ -59,6 +59,8 @@ MAX_OPERATIONAL_PAPER_SESSION_PROFILE_EVENTS: Final = 20_000_000
 
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_POSTGRESQL_INTEGER_MAX: Final = (1 << 31) - 1
+_POSTGRESQL_BIGINT_MAX: Final = (1 << 63) - 1
 
 
 class OperationalPaperSessionProfileState(StrEnum):
@@ -109,8 +111,10 @@ class OperationalPaperSessionProfileMandateBinding:
     def __post_init__(self) -> None:
         try:
             _require_uuid(self.mandate_id)
-            _require_positive_int(self.approved_revision)
+            _require_positive_bigint(self.approved_revision)
             _require_sha256(self.specification_checksum)
+        except OperationalPaperSessionProfileBoundsExceededError:
+            raise
         except Exception:
             raise InvalidOperationalPaperSessionProfileSpecificationError() from None
 
@@ -138,6 +142,8 @@ class OperationalPaperSessionProfileStrategySnapshot:
             _require_sha256(self.snapshot_checksum)
             if self.snapshot_checksum != _strategy_snapshot_checksum_unchecked(self):
                 raise OperationalPaperSessionProfileChecksumMismatchError()
+        except OperationalPaperSessionProfileBoundsExceededError:
+            raise
         except OperationalPaperSessionProfileChecksumMismatchError:
             raise
         except Exception:
@@ -330,7 +336,7 @@ class OperationalPaperSessionProfileCreateIntent:
         try:
             values = _validate_profile_inputs(self)
             strategy_id = _require_uuid(self.strategy_definition_id)
-            revision = _require_positive_int(self.expected_strategy_definition_revision)
+            revision = _require_positive_bigint(self.expected_strategy_definition_revision)
             checksum = _require_sha256(self.expected_strategy_parameters_checksum)
         except OperationalPaperSessionProfileBoundsExceededError:
             raise
@@ -378,13 +384,15 @@ class OperationalPaperSessionProfileRevision:
     def __post_init__(self) -> None:
         try:
             _require_uuid(self.profile_id)
-            _require_positive_int(self.revision)
+            _require_positive_bigint(self.revision)
             specification = validate_operational_paper_session_profile_specification_checksum(
                 self.specification,
                 self.specification_checksum,
             )
             _require_uuid(self.created_by)
             created_at = _require_utc(self.created_at)
+        except OperationalPaperSessionProfileBoundsExceededError:
+            raise
         except OperationalPaperSessionProfileChecksumMismatchError:
             raise
         except Exception:
@@ -415,8 +423,8 @@ class OperationalPaperSessionProfile:
             _require_uuid(self.profile_id)
             if not isinstance(self.state, OperationalPaperSessionProfileState):
                 raise ValueError
-            _require_positive_int(self.current_revision)
-            _require_positive_int(self.record_version)
+            _require_positive_bigint(self.current_revision)
+            _require_positive_bigint(self.record_version)
             _require_uuid(self.created_by)
             created_at = _require_utc(self.created_at)
             key = validate_operational_paper_session_profile_idempotency_key(
@@ -469,7 +477,7 @@ class OperationalPaperSessionProfile:
             or self.approved_at is None
         ):
             raise ValueError
-        _require_positive_int(self.approved_revision)
+        _require_positive_bigint(self.approved_revision)
         _require_sha256(self.approved_checksum)
         _require_uuid(self.approved_by)
         approved_at = _require_utc(self.approved_at)
@@ -519,10 +527,11 @@ def _validate_strategy_snapshot_fields(
     snapshot: OperationalPaperSessionProfileStrategySnapshot,
 ) -> None:
     _require_uuid(snapshot.strategy_definition_id)
-    _require_positive_int(snapshot.source_revision)
+    _require_positive_bigint(snapshot.source_revision)
     _require_safe_token(snapshot.plugin_name)
     _require_safe_token(snapshot.plugin_version)
-    _require_positive_int(snapshot.plugin_schema_version)
+    _require_positive_integer(snapshot.plugin_schema_version)
+    _require_positive_integer(snapshot.strategy_lifecycle_version)
     if (
         type(snapshot.strategy_lifecycle_version) is not int
         or snapshot.strategy_lifecycle_version not in {1, 2}
@@ -851,6 +860,20 @@ def _require_positive_int(value: object) -> int:
     if type(value) is not int or value < 1:
         raise ValueError
     return value
+
+
+def _require_positive_bigint(value: object) -> int:
+    result = _require_positive_int(value)
+    if result > _POSTGRESQL_BIGINT_MAX:
+        raise OperationalPaperSessionProfileBoundsExceededError()
+    return result
+
+
+def _require_positive_integer(value: object) -> int:
+    result = _require_positive_int(value)
+    if result > _POSTGRESQL_INTEGER_MAX:
+        raise OperationalPaperSessionProfileBoundsExceededError()
+    return result
 
 
 def _bounded_positive_int(value: object, maximum: int) -> int:
