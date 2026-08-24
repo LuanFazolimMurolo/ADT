@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import replace
@@ -49,10 +49,12 @@ from app.operational_mandates.errors import (
 from app.operational_paper_session_profiles import (
     InvalidOperationalPaperSessionProfileSpecificationError,
     OperationalPaperSessionProfile,
+    OperationalPaperSessionProfileBoundsExceededError,
     OperationalPaperSessionProfileChecksumMismatchError,
     OperationalPaperSessionProfileCreateIntent,
     OperationalPaperSessionProfileIdempotencyConflictError,
     OperationalPaperSessionProfileMandateBinding,
+    OperationalPaperSessionProfileNotFoundError,
     OperationalPaperSessionProfileRecordVersionConflictError,
     OperationalPaperSessionProfileRevision,
     OperationalPaperSessionProfileRevisionConflictError,
@@ -247,12 +249,13 @@ async def _create(
     *,
     key: str = "profile-create",
     resolver: _CountingResolver | None = None,
+    now: datetime | None = None,
 ) -> tuple[OperationalPaperSessionProfile, OperationalPaperSessionProfileRevision]:
     return await repository.create(
         intent,
         actor_id=actor_id,
         idempotency_key=key,
-        now=BASE_TIME + timedelta(seconds=2),
+        now=now or BASE_TIME + timedelta(seconds=2),
         strategy_resolver=resolver or _resolver,
     )
 
@@ -382,13 +385,17 @@ class _CreateRaceDatabase:
             self.events.append(("exit", generation))
 
 
+def _normalized_sql(query: object) -> str:
+    return " ".join(str(query).lower().split())
+
+
 class _QueryAuditConnection:
     def __init__(self, connection: DatabaseConnection, queries: list[str]) -> None:
         self._connection = connection
         self._queries = queries
 
     async def execute(self, query: Any, params: Any = None, **kwargs: Any) -> Any:
-        self._queries.append(" ".join(str(query).lower().split()))
+        self._queries.append(_normalized_sql(query))
         return await self._connection.execute(query, params, **kwargs)
 
 
@@ -401,6 +408,95 @@ class _QueryAuditDatabase:
     async def transaction(self) -> AsyncIterator[DatabaseConnection]:
         async with self._database.transaction() as connection:
             yield cast(DatabaseConnection, _QueryAuditConnection(connection, self.queries))
+
+
+BatchRowsTransform = Callable[[list[Any]], list[Any]]
+
+
+def _is_current_revision_batch_query(query: object) -> bool:
+    text = _normalized_sql(query)
+    return (
+        "from public.operational_paper_session_profile_revisions" in text
+        and "join unnest(%s::uuid[], %s::bigint[])" in text
+        and "as requested(profile_id, revision)" in text
+    )
+
+
+class _BatchRowsCursor:
+    def __init__(self, cursor: Any, transform: BatchRowsTransform) -> None:
+        self._cursor = cursor
+        self._transform = transform
+
+    async def fetchall(self) -> list[Any]:
+        return self._transform(list(await self._cursor.fetchall()))
+
+
+class _BatchRowsConnection:
+    def __init__(
+        self,
+        connection: DatabaseConnection,
+        owner: _BatchRowsDatabase,
+    ) -> None:
+        self._connection = connection
+        self._owner = owner
+
+    async def execute(self, query: Any, params: Any = None, **kwargs: Any) -> Any:
+        cursor = await self._connection.execute(query, params, **kwargs)
+        if _is_current_revision_batch_query(query):
+            self._owner.batch_query_count += 1
+            return _BatchRowsCursor(cursor, self._owner.transform)
+        return cursor
+
+
+class _BatchRowsDatabase:
+    def __init__(self, database: Database, transform: BatchRowsTransform) -> None:
+        self._database = database
+        self.transform = transform
+        self.batch_query_count = 0
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[DatabaseConnection]:
+        async with self._database.transaction() as connection:
+            yield cast(DatabaseConnection, _BatchRowsConnection(connection, self))
+
+
+class _SnapshotPauseConnection:
+    def __init__(
+        self,
+        connection: DatabaseConnection,
+        owner: _SnapshotPauseDatabase,
+    ) -> None:
+        self._connection = connection
+        self._owner = owner
+
+    async def execute(self, query: Any, params: Any = None, **kwargs: Any) -> Any:
+        cursor = await self._connection.execute(query, params, **kwargs)
+        if not self._owner.paused and self._owner.should_pause(str(query)):
+            self._owner.paused = True
+            self._owner.snapshot_ready.set()
+            await self._owner.resume.wait()
+        return cursor
+
+
+class _SnapshotPauseDatabase:
+    def __init__(
+        self,
+        database: Database,
+        should_pause: Callable[[str], bool],
+    ) -> None:
+        self._database = database
+        self.should_pause = should_pause
+        self.snapshot_ready = asyncio.Event()
+        self.resume = asyncio.Event()
+        self.paused = False
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[DatabaseConnection]:
+        async with self._database.transaction() as connection:
+            yield cast(
+                DatabaseConnection,
+                _SnapshotPauseConnection(connection, self),
+            )
 
 
 class _ApprovalLockObservation:
@@ -524,10 +620,27 @@ async def _server_observed_blockers(database: Database, backend_pid: int) -> tup
 
 
 def _assert_no_source_or_write_queries(queries: list[str]) -> None:
-    assert not any("public.operational_mandates" in query for query in queries)
+    assert not any("public.operational_mandate" in query for query in queries)
     assert not any("public.strategy_definitions" in query for query in queries)
     assert not any(query.startswith("insert ") for query in queries)
     assert not any(query.startswith("update ") for query in queries)
+    assert not any(query.startswith("delete ") for query in queries)
+
+
+@pytest.mark.parametrize(
+    "forbidden_relation",
+    [
+        "public.operational_mandate_revisions",
+        "public.operational_mandate_revision_instruments",
+    ],
+)
+def test_source_free_query_audit_rejects_mandate_revision_relations(
+    forbidden_relation: str,
+) -> None:
+    query = _normalized_sql(f"select 1 from {forbidden_relation}")
+
+    with pytest.raises(AssertionError):
+        _assert_no_source_or_write_queries([query])
 
 
 def test_strict_aggregate_reconstruction_rejects_coercion() -> None:
@@ -603,6 +716,564 @@ async def test_missing_reads_return_none(database: Database) -> None:
     assert await repository.get(profile_id) is None
     assert await repository.get_revision(profile_id, 1) is None
     assert await repository.get_current(profile_id) is None
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value", "error_type"),
+    [
+        ("limit", None, InvalidOperationalPaperSessionProfileSpecificationError),
+        ("limit", True, InvalidOperationalPaperSessionProfileSpecificationError),
+        ("limit", "10", InvalidOperationalPaperSessionProfileSpecificationError),
+        ("limit", 0, OperationalPaperSessionProfileBoundsExceededError),
+        ("limit", -1, OperationalPaperSessionProfileBoundsExceededError),
+        ("limit", 101, OperationalPaperSessionProfileBoundsExceededError),
+        ("offset", None, InvalidOperationalPaperSessionProfileSpecificationError),
+        ("offset", True, InvalidOperationalPaperSessionProfileSpecificationError),
+        ("offset", "0", InvalidOperationalPaperSessionProfileSpecificationError),
+        ("offset", -1, OperationalPaperSessionProfileBoundsExceededError),
+        ("offset", 2**63, OperationalPaperSessionProfileBoundsExceededError),
+    ],
+)
+async def test_invalid_list_pagination_is_rejected_before_database(
+    field_name: str,
+    invalid_value: object,
+    error_type: type[Exception],
+) -> None:
+    repository = PostgresOperationalPaperSessionProfileRepository(
+        cast(Database, _DatabaseMustNotBeAccessed())
+    )
+    limit = cast(int, invalid_value) if field_name == "limit" else 20
+    offset = cast(int, invalid_value) if field_name == "offset" else 0
+
+    with pytest.raises(error_type):
+        await repository.list_current(limit=limit, offset=offset)
+    with pytest.raises(error_type):
+        await repository.list_revisions(uuid4(), limit=limit, offset=offset)
+
+
+@pytest.mark.parametrize("invalid_state", ["DRAFT", 1, object()])
+async def test_invalid_list_state_is_rejected_before_database(
+    invalid_state: object,
+) -> None:
+    repository = PostgresOperationalPaperSessionProfileRepository(
+        cast(Database, _DatabaseMustNotBeAccessed())
+    )
+
+    with pytest.raises(InvalidOperationalPaperSessionProfileSpecificationError):
+        await repository.list_current(
+            limit=20,
+            offset=0,
+            state=cast(OperationalPaperSessionProfileState, invalid_state),
+        )
+
+
+async def test_invalid_history_profile_id_is_rejected_before_database() -> None:
+    repository = PostgresOperationalPaperSessionProfileRepository(
+        cast(Database, _DatabaseMustNotBeAccessed())
+    )
+
+    with pytest.raises(InvalidOperationalPaperSessionProfileSpecificationError):
+        await repository.list_revisions(cast(UUID, "bad"), limit=20, offset=0)
+
+
+async def test_catalog_empty_single_and_maximum_page_size(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresOperationalPaperSessionProfileRepository(database)
+
+    assert await repository.list_current(limit=100, offset=0) == ([], 0)
+
+    intent, _ = await _sources(database, admin_user_id)
+    created = await _create(repository, intent, admin_user_id)
+
+    assert await repository.list_current(limit=100, offset=0) == ([created], 1)
+
+
+async def test_catalog_stable_order_complete_pagination_and_current_revisions(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresOperationalPaperSessionProfileRepository(database)
+    intent, _ = await _sources(database, admin_user_id)
+    created = [
+        await _create(
+            repository,
+            replace(intent, name=f"Ordered profile {index}"),
+            admin_user_id,
+            key=f"ordered-profile-{index}",
+            now=BASE_TIME + timedelta(seconds=created_second),
+        )
+        for index, created_second in enumerate((2, 3, 4, 4, 5))
+    ]
+    expected = sorted(
+        created,
+        key=lambda pair: (pair[0].created_at, pair[0].profile_id),
+        reverse=True,
+    )
+
+    first, first_total = await repository.list_current(limit=2, offset=0)
+    middle, middle_total = await repository.list_current(limit=2, offset=2)
+    final, final_total = await repository.list_current(limit=2, offset=4)
+    beyond, beyond_total = await repository.list_current(limit=2, offset=100)
+
+    assert [pair[0].profile_id for pair in first] == [pair[0].profile_id for pair in expected[:2]]
+    assert [pair[0].profile_id for pair in middle] == [pair[0].profile_id for pair in expected[2:4]]
+    assert [pair[0].profile_id for pair in final] == [pair[0].profile_id for pair in expected[4:]]
+    assert beyond == []
+    assert {first_total, middle_total, final_total, beyond_total} == {5}
+
+    revised = await repository.replace_draft(
+        created[0][0].profile_id,
+        replace(intent, name="Exact current revision two"),
+        expected_revision=1,
+        expected_record_version=1,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=4),
+        strategy_resolver=_resolver,
+    )
+    current_page, _ = await repository.list_current(limit=100, offset=0)
+    by_id = {profile.profile_id: pair for pair in current_page for profile in pair[:1]}
+    assert by_id[revised[0].profile_id] == revised
+    assert revised[0].current_revision == revised[1].revision == 2
+
+
+async def _adversarial_catalog_pairs(
+    database: Database,
+    admin_user_id: UUID,
+) -> list[
+    tuple[
+        OperationalPaperSessionProfile,
+        OperationalPaperSessionProfileRevision,
+    ]
+]:
+    repository = PostgresOperationalPaperSessionProfileRepository(database)
+    intent, _ = await _sources(database, admin_user_id)
+    created = [
+        await _create(
+            repository,
+            replace(intent, name=f"Adversarial profile {index}"),
+            admin_user_id,
+            key=f"adversarial-profile-{index}",
+            now=BASE_TIME + timedelta(seconds=index + 2),
+        )
+        for index in range(3)
+    ]
+    return sorted(
+        created,
+        key=lambda pair: (pair[0].created_at, pair[0].profile_id),
+        reverse=True,
+    )
+
+
+async def test_catalog_reconstructs_page_order_from_adversarial_batch_order(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    expected = await _adversarial_catalog_pairs(database, admin_user_id)
+    expected_identities = [
+        (profile.profile_id, revision.revision) for profile, revision in expected
+    ]
+    adversarial_identities = [
+        expected_identities[2],
+        expected_identities[0],
+        expected_identities[1],
+    ]
+
+    def reorder(rows: list[Any]) -> list[Any]:
+        by_identity = {(row["profile_id"], row["revision"]): row for row in rows}
+        return [by_identity[identity] for identity in adversarial_identities]
+
+    tampering_database = _BatchRowsDatabase(database, reorder)
+    repository = PostgresOperationalPaperSessionProfileRepository(
+        cast(Database, tampering_database)
+    )
+
+    page, total = await repository.list_current(limit=3, offset=0)
+
+    assert adversarial_identities != expected_identities
+    assert page == expected
+    assert total == 3
+    assert tampering_database.batch_query_count == 1
+
+
+async def test_catalog_rejects_missing_requested_batch_pair(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    await _adversarial_catalog_pairs(database, admin_user_id)
+
+    def omit_one(rows: list[Any]) -> list[Any]:
+        assert len(rows) == 3
+        return rows[:-1]
+
+    tampering_database = _BatchRowsDatabase(database, omit_one)
+    repository = PostgresOperationalPaperSessionProfileRepository(
+        cast(Database, tampering_database)
+    )
+
+    with pytest.raises(PersistenceError):
+        await repository.list_current(limit=3, offset=0)
+    assert tampering_database.batch_query_count == 1
+
+
+async def test_catalog_rejects_duplicate_returned_batch_pair(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    await _adversarial_catalog_pairs(database, admin_user_id)
+
+    def duplicate_one(rows: list[Any]) -> list[Any]:
+        assert len(rows) == 3
+        return [*rows, rows[0]]
+
+    tampering_database = _BatchRowsDatabase(database, duplicate_one)
+    repository = PostgresOperationalPaperSessionProfileRepository(
+        cast(Database, tampering_database)
+    )
+
+    with pytest.raises(PersistenceError):
+        await repository.list_current(limit=3, offset=0)
+    assert tampering_database.batch_query_count == 1
+
+
+async def test_catalog_rejects_unexpected_batch_identity(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    await _adversarial_catalog_pairs(database, admin_user_id)
+
+    def replace_identity(rows: list[Any]) -> list[Any]:
+        assert len(rows) == 3
+        unexpected = dict(rows[0])
+        unexpected["revision"] = int(unexpected["revision"]) + 1
+        return [unexpected, *rows[1:]]
+
+    tampering_database = _BatchRowsDatabase(database, replace_identity)
+    repository = PostgresOperationalPaperSessionProfileRepository(
+        cast(Database, tampering_database)
+    )
+
+    with pytest.raises(PersistenceError):
+        await repository.list_current(limit=3, offset=0)
+    assert tampering_database.batch_query_count == 1
+
+
+async def test_catalog_filters_lifecycle_with_matching_exact_totals(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresOperationalPaperSessionProfileRepository(database)
+    intent, _ = await _sources(database, admin_user_id)
+    draft = await _create(repository, intent, admin_user_id, key="catalog-draft")
+    approved_pair = await _create(
+        repository,
+        replace(intent, name="Catalog approved"),
+        admin_user_id,
+        key="catalog-approved",
+    )
+    archived_pair = await _create(
+        repository,
+        replace(intent, name="Catalog archived"),
+        admin_user_id,
+        key="catalog-archived",
+    )
+    approved = await repository.approve(
+        approved_pair[0].profile_id,
+        expected_revision=1,
+        expected_checksum=approved_pair[1].specification_checksum,
+        expected_record_version=1,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=3),
+        strategy_resolver=_resolver,
+    )
+    archived = await repository.archive(
+        archived_pair[0].profile_id,
+        expected_record_version=1,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=3),
+    )
+
+    all_items, all_total = await repository.list_current(limit=20, offset=0)
+    draft_items, draft_total = await repository.list_current(
+        limit=20,
+        offset=0,
+        state=OperationalPaperSessionProfileState.DRAFT,
+    )
+    approved_items, approved_total = await repository.list_current(
+        limit=20,
+        offset=0,
+        state=OperationalPaperSessionProfileState.APPROVED,
+    )
+    archived_items, archived_total = await repository.list_current(
+        limit=20,
+        offset=0,
+        state=OperationalPaperSessionProfileState.ARCHIVED,
+    )
+
+    assert all_total == 3
+    assert {item[0].profile_id for item in all_items} == {
+        draft[0].profile_id,
+        approved.profile_id,
+        archived.profile_id,
+    }
+    assert draft_items == [draft]
+    assert draft_total == 1
+    assert approved_items == [(approved, approved_pair[1])]
+    assert approved_total == 1
+    assert archived_items == [(archived, archived_pair[1])]
+    assert archived_total == 1
+
+
+async def test_history_not_found_revision_one_and_paginated_newest_first(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresOperationalPaperSessionProfileRepository(database)
+    intent, _ = await _sources(database, admin_user_id)
+    created = await _create(repository, intent, admin_user_id, key="history-primary")
+    second = await repository.replace_draft(
+        created[0].profile_id,
+        replace(intent, name="History revision two"),
+        expected_revision=1,
+        expected_record_version=1,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=3),
+        strategy_resolver=_resolver,
+    )
+    third = await repository.replace_draft(
+        created[0].profile_id,
+        replace(intent, name="History revision three"),
+        expected_revision=2,
+        expected_record_version=2,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=4),
+        strategy_resolver=_resolver,
+    )
+    other = await _create(
+        repository,
+        replace(intent, name="Other history"),
+        admin_user_id,
+        key="history-other",
+    )
+
+    pages = [
+        await repository.list_revisions(created[0].profile_id, limit=1, offset=offset)
+        for offset in (0, 1, 2, 100)
+    ]
+
+    assert pages[0] == ([third[1]], 3)
+    assert pages[1] == ([second[1]], 3)
+    assert pages[2] == ([created[1]], 3)
+    assert pages[3] == ([], 3)
+    assert await repository.list_revisions(other[0].profile_id, limit=20, offset=0) == (
+        [other[1]],
+        1,
+    )
+    with pytest.raises(OperationalPaperSessionProfileNotFoundError):
+        await repository.list_revisions(uuid4(), limit=20, offset=0)
+
+
+async def test_history_survives_lifecycle_and_later_source_archival_without_source_reads(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    repository = PostgresOperationalPaperSessionProfileRepository(database)
+    intent, definition = await _sources(database, admin_user_id)
+    created = await _create(repository, intent, admin_user_id, key="durable-history")
+    replaced = await repository.replace_draft(
+        created[0].profile_id,
+        replace(intent, name="Durable revision two"),
+        expected_revision=1,
+        expected_record_version=1,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=3),
+        strategy_resolver=_resolver,
+    )
+    approved = await repository.approve(
+        created[0].profile_id,
+        expected_revision=2,
+        expected_checksum=replaced[1].specification_checksum,
+        expected_record_version=2,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=4),
+        strategy_resolver=_resolver,
+    )
+    archived = await repository.archive(
+        created[0].profile_id,
+        expected_record_version=approved.record_version,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=5),
+    )
+    await PostgresOperationalMandateRepository(database).archive(
+        intent.mandate_binding.mandate_id,
+        expected_record_version=2,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=6),
+    )
+    await PostgresStrategyDefinitionRepository(database).archive(
+        definition.id,
+        expected_revision=definition.revision,
+        actor_id=admin_user_id,
+    )
+    counts_before = await _counts(database, created[0].profile_id)
+    audit_database = _QueryAuditDatabase(database)
+    read_repository = PostgresOperationalPaperSessionProfileRepository(
+        cast(Database, audit_database)
+    )
+
+    current_page, current_total = await read_repository.list_current(limit=20, offset=0)
+    history, history_total = await read_repository.list_revisions(
+        created[0].profile_id,
+        limit=20,
+        offset=0,
+    )
+
+    assert current_page == [(archived, replaced[1])]
+    assert current_total == 1
+    assert history == [replaced[1], created[1]]
+    assert history_total == 2
+    assert await _counts(database, created[0].profile_id) == counts_before
+    _assert_no_source_or_write_queries(audit_database.queries)
+    assert not any(
+        " for update" in query or " for share" in query for query in audit_database.queries
+    )
+    assert all(
+        "config.json" not in query and "session_id" not in query for query in audit_database.queries
+    )
+
+
+async def test_catalog_and_history_page_totals_share_statement_snapshots(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    mutation_repository = PostgresOperationalPaperSessionProfileRepository(database)
+    intent, _ = await _sources(database, admin_user_id)
+    created = await _create(mutation_repository, intent, admin_user_id)
+    catalog_pause = _SnapshotPauseDatabase(
+        database,
+        lambda query: (
+            "from public.operational_paper_session_profiles" in query.lower()
+            and "count(*) as total" in query.lower()
+        ),
+    )
+    catalog_repository = PostgresOperationalPaperSessionProfileRepository(
+        cast(Database, catalog_pause)
+    )
+    catalog_task = asyncio.create_task(
+        catalog_repository.list_current(
+            limit=20,
+            offset=0,
+            state=OperationalPaperSessionProfileState.DRAFT,
+        )
+    )
+    try:
+        await asyncio.wait_for(catalog_pause.snapshot_ready.wait(), timeout=2)
+        approved = await mutation_repository.approve(
+            created[0].profile_id,
+            expected_revision=1,
+            expected_checksum=created[1].specification_checksum,
+            expected_record_version=1,
+            actor_id=admin_user_id,
+            now=BASE_TIME + timedelta(seconds=3),
+            strategy_resolver=_resolver,
+        )
+    finally:
+        catalog_pause.resume.set()
+    assert await catalog_task == ([created], 1)
+    assert approved.state is OperationalPaperSessionProfileState.APPROVED
+
+    history_intent = replace(intent, name="Snapshot history")
+    history_created = await _create(
+        mutation_repository,
+        history_intent,
+        admin_user_id,
+        key="snapshot-history",
+    )
+    history_pause = _SnapshotPauseDatabase(
+        database,
+        lambda query: (
+            "from public.operational_paper_session_profile_revisions" in query.lower()
+            and "count(*) as total" in query.lower()
+        ),
+    )
+    history_repository = PostgresOperationalPaperSessionProfileRepository(
+        cast(Database, history_pause)
+    )
+    history_task = asyncio.create_task(
+        history_repository.list_revisions(
+            history_created[0].profile_id,
+            limit=20,
+            offset=0,
+        )
+    )
+    try:
+        await asyncio.wait_for(history_pause.snapshot_ready.wait(), timeout=2)
+        replaced = await mutation_repository.replace_draft(
+            history_created[0].profile_id,
+            replace(history_intent, name="Snapshot history two"),
+            expected_revision=1,
+            expected_record_version=1,
+            actor_id=admin_user_id,
+            now=BASE_TIME + timedelta(seconds=4),
+            strategy_resolver=_resolver,
+        )
+    finally:
+        history_pause.resume.set()
+    assert await history_task == ([history_created[1]], 1)
+    assert replaced[0].current_revision == 2
+
+
+async def test_listing_query_count_is_constant_and_catalog_has_no_n_plus_one(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    setup_repository = PostgresOperationalPaperSessionProfileRepository(database)
+    intent, _ = await _sources(database, admin_user_id)
+    primary = await _create(setup_repository, intent, admin_user_id, key="query-primary")
+    current = primary
+    for revision in range(2, 5):
+        current = await setup_repository.replace_draft(
+            primary[0].profile_id,
+            replace(intent, name=f"Query revision {revision}"),
+            expected_revision=revision - 1,
+            expected_record_version=revision - 1,
+            actor_id=admin_user_id,
+            now=BASE_TIME + timedelta(seconds=revision + 2),
+            strategy_resolver=_resolver,
+        )
+    for index in range(1, 5):
+        await _create(
+            setup_repository,
+            replace(intent, name=f"Query profile {index}"),
+            admin_user_id,
+            key=f"query-profile-{index}",
+        )
+
+    audit_database = _QueryAuditDatabase(database)
+    repository = PostgresOperationalPaperSessionProfileRepository(cast(Database, audit_database))
+    await repository.list_current(limit=1, offset=0)
+    small_catalog_count = len(audit_database.queries)
+    audit_database.queries.clear()
+    page, total = await repository.list_current(limit=5, offset=0)
+    large_catalog_count = len(audit_database.queries)
+    audit_database.queries.clear()
+    await repository.list_revisions(primary[0].profile_id, limit=1, offset=0)
+    small_history_count = len(audit_database.queries)
+    audit_database.queries.clear()
+    history, history_total = await repository.list_revisions(
+        primary[0].profile_id,
+        limit=4,
+        offset=0,
+    )
+    large_history_count = len(audit_database.queries)
+
+    assert current[0].current_revision == 4
+    assert total == len(page) == 5
+    assert [revision.revision for revision in history] == [4, 3, 2, 1]
+    assert history_total == 4
+    assert small_catalog_count == large_catalog_count == 2
+    assert small_history_count == large_history_count == 2
 
 
 @pytest.mark.parametrize("method", ["get", "get_revision", "get_current"])
@@ -1618,6 +2289,10 @@ async def test_malformed_persisted_jsonb_becomes_persistence_error(
         )
     with pytest.raises(PersistenceError):
         await repository.get_revision(aggregate.profile_id, 1)
+    with pytest.raises(PersistenceError):
+        await repository.list_current(limit=20, offset=0)
+    with pytest.raises(PersistenceError):
+        await repository.list_revisions(aggregate.profile_id, limit=20, offset=0)
 
 
 @pytest.mark.parametrize(
@@ -1672,6 +2347,10 @@ async def test_single_field_nested_json_corruption_is_rejected_precisely(
 
     with pytest.raises(PersistenceError):
         await repository.get_revision(aggregate.profile_id, 1)
+    with pytest.raises(PersistenceError):
+        await repository.list_current(limit=20, offset=0)
+    with pytest.raises(PersistenceError):
+        await repository.list_revisions(aggregate.profile_id, limit=20, offset=0)
 
 
 async def test_persisted_checksum_disagreement_becomes_persistence_error(
@@ -1699,6 +2378,10 @@ async def test_persisted_checksum_disagreement_becomes_persistence_error(
         )
     with pytest.raises(PersistenceError):
         await repository.get_current(aggregate.profile_id)
+    with pytest.raises(PersistenceError):
+        await repository.list_current(limit=20, offset=0)
+    with pytest.raises(PersistenceError):
+        await repository.list_revisions(aggregate.profile_id, limit=20, offset=0)
 
 
 @pytest.mark.parametrize(
@@ -1753,7 +2436,7 @@ async def test_unknown_database_error_is_safely_translated_and_rolls_back(
     assert row is not None and row["total"] == 0
 
 
-def test_gate_2c_contains_no_runtime_or_capital_surface() -> None:
+def test_gate_2d_contains_only_frozen_mutations_point_reads_and_bounded_queries() -> None:
     public_methods = {
         name
         for name in vars(PostgresOperationalPaperSessionProfileRepository)
@@ -1763,6 +2446,8 @@ def test_gate_2c_contains_no_runtime_or_capital_surface() -> None:
         "get",
         "get_revision",
         "get_current",
+        "list_current",
+        "list_revisions",
         "create",
         "replace_draft",
         "approve",

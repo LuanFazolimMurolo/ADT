@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import NoReturn, cast
@@ -63,6 +63,7 @@ from app.operational_paper_session_profiles import (
 )
 from app.operational_paper_session_profiles.errors import (
     InvalidOperationalPaperSessionProfileSpecificationError,
+    OperationalPaperSessionProfileBoundsExceededError,
     OperationalPaperSessionProfileChecksumMismatchError,
     OperationalPaperSessionProfileIdempotencyConflictError,
     OperationalPaperSessionProfileNotFoundError,
@@ -91,6 +92,7 @@ StrategyParametersResolver = Callable[[StrategyDefinition], StrategyParameters]
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _IDEMPOTENCY_CONSTRAINT = "operational_paper_session_profiles_actor_idempotency_key"
+_POSTGRESQL_BIGINT_MAX = 9_223_372_036_854_775_807
 
 _AGGREGATE_COLUMNS = """
     profile_id,
@@ -621,6 +623,22 @@ def _require_uuid(value: object) -> UUID:
     return value
 
 
+def _require_pagination(limit: object, offset: object) -> tuple[int, int]:
+    if type(limit) is not int or type(offset) is not int:
+        raise InvalidOperationalPaperSessionProfileSpecificationError()
+    if not 1 <= limit <= 100 or not 0 <= offset <= _POSTGRESQL_BIGINT_MAX:
+        raise OperationalPaperSessionProfileBoundsExceededError()
+    return limit, offset
+
+
+def _require_state(
+    value: object,
+) -> OperationalPaperSessionProfileState | None:
+    if value is not None and not isinstance(value, OperationalPaperSessionProfileState):
+        raise InvalidOperationalPaperSessionProfileSpecificationError()
+    return value
+
+
 def _expected_revision(value: object) -> int:
     if type(value) is not int or value < 1:
         raise OperationalPaperSessionProfileRevisionConflictError()
@@ -719,13 +737,94 @@ async def _revision(
     return None if row is None else operational_paper_session_profile_revision_from_row(row)
 
 
+def _total_from_row(row: Mapping[str, object] | None) -> int:
+    if row is None:
+        raise PersistenceError()
+    try:
+        total = _integer(row, "total")
+    except TypeError as error:
+        raise PersistenceError() from error
+    if total < 0:
+        raise PersistenceError()
+    return total
+
+
+def _page_rows_and_total(
+    rows: Sequence[Mapping[str, object]],
+) -> tuple[list[Mapping[str, object]], int]:
+    if not rows:
+        raise PersistenceError()
+
+    total = _total_from_row(rows[0])
+    page_rows: list[Mapping[str, object]] = []
+    for row in rows:
+        if _total_from_row(row) != total:
+            raise PersistenceError()
+        try:
+            profile_id = _value(row, "profile_id")
+        except TypeError as error:
+            raise PersistenceError() from error
+        if profile_id is None:
+            if len(rows) != 1:
+                raise PersistenceError()
+            continue
+        page_rows.append(row)
+    return page_rows, total
+
+
+async def _load_revisions_batch(
+    connection: DatabaseConnection,
+    identities: Sequence[tuple[UUID, int]],
+) -> dict[tuple[UUID, int], OperationalPaperSessionProfileRevision]:
+    if not identities:
+        return {}
+    if len(set(identities)) != len(identities):
+        raise PersistenceError()
+
+    profile_ids = [profile_id for profile_id, _ in identities]
+    revisions = [revision for _, revision in identities]
+    cursor = await connection.execute(
+        f"""
+        select revision_record.*
+        from (
+            select {_REVISION_COLUMNS}
+            from public.operational_paper_session_profile_revisions
+        ) as revision_record
+        join unnest(%s::uuid[], %s::bigint[]) as requested(profile_id, revision)
+          on requested.profile_id = revision_record.profile_id
+         and requested.revision = revision_record.revision
+        """,
+        (profile_ids, revisions),
+    )
+    rows = await cursor.fetchall()
+    result: dict[tuple[UUID, int], OperationalPaperSessionProfileRevision] = {}
+    for row in rows:
+        revision = operational_paper_session_profile_revision_from_row(row)
+        identity = (revision.profile_id, revision.revision)
+        if identity in result:
+            raise PersistenceError()
+        result[identity] = revision
+    if set(result) != set(identities):
+        raise PersistenceError()
+    return result
+
+
 async def _current_pair(
     connection: DatabaseConnection,
     row: Mapping[str, object],
 ) -> tuple[OperationalPaperSessionProfile, OperationalPaperSessionProfileRevision]:
     profile = operational_paper_session_profile_from_row(row)
     revision = await _revision(connection, profile.profile_id, profile.current_revision)
-    if revision is None or revision.revision != profile.current_revision:
+    if revision is None:
+        raise PersistenceError()
+    return _validated_current_pair(profile, revision)
+
+
+def _validated_current_pair(
+    profile: OperationalPaperSessionProfile,
+    revision: OperationalPaperSessionProfileRevision,
+) -> tuple[OperationalPaperSessionProfile, OperationalPaperSessionProfileRevision]:
+    if revision.profile_id != profile.profile_id or revision.revision != profile.current_revision:
         raise PersistenceError()
     if profile.approved_revision is not None and (
         profile.approved_revision != revision.revision
@@ -1045,7 +1144,7 @@ async def _cas_conflict(
 
 
 class PostgresOperationalPaperSessionProfileRepository:
-    """Transactional PostgreSQL adapter for the Gate 2C profile contract."""
+    """Transactional PostgreSQL adapter for the profile persistence contract."""
 
     def __init__(self, database: Database) -> None:
         self._database = database
@@ -1085,6 +1184,142 @@ class PostgresOperationalPaperSessionProfileRepository:
                 return await _current_pair(connection, row)
         except Error as error:
             _raise_profile_database_error(error)
+
+    async def list_current(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        state: OperationalPaperSessionProfileState | None = None,
+    ) -> tuple[
+        list[
+            tuple[
+                OperationalPaperSessionProfile,
+                OperationalPaperSessionProfileRevision,
+            ]
+        ],
+        int,
+    ]:
+        """Return a bounded stable page with each exact current revision."""
+
+        limit, offset = _require_pagination(limit, offset)
+        state = _require_state(state)
+        where_clause = "" if state is None else "where state = %s"
+        filter_parameters: tuple[object, ...] = () if state is None else (state.value,)
+        try:
+            async with self._database.transaction() as connection:
+                page_cursor = await connection.execute(
+                    f"""
+                    with filtered as (
+                        select {_AGGREGATE_COLUMNS}
+                        from public.operational_paper_session_profiles
+                        {where_clause}
+                    ),
+                    page as (
+                        select *
+                        from filtered
+                        order by created_at desc, profile_id desc
+                        limit %s offset %s
+                    ),
+                    total as (
+                        select count(*) as total
+                        from filtered
+                    )
+                    select
+                        total.total,
+                        page.profile_id,
+                        page.state,
+                        page.current_revision,
+                        page.record_version,
+                        page.approved_revision,
+                        page.approved_checksum,
+                        page.created_by,
+                        page.created_at,
+                        page.approved_by,
+                        page.approved_at,
+                        page.archived_by,
+                        page.archived_at,
+                        page.create_idempotency_key,
+                        page.create_intent_fingerprint
+                    from total
+                    left join page on true
+                    order by created_at desc, profile_id desc
+                    """,  # noqa: S608 - where_clause is a closed internal fragment.
+                    (*filter_parameters, limit, offset),
+                )
+                rows, total = _page_rows_and_total(await page_cursor.fetchall())
+                profiles = [operational_paper_session_profile_from_row(row) for row in rows]
+                identities = [
+                    (profile.profile_id, profile.current_revision) for profile in profiles
+                ]
+                revisions = await _load_revisions_batch(connection, identities)
+        except Error as error:
+            _raise_profile_database_error(error)
+
+        return [
+            _validated_current_pair(
+                profile,
+                revisions[(profile.profile_id, profile.current_revision)],
+            )
+            for profile in profiles
+        ], total
+
+    async def list_revisions(
+        self,
+        profile_id: UUID,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[OperationalPaperSessionProfileRevision], int]:
+        """Return one profile's bounded immutable history newest-first."""
+
+        profile_id = _require_uuid(profile_id)
+        limit, offset = _require_pagination(limit, offset)
+        try:
+            async with self._database.transaction() as connection:
+                exists_cursor = await connection.execute(
+                    """
+                    select 1
+                    from public.operational_paper_session_profiles
+                    where profile_id = %s
+                    """,
+                    (profile_id,),
+                )
+                if await exists_cursor.fetchone() is None:
+                    raise OperationalPaperSessionProfileNotFoundError()
+
+                page_cursor = await connection.execute(
+                    f"""
+                    with filtered as (
+                        select {_REVISION_COLUMNS}
+                        from public.operational_paper_session_profile_revisions
+                        where profile_id = %s
+                    ),
+                    page as (
+                        select *
+                        from filtered
+                        order by revision desc
+                        limit %s offset %s
+                    ),
+                    total as (
+                        select count(*) as total
+                        from filtered
+                    )
+                    select total.total, page.*
+                    from total
+                    left join page on true
+                    order by revision desc
+                    """,
+                    (profile_id, limit, offset),
+                )
+                rows, total = _page_rows_and_total(await page_cursor.fetchall())
+                revisions = [
+                    operational_paper_session_profile_revision_from_row(row) for row in rows
+                ]
+        except Error as error:
+            _raise_profile_database_error(error)
+
+        return revisions, total
 
     async def create(
         self,
