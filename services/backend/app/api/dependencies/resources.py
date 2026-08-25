@@ -33,17 +33,22 @@ from app.repositories import (
     SimulationRepository,
 )
 from app.repositories.operational_mandates import PostgresOperationalMandateRepository
+from app.repositories.operational_paper_session_profiles import (
+    PostgresOperationalPaperSessionProfileRepository,
+)
 from app.services import (
     AdminService,
     CapitalMovementService,
     MarketOperationService,
     OperationalMandateService,
+    OperationalPaperSessionProfileService,
     PublicSimulationService,
     SettingsService,
     SimulationService,
     WorkerRuntimeObservabilityService,
 )
 from app.strategies import StrategyDefinitionService, builtin_indicator_capabilities
+from app.strategies.registry import StrategyPluginRegistry
 
 
 def get_database(request: Request) -> Database:
@@ -237,5 +242,17 @@ def get_operational_mandate_service(
 
     return OperationalMandateService(
         repository=PostgresOperationalMandateRepository(database),
+        clock=lambda: datetime.now(UTC),
+    )
+
+
+def get_operational_paper_session_profile_service(
+    database: Database = Depends(get_database),
+) -> OperationalPaperSessionProfileService:
+    """Build the operational paper-session profile application service."""
+
+    return OperationalPaperSessionProfileService(
+        repository=PostgresOperationalPaperSessionProfileRepository(database),
+        registry=StrategyPluginRegistry.builtins(),
         clock=lambda: datetime.now(UTC),
     )
