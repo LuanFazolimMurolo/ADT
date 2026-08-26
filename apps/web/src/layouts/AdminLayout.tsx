@@ -50,6 +50,12 @@ const navigation = [
     end: false,
   },
   {
+    to: "/admin/operational-paper-session-profiles",
+    label: "Perfis de sessão paper",
+    icon: "◇",
+    end: false,
+  },
+  {
     to: "/admin/worker-observability",
     label: "Worker runtime",
     icon: "◎",

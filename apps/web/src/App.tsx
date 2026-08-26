@@ -16,6 +16,7 @@ import { AppPaperSessionPerformancePage } from "./pages/app/AppPaperSessionPerfo
 import { InstrumentChartPage } from "./pages/admin/InstrumentChartPage";
 import { MarketOperationsPage } from "./pages/admin/MarketOperationsPage";
 import { OperationalMandatesPage } from "./pages/admin/OperationalMandatesPage";
+import { OperationalPaperSessionProfilesPage } from "./pages/admin/OperationalPaperSessionProfilesPage";
 import { WorkerObservabilityPage } from "./pages/admin/WorkerObservabilityPage";
 import { RawDatasetsPage } from "./pages/admin/RawDatasetsPage";
 import { PaperPeriodMetricsPage } from "./pages/admin/PaperPeriodMetricsPage";
@@ -119,6 +120,10 @@ function App() {
                 <Route
                   path="operational-mandates"
                   element={<OperationalMandatesPage />}
+                />
+                <Route
+                  path="operational-paper-session-profiles"
+                  element={<OperationalPaperSessionProfilesPage />}
                 />
                 <Route
                   path="worker-observability"

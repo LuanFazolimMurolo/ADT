@@ -174,3 +174,41 @@ export type OperationalMandateList =
   ApiSchemas["OperationalMandateListResponse"];
 export type OperationalMandateRevisionList =
   ApiSchemas["OperationalMandateRevisionListResponse"];
+
+export type OperationalPaperSessionProfileState =
+  ApiSchemas["OperationalPaperSessionProfileState"];
+export type OperationalPaperSessionProfileIntentRequest =
+  ApiSchemas["OperationalPaperSessionProfileIntentRequest"];
+export type OperationalPaperSessionProfileCreateRequest =
+  ApiSchemas["OperationalPaperSessionProfileCreateRequest"];
+export type OperationalPaperSessionProfileReplaceRequest =
+  ApiSchemas["OperationalPaperSessionProfileReplaceRequest"];
+export type OperationalPaperSessionProfileApproveRequest =
+  ApiSchemas["OperationalPaperSessionProfileApproveRequest"];
+export type OperationalPaperSessionProfileArchiveRequest =
+  ApiSchemas["OperationalPaperSessionProfileArchiveRequest"];
+export type OperationalPaperSessionProfile =
+  ApiSchemas["OperationalPaperSessionProfileResponse"];
+export type OperationalPaperSessionProfileRevision =
+  ApiSchemas["OperationalPaperSessionProfileRevisionResponse"];
+export type OperationalPaperSessionProfileCurrent =
+  ApiSchemas["OperationalPaperSessionProfileCurrentResponse"];
+export type OperationalPaperSessionProfileList =
+  ApiSchemas["OperationalPaperSessionProfileListResponse"];
+export type OperationalPaperSessionProfileRevisionList =
+  ApiSchemas["OperationalPaperSessionProfileRevisionListResponse"];
+export type OperationalPaperSessionProfileSpecification =
+  ApiSchemas["OperationalPaperSessionProfileSpecificationResponse"];
+export type OperationalPaperSessionProfileExecutionRequest =
+  ApiSchemas["OperationalPaperSessionProfileExecutionRequest"];
+export type OperationalPaperSessionProfileInstrumentConstraintsRequest =
+  ApiSchemas["OperationalPaperSessionProfileInstrumentConstraintsRequest"];
+export type OperationalPaperSessionProfileRiskLimitsRequest =
+  ApiSchemas["OperationalPaperSessionProfileRiskLimitsRequest"];
+export type OperationalPaperSessionProfileMarketRegimeRequest =
+  ApiSchemas["OperationalPaperSessionProfileMarketRegimeRequest"];
+
+export type StrategyDefinitionState = ApiSchemas["StrategyDefinitionState"];
+export type StrategyDefinition = ApiSchemas["StrategyDefinitionResponse"];
+export type StrategyDefinitionList =
+  ApiSchemas["StrategyDefinitionListResponse"];

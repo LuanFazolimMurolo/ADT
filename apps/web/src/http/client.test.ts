@@ -969,9 +969,7 @@ describe("ApiClient", () => {
     });
     await client.getOperationalMandateRevision("mandate/id", 3);
 
-    const urls = fetchMock.mock.calls.map((call) =>
-      new URL(call[0] as string),
-    );
+    const urls = fetchMock.mock.calls.map((call) => new URL(call[0] as string));
     expect(urls.map((url) => url.pathname)).toEqual([
       "/api/v1/admin/operational-mandates",
       "/api/v1/admin/operational-mandates/mandate%2Fid",
@@ -1065,5 +1063,182 @@ describe("ApiClient", () => {
         { expected_record_version: 5 },
       ],
     ]);
+  });
+
+  it("consulta catálogo, detalhe e revisões de perfis paper pelos caminhos exatos", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(200, {})));
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "profile-token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    await client.listOperationalPaperSessionProfiles({
+      limit: 20,
+      offset: 40,
+      state: "APPROVED",
+    });
+    await client.getOperationalPaperSessionProfile("profile/id");
+    await client.listOperationalPaperSessionProfileRevisions("profile/id", {
+      limit: 10,
+      offset: 20,
+    });
+    await client.getOperationalPaperSessionProfileRevision("profile/id", 7);
+
+    const urls = fetchMock.mock.calls.map((call) => new URL(call[0] as string));
+    expect(urls.map((url) => url.pathname)).toEqual([
+      "/api/v1/admin/operational-paper-session-profiles",
+      "/api/v1/admin/operational-paper-session-profiles/profile%2Fid",
+      "/api/v1/admin/operational-paper-session-profiles/profile%2Fid/revisions",
+      "/api/v1/admin/operational-paper-session-profiles/profile%2Fid/revisions/7",
+    ]);
+    expect(urls[0].search).toBe("?limit=20&offset=40&state=APPROVED");
+    expect(urls[2].search).toBe("?limit=10&offset=20");
+    for (const call of fetchMock.mock.calls) {
+      expect(call[1]?.method).toBeUndefined();
+      expect((call[1]?.headers as Headers).get("Authorization")).toBe(
+        "Bearer profile-token",
+      );
+    }
+  });
+
+  it("envia exatamente os quatro contratos de mutação do perfil paper", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(200, {})));
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+    const intent = {
+      name: "Perfil auditável",
+      description: "Configuração administrativa",
+      mandate_binding: {
+        mandate_id: "11111111-1111-4111-8111-111111111111",
+        approved_revision: 13,
+        specification_checksum: "a".repeat(64),
+      },
+      selected_instrument: {
+        exchange: "binance" as const,
+        market_type: "spot" as const,
+        base_asset: "BTC",
+        quote_asset: "USDT",
+      },
+      timeframe: "1h",
+      start_at: "2026-08-25T12:00:00Z",
+      warmup_candles: 120,
+      strategy_definition_id: "22222222-2222-4222-8222-222222222222",
+      expected_strategy_definition_revision: 17,
+      expected_strategy_parameters_checksum: "b".repeat(64),
+      execution: {
+        fees: { maker_fee_bps: "0.1", taker_fee_bps: "0.123456789" },
+        slippage: { kind: "FIXED_BPS" as const, fixed_bps: "0.1" },
+        intrabar_policy: "CONSERVATIVE" as const,
+        force_close_at_end: true,
+        position_sizing: null,
+      },
+      instrument_constraints: {
+        minimum_quantity: "0.1",
+        quantity_step: "0.1",
+        price_tick: "0.123456789",
+        minimum_notional: "10",
+        maximum_notional: null,
+      },
+      risk_limits: {
+        max_order_notional: "100",
+        max_position_notional: "200",
+        max_open_orders: 3,
+        max_total_orders: 50,
+        max_drawdown_pct: "0.1",
+        stop_on_max_drawdown: true,
+        allow_all_in: false,
+        minimum_quote_reserve: "0.123456789",
+        stop_loss: null,
+      },
+      history_window: 500,
+      max_candles: 1000,
+      max_orders: 100,
+      max_events: 200,
+      engine_version: "paper-engine-v1",
+      market_regime_policy: null,
+    };
+
+    await client.createOperationalPaperSessionProfile({
+      intent,
+      idempotency_key: "profile-intent-key",
+    });
+    await client.replaceOperationalPaperSessionProfileDraft("profile/id", {
+      intent,
+      expected_revision: 19,
+      expected_record_version: 23,
+    });
+    await client.approveOperationalPaperSessionProfile("profile/id", {
+      expected_revision: 29,
+      expected_checksum: "c".repeat(64),
+      expected_record_version: 31,
+    });
+    await client.archiveOperationalPaperSessionProfile("profile/id", {
+      expected_record_version: 37,
+    });
+
+    expect(
+      fetchMock.mock.calls.map((call) => [
+        new URL(call[0] as string).pathname,
+        call[1]?.method,
+        JSON.parse(String(call[1]?.body)),
+      ]),
+    ).toEqual([
+      [
+        "/api/v1/admin/operational-paper-session-profiles",
+        "POST",
+        { intent, idempotency_key: "profile-intent-key" },
+      ],
+      [
+        "/api/v1/admin/operational-paper-session-profiles/profile%2Fid",
+        "PATCH",
+        { intent, expected_revision: 19, expected_record_version: 23 },
+      ],
+      [
+        "/api/v1/admin/operational-paper-session-profiles/profile%2Fid/approve",
+        "POST",
+        {
+          expected_revision: 29,
+          expected_checksum: "c".repeat(64),
+          expected_record_version: 31,
+        },
+      ],
+      [
+        "/api/v1/admin/operational-paper-session-profiles/profile%2Fid/archive",
+        "POST",
+        { expected_record_version: 37 },
+      ],
+    ]);
+  });
+
+  it("consulta descoberta administrativa de estratégias com query exata", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { items: [], pagination: {} }));
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "strategy-token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    await client.listStrategyDefinitions({
+      page: 2,
+      pageSize: 50,
+      includeArchived: false,
+    });
+
+    const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
+    expect(url.pathname).toBe("/api/v1/admin/strategies");
+    expect(url.search).toBe("?page=2&page_size=50&include_archived=false");
+    expect(
+      (fetchMock.mock.calls[0]?.[1]?.headers as Headers).get("Authorization"),
+    ).toBe("Bearer strategy-token");
   });
 });

@@ -26,6 +26,16 @@ import type {
   OperationalMandateRevision,
   OperationalMandateRevisionList,
   OperationalMandateState,
+  OperationalPaperSessionProfile,
+  OperationalPaperSessionProfileApproveRequest,
+  OperationalPaperSessionProfileArchiveRequest,
+  OperationalPaperSessionProfileCreateRequest,
+  OperationalPaperSessionProfileCurrent,
+  OperationalPaperSessionProfileList,
+  OperationalPaperSessionProfileReplaceRequest,
+  OperationalPaperSessionProfileRevision,
+  OperationalPaperSessionProfileRevisionList,
+  OperationalPaperSessionProfileState,
   MarketCandlePageResponse,
   RawDatasetPageResponse,
   RawDatasetResponse,
@@ -55,6 +65,7 @@ import type {
   SimulationCreateRequest,
   SimulationDetail,
   SimulationListResponse,
+  StrategyDefinitionList,
   WorkerRuntimeEventList,
   WorkerRuntimeList,
 } from "../types/api";
@@ -180,6 +191,23 @@ export interface OperationalMandateListQuery {
 export interface OperationalMandateRevisionListQuery {
   limit?: number;
   offset?: number;
+}
+
+export interface OperationalPaperSessionProfileListQuery {
+  limit?: number;
+  offset?: number;
+  state?: OperationalPaperSessionProfileState;
+}
+
+export interface OperationalPaperSessionProfileRevisionListQuery {
+  limit?: number;
+  offset?: number;
+}
+
+export interface StrategyDefinitionListQuery {
+  page?: number;
+  pageSize?: number;
+  includeArchived?: boolean;
 }
 
 export interface PaperChartAnnotationQuery {
@@ -458,9 +486,7 @@ export class ApiClient {
     return this.request(`/api/v1/admin/operational-mandates${suffix}`);
   }
 
-  getOperationalMandate(
-    mandateId: string,
-  ): Promise<OperationalMandateCurrent> {
+  getOperationalMandate(mandateId: string): Promise<OperationalMandateCurrent> {
     return this.request(
       `/api/v1/admin/operational-mandates/${encodeURIComponent(mandateId)}`,
     );
@@ -525,6 +551,101 @@ export class ApiClient {
       `/api/v1/admin/operational-mandates/${encodeURIComponent(mandateId)}/archive`,
       { method: "POST", body: JSON.stringify(payload) },
     );
+  }
+
+  listOperationalPaperSessionProfiles(
+    query: OperationalPaperSessionProfileListQuery = {},
+  ): Promise<OperationalPaperSessionProfileList> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    appendQueryValue(params, "state", query.state);
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request(
+      `/api/v1/admin/operational-paper-session-profiles${suffix}`,
+    );
+  }
+
+  getOperationalPaperSessionProfile(
+    profileId: string,
+  ): Promise<OperationalPaperSessionProfileCurrent> {
+    return this.request(
+      `/api/v1/admin/operational-paper-session-profiles/${encodeURIComponent(profileId)}`,
+    );
+  }
+
+  listOperationalPaperSessionProfileRevisions(
+    profileId: string,
+    query: OperationalPaperSessionProfileRevisionListQuery = {},
+  ): Promise<OperationalPaperSessionProfileRevisionList> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request(
+      `/api/v1/admin/operational-paper-session-profiles/${encodeURIComponent(profileId)}/revisions${suffix}`,
+    );
+  }
+
+  getOperationalPaperSessionProfileRevision(
+    profileId: string,
+    revision: number,
+  ): Promise<OperationalPaperSessionProfileRevision> {
+    return this.request(
+      `/api/v1/admin/operational-paper-session-profiles/${encodeURIComponent(profileId)}/revisions/${encodeURIComponent(String(revision))}`,
+    );
+  }
+
+  createOperationalPaperSessionProfile(
+    payload: OperationalPaperSessionProfileCreateRequest,
+  ): Promise<OperationalPaperSessionProfileCurrent> {
+    return this.request("/api/v1/admin/operational-paper-session-profiles", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  replaceOperationalPaperSessionProfileDraft(
+    profileId: string,
+    payload: OperationalPaperSessionProfileReplaceRequest,
+  ): Promise<OperationalPaperSessionProfileCurrent> {
+    return this.request(
+      `/api/v1/admin/operational-paper-session-profiles/${encodeURIComponent(profileId)}`,
+      { method: "PATCH", body: JSON.stringify(payload) },
+    );
+  }
+
+  approveOperationalPaperSessionProfile(
+    profileId: string,
+    payload: OperationalPaperSessionProfileApproveRequest,
+  ): Promise<OperationalPaperSessionProfile> {
+    return this.request(
+      `/api/v1/admin/operational-paper-session-profiles/${encodeURIComponent(profileId)}/approve`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  }
+
+  archiveOperationalPaperSessionProfile(
+    profileId: string,
+    payload: OperationalPaperSessionProfileArchiveRequest,
+  ): Promise<OperationalPaperSessionProfile> {
+    return this.request(
+      `/api/v1/admin/operational-paper-session-profiles/${encodeURIComponent(profileId)}/archive`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  }
+
+  listStrategyDefinitions(
+    query: StrategyDefinitionListQuery = {},
+  ): Promise<StrategyDefinitionList> {
+    const params = new URLSearchParams();
+    if (query.page !== undefined) params.set("page", String(query.page));
+    if (query.pageSize !== undefined)
+      params.set("page_size", String(query.pageSize));
+    if (query.includeArchived !== undefined)
+      params.set("include_archived", String(query.includeArchived));
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request(`/api/v1/admin/strategies${suffix}`);
   }
 
   listRawDatasets(
