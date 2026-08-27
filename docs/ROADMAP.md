@@ -864,29 +864,31 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Tracks 7-01 through 7-06 are complete, closed and integrated
-into `main`. Track 7-05 was integrated by fast-forward; its final implementation
-milestone remains `0c53c96c9d2500b01d0dfab0e1dd74531e1e8d9c`, and its integrated
-closure milestone is `8a9c6eaaadf8e2fd07f56c69ae497d5b3563c003`. Track 7-06's latest
-implementation milestone is `3568e8c399c235b3641af64f49768598c063e7e3`, and
-its integrated delivery milestone is
-`c674a128866233a2e6ac34edcf4d99e62b1ab4fb`. Track 7-07 is selected and active
-from starting baseline `369225f16653c15f400adae854d12f9345f9ca5a`; its Gate
-1 architecture authority model is accepted and closed, Gate 1A was not
-required, and implementation gates have not started. Phase 7 as a whole
-remains active. The exact current handoff is maintained in
+**Status**: Active. Tracks 7-01 through 7-07 are complete, closed and integrated
+into `main`. Track 7-07's validated implementation milestone is
+`d0eb7f6c07df5a9dee5fcd46855eb3290c2cf75b`, its integrated delivery milestone
+is `0eeffece564a7283b44574842cd498282e004f93`, and its final closure record is
+`e87c96fe1c756881587d49831ad247bb21a5a92b`. Track 7-08 — Operational Paper Capital Authorization Foundation —
+is selected from that exact baseline. Gate 1 freezes the capital-authority
+boundary before any implementation or migration is introduced. Phase 7 as a
+whole remains active. The exact current handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
 - [x] Define administrator-approved operational mandates for assets, markets
       and instruments
-- [ ] Create and validate paper-session configurations through the frontend
-- [ ] Configure timeframes and trading horizons as their contracts mature
-- [ ] Select strategies, sizing, fees and risk policies within explicit mandates
+- [x] Create, validate and approve non-runnable operational paper-session
+      profiles through the administrative frontend
+- [x] Select canonical timeframes, strategies, sizing, fees, execution
+      assumptions and risk policies inside explicit approved mandates
+- [ ] Add trading-horizon labels only after their own reviewed contract matures
 - [x] Submit and monitor bounded market-data synchronization operations
 - [ ] Start, pause, resume and stop durable collectors and paper runners
 - [x] Reconcile abandoned work after restart
-- [ ] Integrate the administrative capital ledger with operational sessions
+- [ ] Authorize and reserve administrative paper capital for exact approved
+      operational paper-session profiles
+- [ ] Materialize an approved profile plus authoritative capital into the
+      existing immutable local `PaperSessionConfig`
 - [ ] Establish the ledger and session foundations required by a future ADT
       Official Portfolio and official paper capital without claiming that
       portfolio is already implemented
@@ -1441,6 +1443,59 @@ implementation bytes relative to the validated implementation milestone
 
 Accepted architecture decision:
 [`docs/adr/0002-phase-7-07-operational-paper-session-profile-authority.md`](./adr/0002-phase-7-07-operational-paper-session-profile-authority.md)
+
+---
+
+### 7-08 — Operational Paper Capital Authorization Foundation 🚧
+
+**Status**: Active — Gate 1 architecture authority model accepted; implementation
+has not started.
+
+Starting `main` baseline:
+`e87c96fe1c756881587d49831ad247bb21a5a92b`.
+
+Starting tree:
+`f63ab069fc0fa00c59d34dd406df8e0c464c04f9`.
+
+**Goal**:
+
+Create a durable, authenticated and auditable administrator-authorized paper
+capital binding from the existing Phase 1 simulated-capital ledger to one exact
+approved `OperationalPaperSessionProfile`, without materializing or running a
+paper session.
+
+**Gate progress**:
+
+- Gate 1 — Architecture & Capital Authority Model: **ACCEPTED / CLOSED**;
+- Gate 1A — Boundary Amendment: **NOT REQUIRED**;
+- Gate 2A — Pure Domain Contract: **NOT STARTED**;
+- Gate 2B — PostgreSQL Persistence & Ledger Integration: **NOT STARTED**;
+- Gate 2C — PostgreSQL Repository Contract: **NOT STARTED**;
+- Gate 2D — Bounded Capital Query Completion: **NOT STARTED**;
+- Gate 2E — Application Service: **NOT STARTED**;
+- Gate 3 — Protected Administrator API: **NOT STARTED**;
+- Gate 4 — Protected Administrative Frontend: **NOT STARTED**;
+- Gate 5 — Integration and Closure: **NOT STARTED**.
+
+**Expected migration**: YES.
+
+The existing Phase 1 ledger remains authoritative for gross simulated capital.
+7-08 adds reservation/binding authority only; it creates no second ledger and
+no runnable paper session.
+
+**Explicitly out of scope**:
+
+- local `PaperSessionConfig` materialization;
+- deterministic local `session_id`;
+- paper-session file publication or replay;
+- runner or collector lifecycle;
+- trade PnL settlement;
+- ADT Official Portfolio and capital eras;
+- public portfolio projections;
+- machine learning, Telegram, SaaS, deployment expansion and real-capital execution.
+
+Accepted architecture decision:
+[`docs/adr/0003-phase-7-08-operational-paper-capital-authorization-authority.md`](./adr/0003-phase-7-08-operational-paper-capital-authorization-authority.md)
 
 ---
 

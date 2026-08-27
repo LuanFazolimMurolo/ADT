@@ -4,7 +4,7 @@ Last updated: 2026-08-27
 
 ## Current branch
 
-`feat/phase-7-07-operational-paper-session-configuration-foundation`
+`feat/phase-7-08-operational-paper-capital-authorization-foundation`
 
 At the start of every session, verify the local branch and HEAD, then inspect
 the corresponding remote branch. This file records the intended handoff; Git
@@ -18,77 +18,86 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Current delivery
 
-**7-07 — Operational Paper-Session Configuration Foundation — COMPLETE /
-CLOSED**
+**7-08 — Operational Paper Capital Authorization Foundation — ACTIVE**
 
 Starting `main` baseline:
 
-`369225f16653c15f400adae854d12f9345f9ca5a`
+`e87c96fe1c756881587d49831ad247bb21a5a92b`
 
-Validated implementation milestone:
+Starting baseline tree:
 
-`d0eb7f6c07df5a9dee5fcd46855eb3290c2cf75b`
+`f63ab069fc0fa00c59d34dd406df8e0c464c04f9`
 
-Validated implementation tree:
+The post-7-07 selection audit passed. 7-08 is selected because the approved
+`OperationalPaperSessionProfile` deliberately contains no capital while the
+existing immutable local `PaperSessionConfig` requires initial simulated
+capital as an identity-bearing input.
 
-`6dd9d576bbf8668390ab7367df8a983e1a2a10e7`
-
-Integrated 7-07 delivery milestone:
-
-`0eeffece564a7283b44574842cd498282e004f93`
-
-Integrated delivery tree:
-
-`d7217bc9b3797b0ee7df467e624fbde30ec1c4d6`
-
-Gates 1 through 4 were remotely published and closed. Gate 5's complete
-technical closure matrix passed against the implementation milestone. The
-documentation candidate was published and `main` was advanced by verified pure
-fast-forward to the integrated delivery milestone. Independent GitHub
-verification confirmed remote `main` and the feature identical. Gate 5 and
-7-07 are closed. Phase 7 remains active.
+Gate 1 freezes a separate capital-authorization aggregate rather than creating
+a second ledger or prematurely materializing a paper session.
 
 Gate progress:
 
-- Gate 1 — Architecture & Authority Model: **REMOTE PUBLISHED / CLOSED**;
+- Gate 1 — Architecture & Capital Authority Model: **ACCEPTED / CLOSED**;
 - Gate 1A — Boundary Amendment: **NOT REQUIRED**;
-- Gate 2A — Pure Domain Contract: **REMOTE PUBLISHED / CLOSED**;
-- Gate 2B — Local Persistence Foundation: **REMOTE PUBLISHED / CLOSED**;
-- Gate 2C — PostgreSQL Repository Contract: **REMOTE PUBLISHED / CLOSED**;
-- Gate 2D — Bounded Query Completion: **REMOTE PUBLISHED / CLOSED**;
-- Gate 2E — Application Service: **REMOTE PUBLISHED / CLOSED**;
-- Gate 3 — Protected Administrator API: **REMOTE PUBLISHED / CLOSED**;
-- Gate 4 — Protected Administrative Frontend: **REMOTE PUBLISHED / CLOSED**;
-- Gate 5 — Integration and Closure: **CLOSED**.
+- Gate 2A — Pure Domain Contract: **NOT STARTED**;
+- Gate 2B — PostgreSQL Persistence & Ledger Integration: **NOT STARTED**;
+- Gate 2C — PostgreSQL Repository Contract: **NOT STARTED**;
+- Gate 2D — Bounded Capital Query Completion: **NOT STARTED**;
+- Gate 2E — Application Service: **NOT STARTED**;
+- Gate 3 — Protected Administrator API: **NOT STARTED**;
+- Gate 4 — Protected Administrative Frontend: **NOT STARTED**;
+- Gate 5 — Integration and Closure: **NOT STARTED**.
 
-Gate 5 closure evidence:
+Accepted architecture:
 
-- 10 delivery commits and 29 paths relative to starting `main`;
-- backend static quality: dependency integrity, Ruff, Ruff format and strict
-  MyPy **PASS**;
-- targeted 7-07 backend: **330 passed**;
-- full backend: **3,182 passed, 1 expected manual-network skip, 88% coverage**;
-- OpenAPI consistency: **PASS**, SHA-256 `4ffebb01d784a1b0cf4683074f793102eeaa016852ef964defd3f3150676c622`;
-- frontend: typecheck, E2E typecheck, lint and build **PASS**;
-- full Vitest: **255 passed** across 31 files;
-- bundle budget: **PASS**, JavaScript raw 819,086 / 819,200 bytes;
-- full Playwright: **56 passed**;
-- migration, authorization, transaction/concurrency, idempotency,
-  cross-layer/non-runnable, secret and byte-clean audits: **PASS**;
-- documentation candidate `0eeffece564a7283b44574842cd498282e004f93` was integrated into `main` by verified
-  pure fast-forward, with remote `main` and feature independently confirmed
-  identical at tree `d7217bc9b3797b0ee7df467e624fbde30ec1c4d6`; and
-- migration `482b5b87403125c340df7e00fd880169d1409027` remains **VERSIONED / REMOTELY UNAPPLIED**.
+```text
+simulation_runs + capital_movements
+    -> authoritative gross simulated balance
+    -> OperationalPaperCapitalAuthorization
+    -> exact approved OperationalPaperSessionProfile
+    -> future materialization authority/version
+    -> existing immutable local PaperSessionConfig
+    -> deterministic local session_id
+```
 
-The durable `OperationalPaperSessionProfile` freezes an exact approved-mandate
-binding, one selected mandate instrument, one canonical timeframe, a historical
-strategy snapshot and deterministic non-capital paper-policy inputs. It remains
-categorically non-runnable: capital binding, local `PaperSessionConfig`
-materialization, deterministic local `session_id`, file publication and
-runner/collector control belong to later reviewed deliveries.
+The Phase 1 ledger remains authoritative for gross balance.
+`OperationalPaperCapitalAuthorization` is reservation and binding authority
+only; it does not create a capital movement or a second ledger.
+
+Gross, reserved and available capital are derived server-side. Active
+authorizations may not exceed authoritative ledger balance, and
+balance-decreasing ledger mutations may not consume reserved capital.
+
+One profile may have at most one AUTHORIZED authorization. Lifecycle is
+`AUTHORIZED -> REVOKED`, with revoked history retained. Profile archival does
+not silently release reserved capital; explicit revocation is required.
+
+An ACTIVE simulation with an AUTHORIZED operational paper-capital reservation
+cannot become terminal until its active authorization is revoked.
+
+An authorization binds the exact approved profile revision/checksum,
+`simulation_id`, quote asset and authorized capital. Simulation currency and
+profile quote asset must match exactly.
+
+Create is actor-scoped and idempotent. Exact committed replay is resolved
+before mutable balance/profile revalidation. The authorization checksum
+excludes actors, timestamps, lifecycle state and `record_version`.
+
+Expected migration: **YES**.
+
+No 7-08 migration or production implementation exists yet.
+
+7-08 remains categorically non-materializing and non-running. It creates no
+`PaperSessionConfig`, derives no `session_id`, publishes no local paper files,
+executes no strategy, controls no runner/collector and performs no trade PnL
+settlement.
+
+ADT Official Portfolio, capital eras, public portfolio projections and
+real-capital execution remain outside this delivery.
 
 Accepted architecture record:
-[`docs/adr/0002-phase-7-07-operational-paper-session-profile-authority.md`](./adr/0002-phase-7-07-operational-paper-session-profile-authority.md)
+[`docs/adr/0003-phase-7-08-operational-paper-capital-authorization-authority.md`](./adr/0003-phase-7-08-operational-paper-capital-authorization-authority.md)
 
 ## Last completed track
 
