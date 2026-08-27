@@ -1294,11 +1294,14 @@ closure record.
 The mandate authorizes a canonical operational universe. It does not itself
 execute work and it does not yet define a complete trading session.
 
-### 7-07 — Operational Paper-Session Configuration Foundation 🚧
+### 7-07 — Operational Paper-Session Configuration Foundation ✅
 
-**Status**: Active — Gates 1–4 remotely published and closed; Gate 5 technical
-closure matrix passed against implementation milestone `d0eb7f6c07df5a9dee5fcd46855eb3290c2cf75b`;
-closure documentation publication and `main` integration remain pending.
+**Status**: **COMPLETE / CLOSED** — Gates 1–4 were remotely published and
+closed; Gate 5 passed the complete technical closure matrix against
+implementation milestone `d0eb7f6c07df5a9dee5fcd46855eb3290c2cf75b`. The documentation candidate was
+published and integrated into `main` by verified pure fast-forward at
+`0eeffece564a7283b44574842cd498282e004f93`, with independent GitHub verification that remote `main` and the
+feature were identical. Phase 7 remains active.
 
 Starting `main` baseline:
 `369225f16653c15f400adae854d12f9345f9ca5a`.
@@ -1320,8 +1323,7 @@ capital, materializing a local paper session or starting runtime work.
 - Gate 2E — Application Service: **REMOTE PUBLISHED / CLOSED**;
 - Gate 3 — Protected Administrator API: **REMOTE PUBLISHED / CLOSED**;
 - Gate 4 — Protected Administrative Frontend: **REMOTE PUBLISHED / CLOSED**;
-- Gate 5 — Integration and Closure: **TECHNICAL CLOSURE MATRIX PASS /
-  DOCUMENTATION AND INTEGRATION PENDING**.
+- Gate 5 — Integration and Closure: **CLOSED**.
 
 **Accepted Gate 1 boundary**:
 
@@ -1414,10 +1416,15 @@ reviewed operational work and was not performed by the 7-07 closure matrix.
   no tracked diff, staged diff or untracked files, and `git diff --check`
   passed.
 
-Gate 5 is not yet closed by this evidence alone. Closure documentation must
-first be reviewed and published on the feature branch, after which integration
-into `main` must be separately verified as a pure fast-forward with no change
-to the validated implementation bytes.
+The documentation candidate was then published, bringing the delivery to 11
+commits from starting `main`. Remote `main` advanced from
+`369225f16653c15f400adae854d12f9345f9ca5a` to `0eeffece564a7283b44574842cd498282e004f93` by verified pure
+fast-forward; no merge commit, rebase or squash was created. Independent GitHub
+verification confirmed remote `main` and the feature identical at the
+integrated milestone, with tree `d7217bc9b3797b0ee7df467e624fbde30ec1c4d6`. Integration changed no
+implementation bytes relative to the validated implementation milestone
+`d0eb7f6c07df5a9dee5fcd46855eb3290c2cf75b`. Gate 5 and 7-07 are closed; Phase 7 remains active. The
+7-07 migration remains **VERSIONED / REMOTELY UNAPPLIED**.
 
 **Explicitly out of scope**:
 

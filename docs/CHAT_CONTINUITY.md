@@ -18,8 +18,8 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Current delivery
 
-**7-07 — Operational Paper-Session Configuration Foundation — ACTIVE /
-CLOSURE CANDIDATE**
+**7-07 — Operational Paper-Session Configuration Foundation — COMPLETE /
+CLOSED**
 
 Starting `main` baseline:
 
@@ -33,10 +33,20 @@ Validated implementation tree:
 
 `6dd9d576bbf8668390ab7367df8a983e1a2a10e7`
 
-Gates 1 through 4 are remotely published and closed. Gate 5's complete
+Integrated 7-07 delivery milestone:
+
+`0eeffece564a7283b44574842cd498282e004f93`
+
+Integrated delivery tree:
+
+`d7217bc9b3797b0ee7df467e624fbde30ec1c4d6`
+
+Gates 1 through 4 were remotely published and closed. Gate 5's complete
 technical closure matrix passed against the implementation milestone. The
-remaining Gate 5 work is documentation review/publication followed by a
-separately verified pure fast-forward integration into `main`.
+documentation candidate was published and `main` was advanced by verified pure
+fast-forward to the integrated delivery milestone. Independent GitHub
+verification confirmed remote `main` and the feature identical. Gate 5 and
+7-07 are closed. Phase 7 remains active.
 
 Gate progress:
 
@@ -49,10 +59,9 @@ Gate progress:
 - Gate 2E — Application Service: **REMOTE PUBLISHED / CLOSED**;
 - Gate 3 — Protected Administrator API: **REMOTE PUBLISHED / CLOSED**;
 - Gate 4 — Protected Administrative Frontend: **REMOTE PUBLISHED / CLOSED**;
-- Gate 5 — Integration and Closure: **TECHNICAL CLOSURE MATRIX PASS /
-  DOCUMENTATION AND INTEGRATION PENDING**.
+- Gate 5 — Integration and Closure: **CLOSED**.
 
-Gate 5 closure-candidate evidence:
+Gate 5 closure evidence:
 
 - 10 delivery commits and 29 paths relative to starting `main`;
 - backend static quality: dependency integrity, Ruff, Ruff format and strict
@@ -65,7 +74,10 @@ Gate 5 closure-candidate evidence:
 - bundle budget: **PASS**, JavaScript raw 819,086 / 819,200 bytes;
 - full Playwright: **56 passed**;
 - migration, authorization, transaction/concurrency, idempotency,
-  cross-layer/non-runnable, secret and byte-clean audits: **PASS**; and
+  cross-layer/non-runnable, secret and byte-clean audits: **PASS**;
+- documentation candidate `0eeffece564a7283b44574842cd498282e004f93` was integrated into `main` by verified
+  pure fast-forward, with remote `main` and feature independently confirmed
+  identical at tree `d7217bc9b3797b0ee7df467e624fbde30ec1c4d6`; and
 - migration `482b5b87403125c340df7e00fd880169d1409027` remains **VERSIONED / REMOTELY UNAPPLIED**.
 
 The durable `OperationalPaperSessionProfile` freezes an exact approved-mandate
@@ -80,14 +92,16 @@ Accepted architecture record:
 
 ## Last completed track
 
-**7-06 — Operational Mandate Foundation — COMPLETE / CLOSED**
+**7-07 — Operational Paper-Session Configuration Foundation — COMPLETE / CLOSED**
 
-Gate 5 passed the implementation closure matrix, the documentation candidate
-was published, and `main` was advanced by verified pure fast-forward to the
-published delivery milestone. Phase 7 remains active.
+Gate 5 passed the complete implementation closure matrix, the documentation
+candidate was published, and `main` was advanced by verified pure fast-forward
+to the published integrated delivery milestone. Independent GitHub verification
+confirmed `main` and the feature identical. Phase 7 remains active.
 
 Previously closed Phase 7 deliveries remain closed:
 
+- **7-06 — Operational Mandate Foundation — CLOSED**
 - **7-05 — Worker Runtime Observability — CLOSED**
 - **7-04 — RAW Gap & Quality Inspection — CLOSED**
 - **7-03 — Persisted RAW Dataset Inspection — CLOSED**
@@ -101,11 +115,15 @@ Previously closed Phase 7 deliveries remain closed:
 
 `d0eb7f6c07df5a9dee5fcd46855eb3290c2cf75b`
 
+## Integrated 7-07 delivery milestone
+
+`0eeffece564a7283b44574842cd498282e004f93`
+
 ## Integrated 7-06 delivery milestone
 
 `c674a128866233a2e6ac34edcf4d99e62b1ab4fb`
 
-## Closed delivery record
+## Previous closed delivery record
 
 **7-06 — Operational Mandate Foundation — COMPLETE / CLOSED**
 
