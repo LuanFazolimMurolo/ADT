@@ -1,6 +1,6 @@
 # ADT Current Development Handoff
 
-Last updated: 2026-08-23
+Last updated: 2026-08-27
 
 ## Current branch
 
@@ -18,30 +18,62 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Current delivery
 
-**7-07 — Operational Paper-Session Configuration Foundation — ACTIVE**
+**7-07 — Operational Paper-Session Configuration Foundation — ACTIVE /
+CLOSURE CANDIDATE**
 
 Starting `main` baseline:
 
 `369225f16653c15f400adae854d12f9345f9ca5a`
 
-The post-7-06 selection audit approved 7-07 as the next delivery. Gate 1's
-semantic audit passed, its architecture authority model is frozen, and its
-architecture documentation has been remotely published on the 7-07 feature
-branch. No 7-07 implementation, migration or implementation test exists yet.
+Validated implementation milestone:
+
+`d0eb7f6c07df5a9dee5fcd46855eb3290c2cf75b`
+
+Validated implementation tree:
+
+`6dd9d576bbf8668390ab7367df8a983e1a2a10e7`
+
+Gates 1 through 4 are remotely published and closed. Gate 5's complete
+technical closure matrix passed against the implementation milestone. The
+remaining Gate 5 work is documentation review/publication followed by a
+separately verified pure fast-forward integration into `main`.
 
 Gate progress:
 
 - Gate 1 — Architecture & Authority Model: **REMOTE PUBLISHED / CLOSED**;
 - Gate 1A — Boundary Amendment: **NOT REQUIRED**;
-- Gates 2A–5: **NOT STARTED**.
+- Gate 2A — Pure Domain Contract: **REMOTE PUBLISHED / CLOSED**;
+- Gate 2B — Local Persistence Foundation: **REMOTE PUBLISHED / CLOSED**;
+- Gate 2C — PostgreSQL Repository Contract: **REMOTE PUBLISHED / CLOSED**;
+- Gate 2D — Bounded Query Completion: **REMOTE PUBLISHED / CLOSED**;
+- Gate 2E — Application Service: **REMOTE PUBLISHED / CLOSED**;
+- Gate 3 — Protected Administrator API: **REMOTE PUBLISHED / CLOSED**;
+- Gate 4 — Protected Administrative Frontend: **REMOTE PUBLISHED / CLOSED**;
+- Gate 5 — Integration and Closure: **TECHNICAL CLOSURE MATRIX PASS /
+  DOCUMENTATION AND INTEGRATION PENDING**.
 
-The candidate names the durable aggregate `OperationalPaperSessionProfile`.
-It freezes an exact approved-mandate binding, one selected mandate instrument,
-one canonical timeframe, a historical strategy snapshot and the current
-deterministic non-capital paper-policy inputs. It remains categorically
-non-runnable: capital binding, local `PaperSessionConfig` materialization,
-deterministic local `session_id`, file publication and runner/collector control
-belong to later reviewed deliveries.
+Gate 5 closure-candidate evidence:
+
+- 10 delivery commits and 29 paths relative to starting `main`;
+- backend static quality: dependency integrity, Ruff, Ruff format and strict
+  MyPy **PASS**;
+- targeted 7-07 backend: **330 passed**;
+- full backend: **3,182 passed, 1 expected manual-network skip, 88% coverage**;
+- OpenAPI consistency: **PASS**, SHA-256 `4ffebb01d784a1b0cf4683074f793102eeaa016852ef964defd3f3150676c622`;
+- frontend: typecheck, E2E typecheck, lint and build **PASS**;
+- full Vitest: **255 passed** across 31 files;
+- bundle budget: **PASS**, JavaScript raw 819,086 / 819,200 bytes;
+- full Playwright: **56 passed**;
+- migration, authorization, transaction/concurrency, idempotency,
+  cross-layer/non-runnable, secret and byte-clean audits: **PASS**; and
+- migration `482b5b87403125c340df7e00fd880169d1409027` remains **VERSIONED / REMOTELY UNAPPLIED**.
+
+The durable `OperationalPaperSessionProfile` freezes an exact approved-mandate
+binding, one selected mandate instrument, one canonical timeframe, a historical
+strategy snapshot and deterministic non-capital paper-policy inputs. It remains
+categorically non-runnable: capital binding, local `PaperSessionConfig`
+materialization, deterministic local `session_id`, file publication and
+runner/collector control belong to later reviewed deliveries.
 
 Accepted architecture record:
 [`docs/adr/0002-phase-7-07-operational-paper-session-profile-authority.md`](./adr/0002-phase-7-07-operational-paper-session-profile-authority.md)
@@ -67,7 +99,7 @@ Previously closed Phase 7 deliveries remain closed:
 
 ## Last validated implementation milestone
 
-`3568e8c399c235b3641af64f49768598c063e7e3`
+`d0eb7f6c07df5a9dee5fcd46855eb3290c2cf75b`
 
 ## Integrated 7-06 delivery milestone
 

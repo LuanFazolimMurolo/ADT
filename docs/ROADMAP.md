@@ -1296,8 +1296,9 @@ execute work and it does not yet define a complete trading session.
 
 ### 7-07 — Operational Paper-Session Configuration Foundation 🚧
 
-**Status**: Active — Gate 1 architecture accepted and closed; Gate 1A not
-required; implementation gates not started.
+**Status**: Active — Gates 1–4 remotely published and closed; Gate 5 technical
+closure matrix passed against implementation milestone `d0eb7f6c07df5a9dee5fcd46855eb3290c2cf75b`;
+closure documentation publication and `main` integration remain pending.
 
 Starting `main` baseline:
 `369225f16653c15f400adae854d12f9345f9ca5a`.
@@ -1310,16 +1311,17 @@ capital, materializing a local paper session or starting runtime work.
 
 **Gate progress**:
 
-- Gate 1 — Architecture & Authority Model: **CLOSED / ACCEPTED**;
+- Gate 1 — Architecture & Authority Model: **REMOTE PUBLISHED / CLOSED**;
 - Gate 1A — Boundary Amendment: **NOT REQUIRED**;
-- Gate 2A — Pure Domain Contract: **NOT STARTED**;
-- Gate 2B — Local Persistence Foundation: **NOT STARTED**;
-- Gate 2C — PostgreSQL Repository Contract: **NOT STARTED**;
-- Gate 2D — Bounded Query Completion: **NOT STARTED**;
-- Gate 2E — Application Service: **NOT STARTED**;
-- Gate 3 — Protected Administrator API: **NOT STARTED**;
-- Gate 4 — Protected Administrative Frontend: **NOT STARTED**;
-- Gate 5 — Integration and Closure: **NOT STARTED**.
+- Gate 2A — Pure Domain Contract: **REMOTE PUBLISHED / CLOSED**;
+- Gate 2B — Local Persistence Foundation: **REMOTE PUBLISHED / CLOSED**;
+- Gate 2C — PostgreSQL Repository Contract: **REMOTE PUBLISHED / CLOSED**;
+- Gate 2D — Bounded Query Completion: **REMOTE PUBLISHED / CLOSED**;
+- Gate 2E — Application Service: **REMOTE PUBLISHED / CLOSED**;
+- Gate 3 — Protected Administrator API: **REMOTE PUBLISHED / CLOSED**;
+- Gate 4 — Protected Administrative Frontend: **REMOTE PUBLISHED / CLOSED**;
+- Gate 5 — Integration and Closure: **TECHNICAL CLOSURE MATRIX PASS /
+  DOCUMENTATION AND INTEGRATION PENDING**.
 
 **Accepted Gate 1 boundary**:
 
@@ -1369,10 +1371,53 @@ capital, materializing a local paper session or starting runtime work.
   strategy execution, Binance call, RAW scan, filesystem materialization,
   runner/collector control, capital mutation or long-running work.
 
-Expected migration: **YES**, but Gate 1 creates no migration. Local future
-implementation may test the versioned migration chain against disposable
-PostgreSQL; linked/remote application remains separately reviewed operational
-work. The existing 7-06 migration remains **VERSIONED / REMOTELY UNAPPLIED**.
+Migration status: **VERSIONED / REMOTELY UNAPPLIED**. Gate 2B introduced
+`supabase/migrations/20260823000000_phase_7_07_operational_paper_session_profiles.sql`
+with protected blob `482b5b87403125c340df7e00fd880169d1409027`. The 7-06 migration remains unchanged and
+remotely unapplied. Linked/remote Supabase application remains separately
+reviewed operational work and was not performed by the 7-07 closure matrix.
+
+**Gate 5 technical closure evidence**:
+
+- implementation milestone: `d0eb7f6c07df5a9dee5fcd46855eb3290c2cf75b`;
+- implementation tree: `6dd9d576bbf8668390ab7367df8a983e1a2a10e7`;
+- feature branch and remote feature were byte-identical at the closure
+  checkpoint, 10 commits ahead and 0 behind starting `main`, spanning 29
+  delivery paths;
+- backend dependency integrity, Ruff, Ruff format and strict MyPy: **PASS**;
+  Ruff reported 369 files already formatted and MyPy reported 234 source files
+  with no issues;
+- targeted 7-07 backend: **330 passed, 0 failed**;
+- full backend: **3,182 passed, 1 expected manual-network skip, 0 failed,
+  88% coverage**; the skip is the explicitly opt-in Binance public-network
+  smoke test gated by `ADT_ALLOW_NETWORK_TESTS=true`;
+- the three backend warnings are the existing Python 3.13 `fork()`
+  deprecation warning from snapshot-lock multiprocessing tests and are
+  non-blocking for 7-07;
+- generated OpenAPI consistency: **PASS**, with protected SHA-256
+  `4ffebb01d784a1b0cf4683074f793102eeaa016852ef964defd3f3150676c622` and 13,505 generated lines;
+- frontend typecheck, E2E typecheck and lint: **PASS**;
+- full frontend Vitest: **31 files, 255 passed, 0 failed**;
+- production frontend build: **PASS**, 134 modules transformed;
+- bundle budget: **PASS** — JavaScript 819,086 bytes raw / 229,659 bytes gzip
+  and CSS 50,546 bytes raw / 9,115 bytes gzip; JavaScript raw retains a
+  deliberately small 114-byte budget margin;
+- full Playwright Chromium suite: **56 passed, 0 failed**;
+- migration integrity, RLS/Data API denial, dependency drift, runtime-subsystem
+  drift, administrator authorization, eight-operation API/client parity,
+  transaction/concurrency, idempotency, non-runnable boundary and
+  secret/sensitive-data audits: **PASS**;
+- no 7-07 path performs Binance/network execution, RAW scanning, local
+  paper-session materialization, `session_id` derivation, runner/collector
+  control or capital mutation; and
+- the implementation milestone remained byte-clean after the complete matrix:
+  no tracked diff, staged diff or untracked files, and `git diff --check`
+  passed.
+
+Gate 5 is not yet closed by this evidence alone. Closure documentation must
+first be reviewed and published on the feature branch, after which integration
+into `main` must be separately verified as a pure fast-forward with no change
+to the validated implementation bytes.
 
 **Explicitly out of scope**:
 
