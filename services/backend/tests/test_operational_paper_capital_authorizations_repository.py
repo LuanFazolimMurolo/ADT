@@ -1,6 +1,8 @@
-"""Gate 2C cross-app reservation-conflict translation tests."""
+"""Gate 2C and Gate 2D1 paper-capital authorization repository tests."""
 
+from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import cast
 from uuid import UUID, uuid4
 
 import psycopg
@@ -10,8 +12,12 @@ from app.database import Database
 from app.database.pool import _is_persistence_unavailable_operational_error
 from app.domain.models import LedgerMovementType, SimulationStatus
 from app.operational_paper_capital_authorizations import (
+    InvalidOperationalPaperCapitalAuthorizationSpecificationError,
+    OperationalPaperCapitalAuthorization,
+    OperationalPaperCapitalAuthorizationBoundsExceededError,
     OperationalPaperCapitalAuthorizationCreateIntent,
     OperationalPaperCapitalAuthorizationProfileBinding,
+    OperationalPaperCapitalAuthorizationState,
     OperationalPaperCapitalReservationConflictError,
     build_operational_paper_capital_authorization_specification,
     operational_paper_capital_authorization_create_intent_fingerprint,
@@ -1942,3 +1948,638 @@ def test_authorization_database_error_translator_maps_revoke_state_conflicts(
 
     with pytest.raises(OperationalPaperCapitalAuthorizationStateTransitionConflictError):
         _raise_authorization_database_error(error)
+
+
+class _D1DatabaseMustNotBeAccessed:
+    def transaction(self) -> object:
+        raise AssertionError("invalid list input reached PostgreSQL")
+
+
+def _d1_seed_simulation(
+    database_url: str,
+    actor_id: UUID,
+) -> UUID:
+    with psycopg.connect(database_url, autocommit=True) as connection:
+        return _seed_simulation(
+            connection,
+            actor_id,
+            initial_capital=Decimal("1000"),
+        )
+
+
+def _d1_seed_authorization(
+    database_url: str,
+    actor_id: UUID,
+    *,
+    simulation_id: UUID,
+    authorization_id: UUID,
+    created_at: datetime,
+) -> UUID:
+    profile_id = _seed_approved_profile(database_url, actor_id)
+    with psycopg.connect(database_url, autocommit=True) as connection:
+        profile_row = connection.execute(
+            """
+            select approved_revision, approved_checksum
+            from public.operational_paper_session_profiles
+            where profile_id = %s
+            """,
+            (profile_id,),
+        ).fetchone()
+        assert profile_row is not None
+        approved_revision, approved_checksum = profile_row
+        assert isinstance(approved_revision, int)
+        assert isinstance(approved_checksum, str)
+
+        intent = OperationalPaperCapitalAuthorizationCreateIntent(
+            profile_binding=OperationalPaperCapitalAuthorizationProfileBinding(
+                profile_id=profile_id,
+                approved_revision=approved_revision,
+                specification_checksum=approved_checksum,
+            ),
+            simulation_id=simulation_id,
+            quote_asset="USDT",
+            authorized_capital=Decimal("10"),
+        )
+        specification = build_operational_paper_capital_authorization_specification(intent)
+        checksum = operational_paper_capital_authorization_specification_checksum(specification)
+        fingerprint = operational_paper_capital_authorization_create_intent_fingerprint(intent)
+        connection.execute(
+            """
+            insert into public.operational_paper_capital_authorizations (
+                authorization_id,
+                schema_version,
+                state,
+                record_version,
+                profile_id,
+                profile_approved_revision,
+                profile_specification_checksum,
+                simulation_id,
+                quote_asset,
+                authorized_capital,
+                authorization_checksum,
+                created_by,
+                created_at,
+                create_idempotency_key,
+                create_intent_fingerprint
+            )
+            values (
+                %s, 1, 'AUTHORIZED', 1,
+                %s, %s, %s,
+                %s, 'USDT', %s,
+                %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                authorization_id,
+                profile_id,
+                approved_revision,
+                approved_checksum,
+                simulation_id,
+                intent.authorized_capital,
+                checksum,
+                actor_id,
+                created_at,
+                f"catalog:{authorization_id}",
+                fingerprint,
+            ),
+        )
+    return authorization_id
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value", "error_type"),
+    (
+        ("limit", True, InvalidOperationalPaperCapitalAuthorizationSpecificationError),
+        ("offset", True, InvalidOperationalPaperCapitalAuthorizationSpecificationError),
+        ("limit", "10", InvalidOperationalPaperCapitalAuthorizationSpecificationError),
+        ("offset", "0", InvalidOperationalPaperCapitalAuthorizationSpecificationError),
+        ("limit", 0, OperationalPaperCapitalAuthorizationBoundsExceededError),
+        ("limit", -1, OperationalPaperCapitalAuthorizationBoundsExceededError),
+        ("limit", 101, OperationalPaperCapitalAuthorizationBoundsExceededError),
+        ("offset", -1, OperationalPaperCapitalAuthorizationBoundsExceededError),
+        ("offset", 2**63, OperationalPaperCapitalAuthorizationBoundsExceededError),
+    ),
+)
+@pytest.mark.asyncio
+async def test_authorization_repository_list_rejects_invalid_pagination_before_database(
+    field_name: str,
+    invalid_value: object,
+    error_type: type[Exception],
+) -> None:
+    from app.repositories.operational_paper_capital_authorizations import (
+        PostgresOperationalPaperCapitalAuthorizationRepository,
+    )
+
+    repository = PostgresOperationalPaperCapitalAuthorizationRepository(
+        cast(Database, _D1DatabaseMustNotBeAccessed())
+    )
+    limit = cast(int, invalid_value) if field_name == "limit" else 20
+    offset = cast(int, invalid_value) if field_name == "offset" else 0
+
+    with pytest.raises(error_type):
+        await repository.list(limit=limit, offset=offset)
+
+
+@pytest.mark.parametrize("invalid_state", ("AUTHORIZED", object()))
+@pytest.mark.asyncio
+async def test_authorization_repository_list_rejects_invalid_state_before_database(
+    invalid_state: object,
+) -> None:
+    from app.repositories.operational_paper_capital_authorizations import (
+        PostgresOperationalPaperCapitalAuthorizationRepository,
+    )
+
+    repository = PostgresOperationalPaperCapitalAuthorizationRepository(
+        cast(Database, _D1DatabaseMustNotBeAccessed())
+    )
+
+    with pytest.raises(InvalidOperationalPaperCapitalAuthorizationSpecificationError):
+        await repository.list(
+            limit=20,
+            offset=0,
+            state=cast(OperationalPaperCapitalAuthorizationState, invalid_state),
+        )
+
+
+@pytest.mark.asyncio
+async def test_authorization_repository_list_empty_catalog_and_maximum_page(
+    database: Database,
+) -> None:
+    from app.repositories.operational_paper_capital_authorizations import (
+        PostgresOperationalPaperCapitalAuthorizationRepository,
+    )
+
+    repository = PostgresOperationalPaperCapitalAuthorizationRepository(database)
+
+    assert await repository.list(limit=100, offset=0, state=None) == ([], 0)
+
+
+@pytest.mark.asyncio
+async def test_authorization_repository_list_returns_strict_authorization_surface(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    from collections.abc import Mapping
+
+    from app.repositories.operational_paper_capital_authorizations import (
+        PostgresOperationalPaperCapitalAuthorizationRepository,
+    )
+
+    simulation_id = _d1_seed_simulation(database_url, auth_user_id)
+    authorization_id = UUID("00000000-0000-0000-0000-000000000101")
+    _d1_seed_authorization(
+        database_url,
+        auth_user_id,
+        simulation_id=simulation_id,
+        authorization_id=authorization_id,
+        created_at=BASE_TIME + timedelta(seconds=10),
+    )
+
+    page, total = await PostgresOperationalPaperCapitalAuthorizationRepository(database).list(
+        limit=20,
+        offset=0,
+    )
+
+    assert total == 1
+    assert [item.authorization_id for item in page] == [authorization_id]
+    assert all(isinstance(item, OperationalPaperCapitalAuthorization) for item in page)
+    assert not any(isinstance(item, Mapping) for item in page)
+
+
+@pytest.mark.asyncio
+async def test_authorization_repository_list_stable_order_complete_pages_and_beyond_total(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    from app.repositories.operational_paper_capital_authorizations import (
+        PostgresOperationalPaperCapitalAuthorizationRepository,
+    )
+
+    simulation_id = _d1_seed_simulation(database_url, auth_user_id)
+    created_at = BASE_TIME + timedelta(seconds=20)
+    authorization_ids = [UUID(f"00000000-0000-0000-0000-{index:012d}") for index in range(1, 6)]
+    for authorization_id in authorization_ids:
+        _d1_seed_authorization(
+            database_url,
+            auth_user_id,
+            simulation_id=simulation_id,
+            authorization_id=authorization_id,
+            created_at=created_at,
+        )
+
+    repository = PostgresOperationalPaperCapitalAuthorizationRepository(database)
+    first, first_total = await repository.list(limit=2, offset=0)
+    middle, middle_total = await repository.list(limit=2, offset=2)
+    final, final_total = await repository.list(limit=2, offset=4)
+    beyond, beyond_total = await repository.list(limit=2, offset=100)
+
+    expected = list(reversed(authorization_ids))
+    actual = [item.authorization_id for item in [*first, *middle, *final]]
+    assert actual == expected
+    assert len(actual) == len(set(actual)) == 5
+    assert beyond == []
+    assert {first_total, middle_total, final_total, beyond_total} == {5}
+
+
+@pytest.mark.asyncio
+async def test_authorization_repository_list_state_filters_exact_rows_and_totals(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    from app.repositories.operational_paper_capital_authorizations import (
+        PostgresOperationalPaperCapitalAuthorizationRepository,
+    )
+
+    simulation_id = _d1_seed_simulation(database_url, auth_user_id)
+    authorized_id = UUID("00000000-0000-0000-0000-000000000201")
+    revoked_id = UUID("00000000-0000-0000-0000-000000000202")
+    created_at = BASE_TIME + timedelta(seconds=30)
+    for authorization_id in (authorized_id, revoked_id):
+        _d1_seed_authorization(
+            database_url,
+            auth_user_id,
+            simulation_id=simulation_id,
+            authorization_id=authorization_id,
+            created_at=created_at,
+        )
+
+    repository = PostgresOperationalPaperCapitalAuthorizationRepository(database)
+    await repository.revoke(
+        revoked_id,
+        expected_record_version=1,
+        actor_id=auth_user_id,
+        now=created_at + timedelta(seconds=1),
+    )
+
+    all_items, all_total = await repository.list(limit=20, offset=0)
+    authorized_items, authorized_total = await repository.list(
+        limit=20,
+        offset=0,
+        state=OperationalPaperCapitalAuthorizationState.AUTHORIZED,
+    )
+    revoked_items, revoked_total = await repository.list(
+        limit=20,
+        offset=0,
+        state=OperationalPaperCapitalAuthorizationState.REVOKED,
+    )
+
+    assert [item.authorization_id for item in all_items] == [revoked_id, authorized_id]
+    assert all_total == 2
+    assert [item.authorization_id for item in authorized_items] == [authorized_id]
+    assert authorized_total == 1
+    assert [item.authorization_id for item in revoked_items] == [revoked_id]
+    assert revoked_total == 1
+
+
+@pytest.mark.parametrize(
+    "rows",
+    (
+        ({"authorization_id": UUID("00000000-0000-0000-0000-000000000301")},),
+        ({"total": True, "authorization_id": None},),
+        ({"total": "0", "authorization_id": None},),
+        ({"total": -1, "authorization_id": None},),
+    ),
+)
+def test_authorization_list_page_helper_rejects_malformed_total(
+    rows: tuple[dict[str, object], ...],
+) -> None:
+    from app.domain.errors import PersistenceError
+    from app.repositories.operational_paper_capital_authorizations import (
+        _page_rows_and_total,
+    )
+
+    with pytest.raises(PersistenceError):
+        _page_rows_and_total(rows)
+
+
+def test_authorization_list_page_helper_rejects_inconsistent_totals_and_mixed_sentinel() -> None:
+    from app.domain.errors import PersistenceError
+    from app.repositories.operational_paper_capital_authorizations import (
+        _page_rows_and_total,
+    )
+
+    first_id = UUID("00000000-0000-0000-0000-000000000401")
+    second_id = UUID("00000000-0000-0000-0000-000000000402")
+    with pytest.raises(PersistenceError):
+        _page_rows_and_total(())
+    with pytest.raises(PersistenceError):
+        _page_rows_and_total(({"total": 0},))
+    with pytest.raises(PersistenceError):
+        _page_rows_and_total(
+            (
+                {"total": 2, "authorization_id": first_id},
+                {"total": 1, "authorization_id": second_id},
+            )
+        )
+    with pytest.raises(PersistenceError):
+        _page_rows_and_total(
+            (
+                {"total": 1, "authorization_id": None},
+                {"total": 1, "authorization_id": first_id},
+            )
+        )
+    with pytest.raises(PersistenceError):
+        _page_rows_and_total(
+            (
+                {"total": 0, "authorization_id": None},
+                {"total": 0, "authorization_id": None},
+            )
+        )
+
+    assert _page_rows_and_total(({"total": 0, "authorization_id": None},)) == ([], 0)
+    assert _page_rows_and_total(({"total": 7, "authorization_id": None},)) == ([], 7)
+    real_rows = (
+        {"total": 2, "authorization_id": first_id},
+        {"total": 2, "authorization_id": second_id},
+    )
+    assert _page_rows_and_total(real_rows) == (list(real_rows), 2)
+
+
+class _D2QueryAuditCursor:
+    def __init__(self, cursor: object, audit: "_D2QueryAuditDatabase") -> None:
+        self._cursor = cursor
+        self._audit = audit
+
+    async def fetchall(self) -> object:
+        self._audit.fetchall_count += 1
+        return await self._cursor.fetchall()  # type: ignore[attr-defined]
+
+    async def fetchone(self) -> object:
+        self._audit.fetchone_count += 1
+        return await self._cursor.fetchone()  # type: ignore[attr-defined]
+
+
+class _D2QueryAuditConnection:
+    def __init__(self, connection: object, audit: "_D2QueryAuditDatabase") -> None:
+        self._connection = connection
+        self._audit = audit
+
+    async def execute(self, query: object, params: object = None) -> object:
+        self._audit.execute_count += 1
+        self._audit.queries.append((" ".join(str(query).lower().split()), params))
+        cursor = await self._connection.execute(query, params)  # type: ignore[attr-defined]
+        return _D2QueryAuditCursor(cursor, self._audit)
+
+
+class _D2QueryAuditDatabase:
+    def __init__(self, database: Database) -> None:
+        self._database = database
+        self.transaction_count = 0
+        self.execute_count = 0
+        self.fetchall_count = 0
+        self.fetchone_count = 0
+        self.queries: list[tuple[str, object]] = []
+
+    def transaction(self):
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def scope():
+            self.transaction_count += 1
+            async with self._database.transaction() as connection:
+                yield _D2QueryAuditConnection(connection, self)
+
+        return scope()
+
+
+@pytest.mark.parametrize(
+    ("state", "expected_parameters"),
+    (
+        (None, (20, 0)),
+        (OperationalPaperCapitalAuthorizationState.AUTHORIZED, ("AUTHORIZED", 20, 0)),
+    ),
+)
+@pytest.mark.asyncio
+async def test_authorization_repository_list_uses_one_lock_free_read_statement(
+    database: Database,
+    state: OperationalPaperCapitalAuthorizationState | None,
+    expected_parameters: tuple[object, ...],
+) -> None:
+    from app.repositories.operational_paper_capital_authorizations import (
+        PostgresOperationalPaperCapitalAuthorizationRepository,
+    )
+
+    audit_database = _D2QueryAuditDatabase(database)
+    repository = PostgresOperationalPaperCapitalAuthorizationRepository(
+        cast(Database, audit_database)
+    )
+
+    assert await repository.list(
+        limit=20,
+        offset=0,
+        state=state,
+    ) == ([], 0)
+    assert audit_database.transaction_count == 1
+    assert audit_database.execute_count == 1
+    assert audit_database.fetchall_count == 1
+    assert audit_database.fetchone_count == 0
+    assert len(audit_database.queries) == 1
+    query, parameters = audit_database.queries[0]
+    assert parameters == expected_parameters
+    assert query.startswith("with filtered as")
+    assert ("where state = %s" in query) is (state is not None)
+    assert query.count("select count(*) as total") == 1
+    assert "page as" in query
+    assert "total as" in query
+    assert "limit %s offset %s" in query
+    assert "for update" not in query
+    assert "for share" not in query
+    assert "insert into" not in query
+    assert "update public." not in query
+    assert "delete from" not in query
+
+
+def test_authorization_list_pagination_accepts_exact_boundaries() -> None:
+    from app.repositories.operational_paper_capital_authorizations import (
+        _require_pagination,
+    )
+
+    assert _require_pagination(1, 0) == (1, 0)
+    assert _require_pagination(100, (1 << 63) - 1) == (100, (1 << 63) - 1)
+
+
+class _D2StaticListCursor:
+    def __init__(self, rows: list[dict[str, object]]) -> None:
+        self._rows = rows
+
+    async def fetchall(self) -> list[dict[str, object]]:
+        return self._rows
+
+
+class _D2StaticListConnection:
+    def __init__(self, rows: list[dict[str, object]]) -> None:
+        self._rows = rows
+
+    async def execute(self, query: object, params: object = None) -> _D2StaticListCursor:
+        return _D2StaticListCursor(self._rows)
+
+
+class _D2StaticListDatabase:
+    def __init__(self, rows: list[dict[str, object]]) -> None:
+        self._rows = rows
+
+    def transaction(self):
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def scope():
+            yield _D2StaticListConnection(self._rows)
+
+        return scope()
+
+
+@pytest.mark.asyncio
+async def test_authorization_repository_list_rejects_corrupt_reconstructed_row() -> None:
+    from app.domain.errors import PersistenceError
+    from app.repositories.operational_paper_capital_authorizations import (
+        PostgresOperationalPaperCapitalAuthorizationRepository,
+    )
+
+    corrupt_row: dict[str, object] = {
+        "total": 1,
+        "authorization_id": UUID("00000000-0000-0000-0000-000000000501"),
+        "schema_version": 1,
+        "state": "CORRUPT",
+        "record_version": 1,
+        "profile_id": UUID("00000000-0000-0000-0000-000000000502"),
+        "profile_approved_revision": 1,
+        "profile_specification_checksum": "a" * 64,
+        "simulation_id": UUID("00000000-0000-0000-0000-000000000503"),
+        "quote_asset": "USDT",
+        "authorized_capital": Decimal("10"),
+        "authorization_checksum": "b" * 64,
+        "created_by": UUID("00000000-0000-0000-0000-000000000504"),
+        "created_at": BASE_TIME,
+        "revoked_by": None,
+        "revoked_at": None,
+        "create_idempotency_key": "catalog:corrupt-row",
+        "create_intent_fingerprint": "c" * 64,
+    }
+    repository = PostgresOperationalPaperCapitalAuthorizationRepository(
+        cast(Database, _D2StaticListDatabase([corrupt_row]))
+    )
+
+    with pytest.raises(PersistenceError):
+        await repository.list(limit=20, offset=0)
+
+
+class _D2ConcurrentStart:
+    def __init__(self) -> None:
+        import asyncio
+
+        self._lock = asyncio.Lock()
+        self._release = asyncio.Event()
+        self.arrivals = 0
+
+    async def arrive(self) -> None:
+        async with self._lock:
+            self.arrivals += 1
+            if self.arrivals == 2:
+                self._release.set()
+        await self._release.wait()
+
+
+class _D2ConcurrentConnection:
+    def __init__(self, connection: object, start: _D2ConcurrentStart) -> None:
+        self._connection = connection
+        self._start = start
+
+    async def execute(self, query: object, params: object = None) -> object:
+        normalized = " ".join(str(query).lower().split())
+        is_catalog = normalized.startswith("with filtered as")
+        is_revoke_preliminary_read = (
+            normalized.startswith("select simulation_id")
+            and "from public.operational_paper_capital_authorizations" in normalized
+            and "for update" not in normalized
+        )
+        if is_catalog or is_revoke_preliminary_read:
+            await self._start.arrive()
+        return await self._connection.execute(query, params)  # type: ignore[attr-defined]
+
+
+class _D2ConcurrentDatabase:
+    def __init__(self, database: Database, start: _D2ConcurrentStart) -> None:
+        self._database = database
+        self._start = start
+
+    def transaction(self):
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def scope():
+            async with self._database.transaction() as connection:
+                yield _D2ConcurrentConnection(connection, self._start)
+
+        return scope()
+
+
+@pytest.mark.parametrize(
+    "state",
+    (OperationalPaperCapitalAuthorizationState.AUTHORIZED, None),
+)
+@pytest.mark.asyncio
+async def test_authorization_repository_list_concurrent_revoke_has_coherent_snapshot(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+    state: OperationalPaperCapitalAuthorizationState | None,
+) -> None:
+    import asyncio
+
+    from app.repositories.operational_paper_capital_authorizations import (
+        PostgresOperationalPaperCapitalAuthorizationRepository,
+    )
+
+    simulation_id = _d1_seed_simulation(database_url, auth_user_id)
+    authorization_id = UUID("00000000-0000-0000-0000-000000000601")
+    created_at = BASE_TIME + timedelta(seconds=40)
+    _d1_seed_authorization(
+        database_url,
+        auth_user_id,
+        simulation_id=simulation_id,
+        authorization_id=authorization_id,
+        created_at=created_at,
+    )
+
+    start = _D2ConcurrentStart()
+    repository = PostgresOperationalPaperCapitalAuthorizationRepository(
+        cast(Database, _D2ConcurrentDatabase(database, start))
+    )
+    list_result, revoked = await asyncio.wait_for(
+        asyncio.gather(
+            repository.list(limit=100, offset=0, state=state),
+            repository.revoke(
+                authorization_id,
+                expected_record_version=1,
+                actor_id=auth_user_id,
+                now=created_at + timedelta(seconds=1),
+            ),
+        ),
+        timeout=10,
+    )
+
+    page, total = list_result
+    if state is OperationalPaperCapitalAuthorizationState.AUTHORIZED:
+        coherent_outcome = (len(page), total, tuple(item.state for item in page))
+        assert coherent_outcome in {
+            (1, 1, (OperationalPaperCapitalAuthorizationState.AUTHORIZED,)),
+            (0, 0, ()),
+        }
+    else:
+        assert len(page) == total == 1
+        assert page[0].authorization_id == authorization_id
+        assert page[0].state in {
+            OperationalPaperCapitalAuthorizationState.AUTHORIZED,
+            OperationalPaperCapitalAuthorizationState.REVOKED,
+        }
+
+    assert start.arrivals == 2
+    assert revoked.state is OperationalPaperCapitalAuthorizationState.REVOKED
+    assert revoked.record_version == 2
+    persisted = await repository.get(authorization_id)
+    assert persisted is not None
+    assert persisted.state is OperationalPaperCapitalAuthorizationState.REVOKED
+    assert persisted.record_version == 2

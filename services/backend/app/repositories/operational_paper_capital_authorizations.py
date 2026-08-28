@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import NoReturn
@@ -23,6 +23,7 @@ from app.operational_paper_capital_authorizations import (
     InvalidOperationalPaperCapitalAuthorizationSpecificationError,
     OperationalPaperCapitalAuthorization,
     OperationalPaperCapitalAuthorizationActiveProfileConflictError,
+    OperationalPaperCapitalAuthorizationBoundsExceededError,
     OperationalPaperCapitalAuthorizationCreateIntent,
     OperationalPaperCapitalAuthorizationCurrencyMismatchError,
     OperationalPaperCapitalAuthorizationIdempotencyConflictError,
@@ -54,6 +55,8 @@ _CURRENCY_MESSAGES = frozenset(
         "operational_paper_capital_authorization_currency_mismatch",
     }
 )
+
+_POSTGRESQL_BIGINT_MAX = (1 << 63) - 1
 
 
 _AUTHORIZATION_COLUMNS = """
@@ -170,6 +173,60 @@ def _require_uuid(value: object) -> UUID:
     if not isinstance(value, UUID) or value.int == 0:
         raise InvalidOperationalPaperCapitalAuthorizationSpecificationError()
     return value
+
+
+def _require_pagination(limit: object, offset: object) -> tuple[int, int]:
+    if type(limit) is not int or type(offset) is not int:
+        raise InvalidOperationalPaperCapitalAuthorizationSpecificationError()
+    if not 1 <= limit <= 100 or not 0 <= offset <= _POSTGRESQL_BIGINT_MAX:
+        raise OperationalPaperCapitalAuthorizationBoundsExceededError()
+    return limit, offset
+
+
+def _require_state(
+    value: object,
+) -> OperationalPaperCapitalAuthorizationState | None:
+    if value is not None and not isinstance(
+        value,
+        OperationalPaperCapitalAuthorizationState,
+    ):
+        raise InvalidOperationalPaperCapitalAuthorizationSpecificationError()
+    return value
+
+
+def _total_from_row(row: Mapping[str, object] | None) -> int:
+    if row is None:
+        raise PersistenceError()
+    try:
+        total = _integer(row, "total")
+    except TypeError as error:
+        raise PersistenceError() from error
+    if total < 0:
+        raise PersistenceError()
+    return total
+
+
+def _page_rows_and_total(
+    rows: Sequence[Mapping[str, object]],
+) -> tuple[list[Mapping[str, object]], int]:
+    if not rows:
+        raise PersistenceError()
+
+    total = _total_from_row(rows[0])
+    page_rows: list[Mapping[str, object]] = []
+    for row in rows:
+        if _total_from_row(row) != total:
+            raise PersistenceError()
+        try:
+            authorization_id = _value(row, "authorization_id")
+        except TypeError as error:
+            raise PersistenceError() from error
+        if authorization_id is None:
+            if len(rows) != 1:
+                raise PersistenceError()
+            continue
+        page_rows.append(row)
+    return page_rows, total
 
 
 def _canonical_intent(
@@ -294,6 +351,51 @@ class PostgresOperationalPaperCapitalAuthorizationRepository:
             _raise_authorization_database_error(error)
 
         return None if row is None else operational_paper_capital_authorization_from_row(row)
+
+    async def list(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        state: OperationalPaperCapitalAuthorizationState | None = None,
+    ) -> tuple[list[OperationalPaperCapitalAuthorization], int]:
+        """Return one bounded newest-first authorization page and its matching total."""
+
+        limit, offset = _require_pagination(limit, offset)
+        state = _require_state(state)
+        where_clause = "" if state is None else "where state = %s"
+        filter_parameters: tuple[object, ...] = () if state is None else (state.value,)
+        try:
+            async with self._database.transaction() as connection:
+                cursor = await connection.execute(
+                    f"""
+                    with filtered as (
+                        select {_AUTHORIZATION_COLUMNS}
+                        from public.operational_paper_capital_authorizations
+                        {where_clause}
+                    ),
+                    page as (
+                        select *
+                        from filtered
+                        order by created_at desc, authorization_id desc
+                        limit %s offset %s
+                    ),
+                    total as (
+                        select count(*) as total
+                        from filtered
+                    )
+                    select total.total, page.*
+                    from total
+                    left join page on true
+                    order by page.created_at desc, page.authorization_id desc
+                    """,  # noqa: S608 - where_clause is a closed internal fragment.
+                    (*filter_parameters, limit, offset),
+                )
+                rows, total = _page_rows_and_total(await cursor.fetchall())
+        except Error as error:
+            _raise_authorization_database_error(error)
+
+        return [operational_paper_capital_authorization_from_row(row) for row in rows], total
 
     async def create(
         self,
