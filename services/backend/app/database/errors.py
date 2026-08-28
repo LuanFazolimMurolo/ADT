@@ -13,6 +13,9 @@ from app.domain.errors import (
     PersistenceUnavailableError,
     SimulationNotFoundError,
 )
+from app.operational_paper_capital_authorizations.errors import (
+    OperationalPaperCapitalReservationConflictError,
+)
 
 _INVALID_FINANCIAL_CONSTRAINTS = frozenset(
     {
@@ -33,11 +36,21 @@ _INITIAL_CAPITAL_MESSAGES = (
     "INITIAL_CAPITAL must equal",
 )
 
+_RESERVATION_CONFLICT_MESSAGES = frozenset(
+    {
+        "capital_movement_would_violate_authorized_reservations",
+        "simulation_terminalization_blocked_by_authorized_capital",
+    }
+)
+
 
 def raise_domain_error(error: Error) -> NoReturn:
     """Raise a safe domain error for a known PostgreSQL failure."""
     constraint_name = error.diag.constraint_name
     primary_message = error.diag.message_primary or ""
+
+    if primary_message in _RESERVATION_CONFLICT_MESSAGES:
+        raise OperationalPaperCapitalReservationConflictError() from error
 
     if isinstance(error, (OperationalError, InterfaceError)):
         raise PersistenceUnavailableError() from error

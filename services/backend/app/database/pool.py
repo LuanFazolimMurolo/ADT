@@ -12,6 +12,32 @@ from app.domain.errors import PersistenceUnavailableError
 
 DatabaseConnection: TypeAlias = AsyncConnection[DictRow]
 
+_PERSISTENCE_UNAVAILABLE_SQLSTATE_PREFIXES = (
+    "08",
+    "53",
+    "58",
+    "F0",
+)
+
+_PERSISTENCE_UNAVAILABLE_SQLSTATES = frozenset(
+    {
+        "57P01",
+        "57P02",
+        "57P03",
+        "57P04",
+    }
+)
+
+
+def _is_persistence_unavailable_operational_error(error: OperationalError) -> bool:
+    """Classify operational failures that represent persistence unavailability."""
+    sqlstate = error.sqlstate
+    return (
+        sqlstate is None
+        or sqlstate.startswith(_PERSISTENCE_UNAVAILABLE_SQLSTATE_PREFIXES)
+        or sqlstate in _PERSISTENCE_UNAVAILABLE_SQLSTATES
+    )
+
 
 class Database:
     """Own the backend PostgreSQL pool and its lifecycle."""
@@ -69,8 +95,12 @@ class Database:
             async with self._pool.connection() as connection:
                 async with connection.transaction():
                     yield connection
-        except (OperationalError, InterfaceError, PoolTimeout, PoolClosed) as error:
+        except (InterfaceError, PoolTimeout, PoolClosed) as error:
             raise PersistenceUnavailableError() from error
+        except OperationalError as error:
+            if _is_persistence_unavailable_operational_error(error):
+                raise PersistenceUnavailableError() from error
+            raise
 
     async def health_check(self) -> bool:
         """Check database availability without exposing connection details."""
