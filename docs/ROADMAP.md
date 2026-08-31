@@ -865,13 +865,14 @@ through an authenticated control plane without executing long-running work in
 HTTP requests.
 
 **Status**: Active. Tracks 7-01 through 7-07 are complete, closed and integrated
-into `main`. Track 7-07's validated implementation milestone is
-`d0eb7f6c07df5a9dee5fcd46855eb3290c2cf75b`, its integrated delivery milestone
-is `0eeffece564a7283b44574842cd498282e004f93`, and its final closure record is
-`e87c96fe1c756881587d49831ad247bb21a5a92b`. Track 7-08 — Operational Paper Capital Authorization Foundation —
-is selected from that exact baseline. Gate 1 freezes the capital-authority
-boundary before any implementation or migration is introduced. Phase 7 as a
-whole remains active. The exact current handoff is maintained in
+into `main`. Track 7-08 — Operational Paper Capital Authorization Foundation —
+is the active Gate 5 closure candidate from starting baseline
+`e87c96fe1c756881587d49831ad247bb21a5a92b`. Its validated implementation
+milestone is `4aef702d5c2e46b513d4892948f2ca51a3333e0e` at tree
+`8dcd1507c5cc1a5a7572e40a3a3949a1565cca00`; Gates 1 through 4 are published
+and the Gate 5 technical closure matrix passed. Documentation publication and
+separately authorized integration into `main` remain pending. Phase 7 remains
+active. The exact current handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
@@ -885,7 +886,7 @@ whole remains active. The exact current handoff is maintained in
 - [x] Submit and monitor bounded market-data synchronization operations
 - [ ] Start, pause, resume and stop durable collectors and paper runners
 - [x] Reconcile abandoned work after restart
-- [ ] Authorize and reserve administrative paper capital for exact approved
+- [x] Authorize and reserve administrative paper capital for exact approved
       operational paper-session profiles
 - [ ] Materialize an approved profile plus authoritative capital into the
       existing immutable local `PaperSessionConfig`
@@ -1448,8 +1449,11 @@ Accepted architecture decision:
 
 ### 7-08 — Operational Paper Capital Authorization Foundation 🚧
 
-**Status**: Active — Gate 1 architecture authority model accepted; implementation
-has not started.
+**Status**: **ACTIVE — GATE 5 CLOSURE CANDIDATE**. Gates 1 through 4 are
+implemented and remotely published. Gate 5's technical closure matrix passed
+against implementation milestone
+`4aef702d5c2e46b513d4892948f2ca51a3333e0e`. Documentation publication and
+separately authorized pure fast-forward integration into `main` remain pending.
 
 Starting `main` baseline:
 `e87c96fe1c756881587d49831ad247bb21a5a92b`.
@@ -1457,42 +1461,63 @@ Starting `main` baseline:
 Starting tree:
 `f63ab069fc0fa00c59d34dd406df8e0c464c04f9`.
 
+Validated implementation milestone:
+`4aef702d5c2e46b513d4892948f2ca51a3333e0e`.
+
+Validated implementation tree:
+`8dcd1507c5cc1a5a7572e40a3a3949a1565cca00`.
+
 **Goal**:
 
-Create a durable, authenticated and auditable administrator-authorized paper
-capital binding from the existing Phase 1 simulated-capital ledger to one exact
-approved `OperationalPaperSessionProfile`, without materializing or running a
-paper session.
+Create durable administrator-authorized paper-capital reservation/binding from
+the authoritative Phase 1 simulated-capital ledger to one exact approved
+`OperationalPaperSessionProfile`, without materializing or running a paper
+session.
 
 **Gate progress**:
 
 - Gate 1 — Architecture & Capital Authority Model: **ACCEPTED / CLOSED**;
 - Gate 1A — Boundary Amendment: **NOT REQUIRED**;
-- Gate 2A — Pure Domain Contract: **NOT STARTED**;
-- Gate 2B — PostgreSQL Persistence & Ledger Integration: **NOT STARTED**;
-- Gate 2C — PostgreSQL Repository Contract: **NOT STARTED**;
-- Gate 2D — Bounded Capital Query Completion: **NOT STARTED**;
-- Gate 2E — Application Service: **NOT STARTED**;
-- Gate 3 — Protected Administrator API: **NOT STARTED**;
-- Gate 4 — Protected Administrative Frontend: **NOT STARTED**;
-- Gate 5 — Integration and Closure: **NOT STARTED**.
+- Gate 2A — Pure Domain Contract: **CLOSED / PASS**;
+- Gate 2B — PostgreSQL Persistence & Ledger Integration: **CLOSED / PASS**;
+- Gate 2C — PostgreSQL Repository Contract: **PUBLISHED / CLOSED / PASS**;
+- Gate 2D — Bounded Capital Query Completion: **PUBLISHED / CLOSED / PASS**;
+- Gate 2E — Application Service: **PUBLISHED / CLOSED / PASS**;
+- Gate 3 — Protected Administrator API: **PUBLISHED / CLOSED / PASS**;
+- Gate 4 — Protected Administrative Frontend: **PUBLISHED / CLOSED / PASS**;
+- Gate 5 — Integration and Closure: **TECHNICAL CLOSURE MATRIX PASS /
+  DOCUMENTATION AND MAIN INTEGRATION PENDING**.
 
-**Expected migration**: YES.
+**Gate 5 technical evidence**:
 
-The existing Phase 1 ledger remains authoritative for gross simulated capital.
-7-08 adds reservation/binding authority only; it creates no second ledger and
-no runnable paper session.
+- targeted backend: **232 passed**;
+- full backend: **3,414 passed, 1 expected skip, 0 failed, 88% coverage**;
+- OpenAPI deterministic;
+- full frontend: **276 passed**;
+- production build and final bundle budget: **PASS**;
+- Playwright: **56 passed**;
+- cross-layer, decimal, idempotency, concurrency and runtime-boundary audits:
+  **PASS**.
+
+**Migration status**: **VERSIONED / REMOTELY UNAPPLIED**.
+
+`supabase/migrations/20260827000000_phase_7_08_operational_paper_capital_authorizations.sql`
+
+Remote Supabase application remains separately reviewed operational work.
+
+The existing Phase 1 ledger remains authoritative. 7-08 adds capital
+reservation/binding authority only; it does not create another ledger.
 
 **Explicitly out of scope**:
 
-- local `PaperSessionConfig` materialization;
+- `PaperSessionConfig` materialization;
 - deterministic local `session_id`;
-- paper-session file publication or replay;
-- runner or collector lifecycle;
-- trade PnL settlement;
+- paper-session file publication;
+- runner/collector lifecycle;
+- strategy/session execution;
+- trade/PnL settlement;
 - ADT Official Portfolio and capital eras;
-- public portfolio projections;
-- machine learning, Telegram, SaaS, deployment expansion and real-capital execution.
+- real-capital execution.
 
 Accepted architecture decision:
 [`docs/adr/0003-phase-7-08-operational-paper-capital-authorization-authority.md`](./adr/0003-phase-7-08-operational-paper-capital-authorization-authority.md)

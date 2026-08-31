@@ -1,6 +1,6 @@
 # ADT Current Development Handoff
 
-Last updated: 2026-08-27
+Last updated: 2026-08-31
 
 ## Current branch
 
@@ -18,7 +18,8 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Current delivery
 
-**7-08 — Operational Paper Capital Authorization Foundation — ACTIVE**
+**7-08 — Operational Paper Capital Authorization Foundation — ACTIVE /
+GATE 5 CLOSURE CANDIDATE**
 
 Starting `main` baseline:
 
@@ -28,73 +29,63 @@ Starting baseline tree:
 
 `f63ab069fc0fa00c59d34dd406df8e0c464c04f9`
 
-The post-7-07 selection audit passed. 7-08 is selected because the approved
-`OperationalPaperSessionProfile` deliberately contains no capital while the
-existing immutable local `PaperSessionConfig` requires initial simulated
-capital as an identity-bearing input.
+Validated 7-08 implementation milestone:
 
-Gate 1 freezes a separate capital-authorization aggregate rather than creating
-a second ledger or prematurely materializing a paper session.
+`4aef702d5c2e46b513d4892948f2ca51a3333e0e`
+
+Validated implementation tree:
+
+`8dcd1507c5cc1a5a7572e40a3a3949a1565cca00`
+
+Gates 1 through 4 are implemented and remotely published at the validated
+feature milestone. Gate 5's complete technical closure matrix passed against
+those exact bytes. The remaining work is protected documentation publication
+followed by separately authorized pure fast-forward integration into `main`.
 
 Gate progress:
 
 - Gate 1 — Architecture & Capital Authority Model: **ACCEPTED / CLOSED**;
 - Gate 1A — Boundary Amendment: **NOT REQUIRED**;
-- Gate 2A — Pure Domain Contract: **NOT STARTED**;
-- Gate 2B — PostgreSQL Persistence & Ledger Integration: **NOT STARTED**;
-- Gate 2C — PostgreSQL Repository Contract: **NOT STARTED**;
-- Gate 2D — Bounded Capital Query Completion: **NOT STARTED**;
-- Gate 2E — Application Service: **NOT STARTED**;
-- Gate 3 — Protected Administrator API: **NOT STARTED**;
-- Gate 4 — Protected Administrative Frontend: **NOT STARTED**;
-- Gate 5 — Integration and Closure: **NOT STARTED**.
+- Gate 2A — Pure Domain Contract: **CLOSED / PASS**;
+- Gate 2B — PostgreSQL Persistence & Ledger Integration: **CLOSED / PASS**;
+- Gate 2C — PostgreSQL Repository Contract: **PUBLISHED / CLOSED / PASS**;
+- Gate 2D — Bounded Capital Query Completion: **PUBLISHED / CLOSED / PASS**;
+- Gate 2E — Application Service: **PUBLISHED / CLOSED / PASS**;
+- Gate 3 — Protected Administrator API: **PUBLISHED / CLOSED / PASS**;
+- Gate 4 — Protected Administrative Frontend: **PUBLISHED / CLOSED / PASS**;
+- Gate 5 — Integration and Closure: **TECHNICAL CLOSURE MATRIX PASS /
+  DOCUMENTATION AND MAIN INTEGRATION PENDING**.
 
-Accepted architecture:
+Gate 5 technical closure evidence:
 
-```text
-simulation_runs + capital_movements
-    -> authoritative gross simulated balance
-    -> OperationalPaperCapitalAuthorization
-    -> exact approved OperationalPaperSessionProfile
-    -> future materialization authority/version
-    -> existing immutable local PaperSessionConfig
-    -> deterministic local session_id
-```
+- targeted 7-08 backend: **232 passed, 0 failed**;
+- full backend: **3,414 passed, 1 expected opt-in network skip, 0 failed,
+  88% coverage**;
+- OpenAPI determinism: **PASS**, SHA-256
+  `e9b2ce7ee862d4e5bbd4f34abb0dc904017ac32447c670d9904a17d21d39f877`;
+- full frontend Vitest: **32 files, 276 passed, 0 failed**;
+- production frontend build and final bundle budget: **PASS**;
+- full Playwright Chromium: **56 passed, 0 failed**;
+- migration, ledger reservation, authorization, concurrency, idempotency,
+  decimal-string, cross-layer and runtime-boundary audits: **PASS**; and
+- the implementation milestone remained byte-clean after validation.
 
-The Phase 1 ledger remains authoritative for gross balance.
-`OperationalPaperCapitalAuthorization` is reservation and binding authority
-only; it does not create a capital movement or a second ledger.
+Migration status: **VERSIONED / REMOTELY UNAPPLIED**.
 
-Gross, reserved and available capital are derived server-side. Active
-authorizations may not exceed authoritative ledger balance, and
-balance-decreasing ledger mutations may not consume reserved capital.
+Migration:
 
-One profile may have at most one AUTHORIZED authorization. Lifecycle is
-`AUTHORIZED -> REVOKED`, with revoked history retained. Profile archival does
-not silently release reserved capital; explicit revocation is required.
+`supabase/migrations/20260827000000_phase_7_08_operational_paper_capital_authorizations.sql`
 
-An ACTIVE simulation with an AUTHORIZED operational paper-capital reservation
-cannot become terminal until its active authorization is revoked.
+Remote Supabase application remains separately controlled operational work and
+is not required for Gate 5 closure.
 
-An authorization binds the exact approved profile revision/checksum,
-`simulation_id`, quote asset and authorized capital. Simulation currency and
-profile quote asset must match exactly.
+The Phase 1 simulated-capital ledger remains authoritative for gross capital.
+7-08 provides reservation/binding authority only and creates no second ledger.
 
-Create is actor-scoped and idempotent. Exact committed replay is resolved
-before mutable balance/profile revalidation. The authorization checksum
-excludes actors, timestamps, lifecycle state and `record_version`.
-
-Expected migration: **YES**.
-
-No 7-08 migration or production implementation exists yet.
-
-7-08 remains categorically non-materializing and non-running. It creates no
-`PaperSessionConfig`, derives no `session_id`, publishes no local paper files,
-executes no strategy, controls no runner/collector and performs no trade PnL
-settlement.
-
-ADT Official Portfolio, capital eras, public portfolio projections and
-real-capital execution remain outside this delivery.
+7-08 remains non-materializing and non-running. It creates no
+`PaperSessionConfig`, derives no local `session_id`, publishes no local
+paper-session files, executes no strategy, controls no runner/collector and
+performs no trade/PnL settlement.
 
 Accepted architecture record:
 [`docs/adr/0003-phase-7-08-operational-paper-capital-authorization-authority.md`](./adr/0003-phase-7-08-operational-paper-capital-authorization-authority.md)
@@ -122,7 +113,11 @@ Previously closed Phase 7 deliveries remain closed:
 
 ## Last validated implementation milestone
 
-`d0eb7f6c07df5a9dee5fcd46855eb3290c2cf75b`
+`4aef702d5c2e46b513d4892948f2ca51a3333e0e`
+
+## Validated 7-08 candidate tree
+
+`8dcd1507c5cc1a5a7572e40a3a3949a1565cca00`
 
 ## Integrated 7-07 delivery milestone
 
