@@ -1218,6 +1218,207 @@ describe("ApiClient", () => {
     ]);
   });
 
+  it("consulta autorizações de capital paper com query, detalhe codificado e decimal string", async () => {
+    const authorization = {
+      authorization_id: "33333333-3333-4333-8333-333333333333",
+      schema_version: 1,
+      state: "AUTHORIZED",
+      record_version: 1,
+      profile_binding: {
+        profile_id: "11111111-1111-4111-8111-111111111111",
+        approved_revision: 7,
+        specification_checksum: "a".repeat(64),
+      },
+      simulation_id: "22222222-2222-4222-8222-222222222222",
+      quote_asset: "USDT",
+      authorized_capital: "100.12345678",
+      authorization_checksum: "b".repeat(64),
+      created_by: "44444444-4444-4444-8444-444444444444",
+      created_at: "2026-08-30T12:00:00Z",
+      revoked_by: null,
+      revoked_at: null,
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          items: [authorization],
+          limit: 20,
+          offset: 0,
+          total: 1,
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          items: [authorization],
+          limit: 10,
+          offset: 30,
+          total: 1,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(200, authorization));
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "capital-token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    const defaultPage =
+      await client.listOperationalPaperCapitalAuthorizations();
+    await client.listOperationalPaperCapitalAuthorizations({
+      limit: 10,
+      offset: 30,
+      state: "REVOKED",
+    });
+    const detail =
+      await client.getOperationalPaperCapitalAuthorization("authorization/id");
+
+    const authorizedCapital: string = defaultPage.items[0].authorized_capital;
+    expect(authorizedCapital).toBe("100.12345678");
+    expect(detail.authorized_capital).toBe("100.12345678");
+    expect(detail).not.toHaveProperty("create_idempotency_key");
+    expect(detail).not.toHaveProperty("create_intent_fingerprint");
+
+    const urls = fetchMock.mock.calls.map((call) => new URL(call[0] as string));
+    expect(urls.map((url) => `${url.pathname}${url.search}`)).toEqual([
+      "/api/v1/admin/operational-paper-capital-authorizations",
+      "/api/v1/admin/operational-paper-capital-authorizations?limit=10&offset=30&state=REVOKED",
+      "/api/v1/admin/operational-paper-capital-authorizations/authorization%2Fid",
+    ]);
+    for (const call of fetchMock.mock.calls) {
+      expect(call[1]?.method).toBeUndefined();
+      expect((call[1]?.headers as Headers).get("Authorization")).toBe(
+        "Bearer capital-token",
+      );
+    }
+  });
+
+  it("envia criação e revogação de capital paper com payloads exatos", async () => {
+    const authorization = {
+      authorization_id: "33333333-3333-4333-8333-333333333333",
+      schema_version: 1,
+      state: "AUTHORIZED",
+      record_version: 1,
+      profile_binding: {
+        profile_id: "11111111-1111-4111-8111-111111111111",
+        approved_revision: 7,
+        specification_checksum: "a".repeat(64),
+      },
+      simulation_id: "22222222-2222-4222-8222-222222222222",
+      quote_asset: "USDT",
+      authorized_capital: "100.12345678",
+      authorization_checksum: "b".repeat(64),
+      created_by: "44444444-4444-4444-8444-444444444444",
+      created_at: "2026-08-30T12:00:00Z",
+      revoked_by: null,
+      revoked_at: null,
+    };
+    const createPayload = {
+      intent: {
+        profile_binding: authorization.profile_binding,
+        simulation_id: authorization.simulation_id,
+        quote_asset: authorization.quote_asset,
+        authorized_capital: "100.12345678",
+      },
+      idempotency_key: "capital-intent-key",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(201, authorization))
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          ...authorization,
+          state: "REVOKED",
+          record_version: 2,
+          revoked_by: "44444444-4444-4444-8444-444444444444",
+          revoked_at: "2026-08-30T13:00:00Z",
+        }),
+      );
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "mutation-token",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    const created =
+      await client.createOperationalPaperCapitalAuthorization(createPayload);
+    const revoked = await client.revokeOperationalPaperCapitalAuthorization(
+      "authorization/id",
+      { expected_record_version: 1 },
+    );
+
+    expect(created.authorized_capital).toBe("100.12345678");
+    expect(revoked.authorized_capital).toBe("100.12345678");
+    expect(
+      fetchMock.mock.calls.map((call) => [
+        new URL(call[0] as string).pathname,
+        call[1]?.method,
+        JSON.parse(String(call[1]?.body)),
+      ]),
+    ).toEqual([
+      [
+        "/api/v1/admin/operational-paper-capital-authorizations",
+        "POST",
+        createPayload,
+      ],
+      [
+        "/api/v1/admin/operational-paper-capital-authorizations/authorization%2Fid/revoke",
+        "POST",
+        { expected_record_version: 1 },
+      ],
+    ]);
+    const serializedCreate = JSON.parse(
+      String(fetchMock.mock.calls[0]?.[1]?.body),
+    );
+    expect(serializedCreate.intent.authorized_capital).toBe("100.12345678");
+    expect(serializedCreate).not.toHaveProperty("created_by");
+    expect(serializedCreate).not.toHaveProperty("actor_id");
+    expect(serializedCreate).not.toHaveProperty("administrator_id");
+    expect(serializedCreate).not.toHaveProperty("create_idempotency_key");
+    expect(serializedCreate).not.toHaveProperty("create_intent_fingerprint");
+    for (const call of fetchMock.mock.calls) {
+      expect((call[1]?.headers as Headers).get("Authorization")).toBe(
+        "Bearer mutation-token",
+      );
+    }
+  });
+
+  it.each([401, 409])(
+    "não repete criação de autorização de capital paper após %i",
+    async (status) => {
+      const refreshAccessToken = vi.fn();
+      const fetchMock = vi.fn().mockResolvedValue(
+        jsonResponse(status, {
+          error: { code: `capital_${status}`, message: "Conflito seguro." },
+        }),
+      );
+      const client = new ApiClient({
+        baseUrl: "http://api.test",
+        getAccessToken: async () => "token",
+        refreshAccessToken,
+        fetchImplementation: fetchMock as typeof fetch,
+      });
+
+      await expect(
+        client.createOperationalPaperCapitalAuthorization({
+          intent: {
+            profile_binding: {
+              profile_id: "11111111-1111-4111-8111-111111111111",
+              approved_revision: 7,
+              specification_checksum: "a".repeat(64),
+            },
+            simulation_id: "22222222-2222-4222-8222-222222222222",
+            quote_asset: "USDT",
+            authorized_capital: "100.12345678",
+          },
+          idempotency_key: "capital-intent-key",
+        }),
+      ).rejects.toMatchObject({ status });
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(refreshAccessToken).not.toHaveBeenCalled();
+    },
+  );
+
   it("consulta descoberta administrativa de estratégias com query exata", async () => {
     const fetchMock = vi
       .fn()

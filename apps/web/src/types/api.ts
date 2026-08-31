@@ -175,6 +175,23 @@ export type OperationalMandateList =
 export type OperationalMandateRevisionList =
   ApiSchemas["OperationalMandateRevisionListResponse"];
 
+export type OperationalPaperCapitalAuthorizationState =
+  ApiSchemas["OperationalPaperCapitalAuthorizationState"];
+export type OperationalPaperCapitalAuthorizationProfileBinding =
+  ApiSchemas["OperationalPaperCapitalAuthorizationProfileBindingResponse"];
+export type OperationalPaperCapitalAuthorization =
+  ApiSchemas["OperationalPaperCapitalAuthorizationResponse"];
+export type OperationalPaperCapitalAuthorizationList =
+  ApiSchemas["OperationalPaperCapitalAuthorizationListResponse"];
+export type OperationalPaperCapitalAuthorizationProfileBindingRequest =
+  ApiSchemas["OperationalPaperCapitalAuthorizationProfileBindingRequest"];
+export type OperationalPaperCapitalAuthorizationIntentRequest =
+  ApiSchemas["OperationalPaperCapitalAuthorizationIntentRequest"];
+export type OperationalPaperCapitalAuthorizationCreateRequest =
+  ApiSchemas["OperationalPaperCapitalAuthorizationCreateRequest"];
+export type OperationalPaperCapitalAuthorizationRevokeRequest =
+  ApiSchemas["OperationalPaperCapitalAuthorizationRevokeRequest"];
+
 export type OperationalPaperSessionProfileState =
   ApiSchemas["OperationalPaperSessionProfileState"];
 export type OperationalPaperSessionProfileIntentRequest =

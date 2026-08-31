@@ -26,6 +26,11 @@ import type {
   OperationalMandateRevision,
   OperationalMandateRevisionList,
   OperationalMandateState,
+  OperationalPaperCapitalAuthorization,
+  OperationalPaperCapitalAuthorizationCreateRequest,
+  OperationalPaperCapitalAuthorizationList,
+  OperationalPaperCapitalAuthorizationRevokeRequest,
+  OperationalPaperCapitalAuthorizationState,
   OperationalPaperSessionProfile,
   OperationalPaperSessionProfileApproveRequest,
   OperationalPaperSessionProfileArchiveRequest,
@@ -191,6 +196,12 @@ export interface OperationalMandateListQuery {
 export interface OperationalMandateRevisionListQuery {
   limit?: number;
   offset?: number;
+}
+
+export interface OperationalPaperCapitalAuthorizationListQuery {
+  limit?: number;
+  offset?: number;
+  state?: OperationalPaperCapitalAuthorizationState;
 }
 
 export interface OperationalPaperSessionProfileListQuery {
@@ -549,6 +560,46 @@ export class ApiClient {
   ): Promise<OperationalMandate> {
     return this.request(
       `/api/v1/admin/operational-mandates/${encodeURIComponent(mandateId)}/archive`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  }
+
+  listOperationalPaperCapitalAuthorizations(
+    query: OperationalPaperCapitalAuthorizationListQuery = {},
+  ): Promise<OperationalPaperCapitalAuthorizationList> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    appendQueryValue(params, "state", query.state);
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request(
+      `/api/v1/admin/operational-paper-capital-authorizations${suffix}`,
+    );
+  }
+
+  getOperationalPaperCapitalAuthorization(
+    authorizationId: string,
+  ): Promise<OperationalPaperCapitalAuthorization> {
+    return this.request(
+      `/api/v1/admin/operational-paper-capital-authorizations/${encodeURIComponent(authorizationId)}`,
+    );
+  }
+
+  createOperationalPaperCapitalAuthorization(
+    payload: OperationalPaperCapitalAuthorizationCreateRequest,
+  ): Promise<OperationalPaperCapitalAuthorization> {
+    return this.request(
+      "/api/v1/admin/operational-paper-capital-authorizations",
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  }
+
+  revokeOperationalPaperCapitalAuthorization(
+    authorizationId: string,
+    payload: OperationalPaperCapitalAuthorizationRevokeRequest,
+  ): Promise<OperationalPaperCapitalAuthorization> {
+    return this.request(
+      `/api/v1/admin/operational-paper-capital-authorizations/${encodeURIComponent(authorizationId)}/revoke`,
       { method: "POST", body: JSON.stringify(payload) },
     );
   }
