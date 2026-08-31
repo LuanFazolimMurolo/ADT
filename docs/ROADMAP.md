@@ -865,15 +865,11 @@ through an authenticated control plane without executing long-running work in
 HTTP requests.
 
 **Status**: Active. Tracks 7-01 through 7-08 are complete, closed and integrated
-into `main`. Track 7-08 — Operational Paper Capital Authorization Foundation —
-has validated implementation milestone
-`4aef702d5c2e46b513d4892948f2ca51a3333e0e` and integrated delivery milestone
-`13374fd99ac4b72fa2e205a3de3c3991ae0a73bb` at integrated tree
-`73abf7c39ed6a746a037b93e781c5eb7ab4570a5`. Its Gate 5 technical closure
-matrix passed, the documentation candidate was published, and `main` was
-advanced by verified pure fast-forward. Independent GitHub verification
-confirmed remote `main` and feature identical. Phase 7 remains active. The
-exact current handoff is maintained in
+into `main`. Track 7-09 — Operational Paper Session Materialization Foundation —
+is active from exact baseline `cb74c810c345c2981a4c2ca15c76acd76d0724a2`.
+Its post-7-08 selection R0 passed and Gate 1 accepted the materialization
+authority and provenance model. Implementation has not started. Phase 7 remains
+active. The exact current handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
@@ -902,6 +898,30 @@ exact current handoff is maintained in
 **Dependencies**: Phase 6 complete
 **Estimated Duration**: 4 weeks
 **Blockers**: Reviewed PostgreSQL operational migrations and persistent worker host
+
+### 7-09 — Operational Paper Session Materialization Foundation 🚧
+
+**Status**: ACTIVE — selection R0 closed and Gate 1 architecture accepted locally. Implementation has not started.
+
+**Goal**: Materialize one exact approved operational paper-session profile plus its authoritative capital authorization into the existing immutable local `PaperSessionConfig`, while preserving existing deterministic `config_checksum` and `session_id` semantics.
+
+**Accepted Gate 1 boundary**:
+
+- PostgreSQL `OperationalPaperSessionMaterialization` owns durable operational provenance and reconciliation state;
+- the existing paper filesystem remains authoritative for canonical executable config bytes and deterministic local `session_id`;
+- `materialization_id`, `authorization_id` and other operational UUIDs remain distinct from `session_id`;
+- at most one materialization aggregate exists per authorization;
+- the initial lifecycle is `PREPARED -> MATERIALIZED`;
+- new PREPARED creation requires current AUTHORIZED capital, APPROVED exact profile and mandate, and ACTIVE simulation authority;
+- authorized capital is copied exactly as `Decimal` without float conversion;
+- the approved frozen strategy snapshot is preserved rather than silently replaced by a newer mutable definition; and
+- post-PREPARED reconciliation may finish exact publication after later authority lifecycle changes, but this grants no runner execution authority.
+
+**Expected migration**: Yes. Gate 2B will define the PostgreSQL persistence schema. No 7-09 migration exists yet and remote Supabase remains untouched.
+
+**Explicitly out of scope**: paper-runner execution or lifecycle control, collector control, `state.json`, RAW synchronization or scanning, Binance/network work, trading execution, orders/fills, PnL settlement, trading-horizon labels, ADT Official Portfolio and real capital.
+
+**Architecture record**: [`docs/adr/0004-phase-7-09-operational-paper-session-materialization-authority.md`](./adr/0004-phase-7-09-operational-paper-session-materialization-authority.md)
 
 ### 7-02 — Market Operation Administrative Console ✅
 

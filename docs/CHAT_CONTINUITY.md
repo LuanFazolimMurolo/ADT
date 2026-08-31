@@ -4,7 +4,7 @@ Last updated: 2026-08-31
 
 ## Current branch
 
-`feat/phase-7-08-operational-paper-capital-authorization-foundation`
+`feat/phase-7-09-operational-paper-session-materialization-foundation`
 
 At the start of every session, verify the local branch and HEAD, then inspect
 the corresponding remote branch. This file records the intended handoff; Git
@@ -18,80 +18,27 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Current delivery
 
-**7-08 — Operational Paper Capital Authorization Foundation — COMPLETE /
-CLOSED**
+**7-09 — Operational Paper Session Materialization Foundation — ACTIVE / GATE 1 ACCEPTED**
 
-Starting `main` baseline:
+Starting main baseline: `cb74c810c345c2981a4c2ca15c76acd76d0724a2`.
 
-`e87c96fe1c756881587d49831ad247bb21a5a92b`
+Starting tree: `f7e39c850d1a848ef27c7fdf2343c3c4f54ae262`.
 
-Starting baseline tree:
+Selection R0: **CLOSED / PASS**.
 
-`f63ab069fc0fa00c59d34dd406df8e0c464c04f9`
+Gate 1 — Materialization Authority & Provenance Model: **ACCEPTED / CLOSED LOCALLY**.
 
-Validated 7-08 implementation milestone:
+Gate 2A — Pure Domain Contract: **NOT STARTED**.
 
-`4aef702d5c2e46b513d4892948f2ca51a3333e0e`
+Accepted model: durable PostgreSQL `OperationalPaperSessionMaterialization` provenance plus the existing immutable local `PaperSessionConfig` and deterministic `session_id`.
 
-Validated implementation tree:
+Initial lifecycle: `PREPARED -> MATERIALIZED`.
 
-`8dcd1507c5cc1a5a7572e40a3a3949a1565cca00`
+Phase 7-09 expects a new PostgreSQL migration, to be defined by Gate 2B. No migration exists yet.
 
-Gates 1 through 4 were implemented and remotely published at the validated
-feature milestone. Gate 5's complete technical closure matrix passed against
-those exact bytes. The documentation closure candidate was published and
-`main` was then advanced by verified pure fast-forward to integrated milestone
-`13374fd99ac4b72fa2e205a3de3c3991ae0a73bb`. Independent GitHub verification
-confirmed remote `main` and the feature identical at tree
-`73abf7c39ed6a746a037b93e781c5eb7ab4570a5`. Gate 5 and 7-08 are closed.
-Phase 7 remains active.
+The delivery is materializing but non-running: no run_once, runner/collector control, state.json publication, RAW processing, Binance access, strategy execution, orders/fills or PnL settlement.
 
-Gate progress:
-
-- Gate 1 — Architecture & Capital Authority Model: **ACCEPTED / CLOSED**;
-- Gate 1A — Boundary Amendment: **NOT REQUIRED**;
-- Gate 2A — Pure Domain Contract: **CLOSED / PASS**;
-- Gate 2B — PostgreSQL Persistence & Ledger Integration: **CLOSED / PASS**;
-- Gate 2C — PostgreSQL Repository Contract: **PUBLISHED / CLOSED / PASS**;
-- Gate 2D — Bounded Capital Query Completion: **PUBLISHED / CLOSED / PASS**;
-- Gate 2E — Application Service: **PUBLISHED / CLOSED / PASS**;
-- Gate 3 — Protected Administrator API: **PUBLISHED / CLOSED / PASS**;
-- Gate 4 — Protected Administrative Frontend: **PUBLISHED / CLOSED / PASS**;
-- Gate 5 — Integration and Closure: **CLOSED / PASS**.
-
-Gate 5 technical closure evidence:
-
-- targeted 7-08 backend: **232 passed, 0 failed**;
-- full backend: **3,414 passed, 1 expected opt-in network skip, 0 failed,
-  88% coverage**;
-- OpenAPI determinism: **PASS**, SHA-256
-  `e9b2ce7ee862d4e5bbd4f34abb0dc904017ac32447c670d9904a17d21d39f877`;
-- full frontend Vitest: **32 files, 276 passed, 0 failed**;
-- production frontend build and final bundle budget: **PASS**;
-- full Playwright Chromium: **56 passed, 0 failed**;
-- migration, ledger reservation, authorization, concurrency, idempotency,
-  decimal-string, cross-layer and runtime-boundary audits: **PASS**; and
-- the implementation milestone remained byte-clean after validation.
-
-Migration status: **VERSIONED / REMOTELY UNAPPLIED**.
-
-Migration:
-
-`supabase/migrations/20260827000000_phase_7_08_operational_paper_capital_authorizations.sql`
-
-Remote Supabase application remains separately controlled operational work and
-is not required for Gate 5 closure.
-
-The Phase 1 simulated-capital ledger remains authoritative for gross capital.
-7-08 provides reservation/binding authority only and creates no second ledger.
-
-7-08 remains non-materializing and non-running. It creates no
-`PaperSessionConfig`, derives no local `session_id`, publishes no local
-paper-session files, executes no strategy, controls no runner/collector and
-performs no trade/PnL settlement.
-
-Accepted architecture record:
-[`docs/adr/0003-phase-7-08-operational-paper-capital-authorization-authority.md`](./adr/0003-phase-7-08-operational-paper-capital-authorization-authority.md)
+Accepted architecture record: [`docs/adr/0004-phase-7-09-operational-paper-session-materialization-authority.md`](./adr/0004-phase-7-09-operational-paper-session-materialization-authority.md)
 
 ## Last completed track
 
