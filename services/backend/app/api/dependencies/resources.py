@@ -33,6 +33,9 @@ from app.repositories import (
     SimulationRepository,
 )
 from app.repositories.operational_mandates import PostgresOperationalMandateRepository
+from app.repositories.operational_paper_capital_authorizations import (
+    PostgresOperationalPaperCapitalAuthorizationRepository,
+)
 from app.repositories.operational_paper_session_profiles import (
     PostgresOperationalPaperSessionProfileRepository,
 )
@@ -41,6 +44,7 @@ from app.services import (
     CapitalMovementService,
     MarketOperationService,
     OperationalMandateService,
+    OperationalPaperCapitalAuthorizationService,
     OperationalPaperSessionProfileService,
     PublicSimulationService,
     SettingsService,
@@ -242,6 +246,17 @@ def get_operational_mandate_service(
 
     return OperationalMandateService(
         repository=PostgresOperationalMandateRepository(database),
+        clock=lambda: datetime.now(UTC),
+    )
+
+
+def get_operational_paper_capital_authorization_service(
+    database: Database = Depends(get_database),
+) -> OperationalPaperCapitalAuthorizationService:
+    """Build the operational paper-capital authorization application service."""
+
+    return OperationalPaperCapitalAuthorizationService(
+        repository=PostgresOperationalPaperCapitalAuthorizationRepository(database),
         clock=lambda: datetime.now(UTC),
     )
 
