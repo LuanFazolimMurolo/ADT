@@ -4,12 +4,12 @@ import { relative, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 
 const BUDGETS = Object.freeze({
-  totalJavaScriptRaw: 868_352,
-  totalJavaScriptGzip: 245_760,
-  largestJavaScriptRaw: 868_352,
-  largestJavaScriptGzip: 245_760,
-  totalCssRaw: 57_344,
-  totalCssGzip: 12_288,
+  totalJavaScriptRaw: 843_776,
+  totalJavaScriptGzip: 237_568,
+  largestJavaScriptRaw: 843_776,
+  largestJavaScriptGzip: 237_568,
+  totalCssRaw: 53_248,
+  totalCssGzip: 10_240,
 });
 
 const webRoot = process.cwd();
