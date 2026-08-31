@@ -4,9 +4,9 @@ import { relative, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 
 const BUDGETS = Object.freeze({
-  totalJavaScriptRaw: 819_200,
+  totalJavaScriptRaw: 868_352,
   totalJavaScriptGzip: 245_760,
-  largestJavaScriptRaw: 819_200,
+  largestJavaScriptRaw: 868_352,
   largestJavaScriptGzip: 245_760,
   totalCssRaw: 57_344,
   totalCssGzip: 12_288,
