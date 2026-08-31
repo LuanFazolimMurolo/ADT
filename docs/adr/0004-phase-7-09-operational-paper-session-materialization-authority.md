@@ -70,15 +70,6 @@ The authorization quote asset must match both the simulation currency and the se
 Authorized capital is copied exactly as Decimal into PaperSessionConfig.initial_capital without float conversion.
 
 The approved frozen strategy snapshot is materialized directly; the latest mutable strategy-definition payload must never silently replace it.
-A new PREPARED record requires an AUTHORIZED capital authorization, an APPROVED exact profile, an APPROVED bound mandate and an ACTIVE bound simulation.
-
-The authorization profile binding must exactly match the approved profile revision and specification checksum.
-
-The authorization quote asset must match both the simulation currency and the selected instrument quote asset.
-
-Authorized capital is copied exactly as Decimal into PaperSessionConfig.initial_capital without float conversion.
-
-The approved frozen strategy snapshot is materialized directly; the latest mutable strategy-definition payload must never silently replace it.
 
 ## Post-preparation authority semantics
 
