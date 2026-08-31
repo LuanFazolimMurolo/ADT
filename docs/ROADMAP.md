@@ -864,15 +864,16 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Tracks 7-01 through 7-07 are complete, closed and integrated
+**Status**: Active. Tracks 7-01 through 7-08 are complete, closed and integrated
 into `main`. Track 7-08 — Operational Paper Capital Authorization Foundation —
-is the active Gate 5 closure candidate from starting baseline
-`e87c96fe1c756881587d49831ad247bb21a5a92b`. Its validated implementation
-milestone is `4aef702d5c2e46b513d4892948f2ca51a3333e0e` at tree
-`8dcd1507c5cc1a5a7572e40a3a3949a1565cca00`; Gates 1 through 4 are published
-and the Gate 5 technical closure matrix passed. Documentation publication and
-separately authorized integration into `main` remain pending. Phase 7 remains
-active. The exact current handoff is maintained in
+has validated implementation milestone
+`4aef702d5c2e46b513d4892948f2ca51a3333e0e` and integrated delivery milestone
+`13374fd99ac4b72fa2e205a3de3c3991ae0a73bb` at integrated tree
+`73abf7c39ed6a746a037b93e781c5eb7ab4570a5`. Its Gate 5 technical closure
+matrix passed, the documentation candidate was published, and `main` was
+advanced by verified pure fast-forward. Independent GitHub verification
+confirmed remote `main` and feature identical. Phase 7 remains active. The
+exact current handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
@@ -1447,13 +1448,17 @@ Accepted architecture decision:
 
 ---
 
-### 7-08 — Operational Paper Capital Authorization Foundation 🚧
+### 7-08 — Operational Paper Capital Authorization Foundation ✅
 
-**Status**: **ACTIVE — GATE 5 CLOSURE CANDIDATE**. Gates 1 through 4 are
-implemented and remotely published. Gate 5's technical closure matrix passed
-against implementation milestone
-`4aef702d5c2e46b513d4892948f2ca51a3333e0e`. Documentation publication and
-separately authorized pure fast-forward integration into `main` remain pending.
+**Status**: **COMPLETE / CLOSED**. Gates 1 through 4 were implemented and
+remotely published. Gate 5's technical closure matrix passed against
+implementation milestone
+`4aef702d5c2e46b513d4892948f2ca51a3333e0e`. The documentation candidate was
+published and `main` was advanced by verified pure fast-forward to integrated
+delivery milestone `13374fd99ac4b72fa2e205a3de3c3991ae0a73bb`. Independent
+GitHub verification confirmed remote `main` and the feature identical at tree
+`73abf7c39ed6a746a037b93e781c5eb7ab4570a5`. Gate 5 and 7-08 are closed.
+Phase 7 remains active.
 
 Starting `main` baseline:
 `e87c96fe1c756881587d49831ad247bb21a5a92b`.
@@ -1466,6 +1471,12 @@ Validated implementation milestone:
 
 Validated implementation tree:
 `8dcd1507c5cc1a5a7572e40a3a3949a1565cca00`.
+
+Integrated delivery milestone:
+`13374fd99ac4b72fa2e205a3de3c3991ae0a73bb`.
+
+Integrated delivery tree:
+`73abf7c39ed6a746a037b93e781c5eb7ab4570a5`.
 
 **Goal**:
 
@@ -1485,8 +1496,7 @@ session.
 - Gate 2E — Application Service: **PUBLISHED / CLOSED / PASS**;
 - Gate 3 — Protected Administrator API: **PUBLISHED / CLOSED / PASS**;
 - Gate 4 — Protected Administrative Frontend: **PUBLISHED / CLOSED / PASS**;
-- Gate 5 — Integration and Closure: **TECHNICAL CLOSURE MATRIX PASS /
-  DOCUMENTATION AND MAIN INTEGRATION PENDING**.
+- Gate 5 — Integration and Closure: **CLOSED / PASS**.
 
 **Gate 5 technical evidence**:
 
@@ -1504,6 +1514,15 @@ session.
 `supabase/migrations/20260827000000_phase_7_08_operational_paper_capital_authorizations.sql`
 
 Remote Supabase application remains separately reviewed operational work.
+
+The documentation candidate was published after the technical matrix, bringing
+the delivery to 13 commits from starting `main`. Remote `main` advanced from
+`e87c96fe1c756881587d49831ad247bb21a5a92b` to
+`13374fd99ac4b72fa2e205a3de3c3991ae0a73bb` by verified pure fast-forward;
+no merge commit, squash, rebase or force push was used. Independent GitHub
+verification confirmed remote `main` and the feature identical at integrated
+tree `73abf7c39ed6a746a037b93e781c5eb7ab4570a5`. Gate 5 and 7-08 are closed.
+The migration remains **VERSIONED / REMOTELY UNAPPLIED**.
 
 The existing Phase 1 ledger remains authoritative. 7-08 adds capital
 reservation/binding authority only; it does not create another ledger.

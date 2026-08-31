@@ -18,8 +18,8 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Current delivery
 
-**7-08 — Operational Paper Capital Authorization Foundation — ACTIVE /
-GATE 5 CLOSURE CANDIDATE**
+**7-08 — Operational Paper Capital Authorization Foundation — COMPLETE /
+CLOSED**
 
 Starting `main` baseline:
 
@@ -37,10 +37,14 @@ Validated implementation tree:
 
 `8dcd1507c5cc1a5a7572e40a3a3949a1565cca00`
 
-Gates 1 through 4 are implemented and remotely published at the validated
+Gates 1 through 4 were implemented and remotely published at the validated
 feature milestone. Gate 5's complete technical closure matrix passed against
-those exact bytes. The remaining work is protected documentation publication
-followed by separately authorized pure fast-forward integration into `main`.
+those exact bytes. The documentation closure candidate was published and
+`main` was then advanced by verified pure fast-forward to integrated milestone
+`13374fd99ac4b72fa2e205a3de3c3991ae0a73bb`. Independent GitHub verification
+confirmed remote `main` and the feature identical at tree
+`73abf7c39ed6a746a037b93e781c5eb7ab4570a5`. Gate 5 and 7-08 are closed.
+Phase 7 remains active.
 
 Gate progress:
 
@@ -53,8 +57,7 @@ Gate progress:
 - Gate 2E — Application Service: **PUBLISHED / CLOSED / PASS**;
 - Gate 3 — Protected Administrator API: **PUBLISHED / CLOSED / PASS**;
 - Gate 4 — Protected Administrative Frontend: **PUBLISHED / CLOSED / PASS**;
-- Gate 5 — Integration and Closure: **TECHNICAL CLOSURE MATRIX PASS /
-  DOCUMENTATION AND MAIN INTEGRATION PENDING**.
+- Gate 5 — Integration and Closure: **CLOSED / PASS**.
 
 Gate 5 technical closure evidence:
 
@@ -92,15 +95,18 @@ Accepted architecture record:
 
 ## Last completed track
 
-**7-07 — Operational Paper-Session Configuration Foundation — COMPLETE / CLOSED**
+**7-08 — Operational Paper Capital Authorization Foundation — COMPLETE / CLOSED**
 
-Gate 5 passed the complete implementation closure matrix, the documentation
-candidate was published, and `main` was advanced by verified pure fast-forward
-to the published integrated delivery milestone. Independent GitHub verification
-confirmed `main` and the feature identical. Phase 7 remains active.
+Gate 5 passed the complete technical closure matrix, the documentation
+candidate was published, and `main` advanced by verified pure fast-forward to
+`13374fd99ac4b72fa2e205a3de3c3991ae0a73bb`. Independent GitHub verification
+confirmed `main` and the feature identical at tree
+`73abf7c39ed6a746a037b93e781c5eb7ab4570a5`. The 7-08 migration remains
+**VERSIONED / REMOTELY UNAPPLIED**. Phase 7 remains active.
 
 Previously closed Phase 7 deliveries remain closed:
 
+- **7-07 — Operational Paper-Session Configuration Foundation — CLOSED**
 - **7-06 — Operational Mandate Foundation — CLOSED**
 - **7-05 — Worker Runtime Observability — CLOSED**
 - **7-04 — RAW Gap & Quality Inspection — CLOSED**
@@ -118,6 +124,10 @@ Previously closed Phase 7 deliveries remain closed:
 ## Validated 7-08 candidate tree
 
 `8dcd1507c5cc1a5a7572e40a3a3949a1565cca00`
+
+## Integrated 7-08 delivery milestone
+
+`13374fd99ac4b72fa2e205a3de3c3991ae0a73bb`
 
 ## Integrated 7-07 delivery milestone
 
