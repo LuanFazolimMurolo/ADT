@@ -56,6 +56,12 @@ const navigation = [
     end: false,
   },
   {
+    to: "/admin/operational-paper-capital-authorizations",
+    label: "Autorizações de capital paper",
+    icon: "◇",
+    end: false,
+  },
+  {
     to: "/admin/worker-observability",
     label: "Worker runtime",
     icon: "◎",

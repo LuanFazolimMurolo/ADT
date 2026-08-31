@@ -59,6 +59,12 @@ vi.mock("./http/client", async () => {
         offset: 0,
         total: 0,
       }),
+      listOperationalPaperCapitalAuthorizations: vi.fn().mockResolvedValue({
+        items: [],
+        limit: 20,
+        offset: 0,
+        total: 0,
+      }),
       listOperationalMandates: vi.fn().mockResolvedValue({
         items: [],
         limit: 100,
@@ -147,6 +153,69 @@ describe("site público", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     expect(
       screen.queryByRole("heading", { name: "Perfis de sessão paper" }),
+    ).toBeNull();
+  });
+
+  it("resolve a autorização de capital paper somente na área administrativa", async () => {
+    authState.session = { user: { id: "admin-id" } };
+    authState.identity = { user_id: "admin-id", is_admin: true };
+    authState.isAdmin = true;
+    window.history.pushState(
+      {},
+      "",
+      "/admin/operational-paper-capital-authorizations",
+    );
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Autorizações de capital operacional",
+      }),
+    ).toBeDefined();
+    const navigationLinks = screen.getAllByRole("link", {
+      name: "Autorizações de capital paper",
+    });
+    expect(navigationLinks).toHaveLength(1);
+    expect(navigationLinks[0].getAttribute("href")).toBe(
+      "/admin/operational-paper-capital-authorizations",
+    );
+  });
+
+  it("protege a rota de autorização de capital paper sem autenticação", async () => {
+    window.history.pushState(
+      {},
+      "",
+      "/admin/operational-paper-capital-authorizations",
+    );
+
+    render(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/admin/login"));
+    expect(
+      screen.queryByRole("heading", {
+        name: "Autorizações de capital operacional",
+      }),
+    ).toBeNull();
+  });
+
+  it("não cria URL alternativa para autorização de capital paper em /app", async () => {
+    authState.session = { user: { id: "admin-id" } };
+    authState.identity = { user_id: "admin-id", is_admin: true };
+    authState.isAdmin = true;
+    window.history.pushState(
+      {},
+      "",
+      "/app/operational-paper-capital-authorizations",
+    );
+
+    render(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(
+      screen.queryByRole("heading", {
+        name: "Autorizações de capital operacional",
+      }),
     ).toBeNull();
   });
 });
