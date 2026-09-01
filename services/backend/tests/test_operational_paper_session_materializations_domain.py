@@ -356,10 +356,16 @@ def test_authorization_quote_asset_must_match_selected_instrument() -> None:
 @pytest.mark.parametrize("field", ["config_checksum", "session_id"])
 def test_plan_rejects_config_identity_mismatch(field: str) -> None:
     plan = _plan()
-    corrupted_specification = replace(
-        plan.specification,
-        **{field: "0" * 64},
-    )
+    if field == "config_checksum":
+        corrupted_specification = replace(
+            plan.specification,
+            config_checksum="0" * 64,
+        )
+    else:
+        corrupted_specification = replace(
+            plan.specification,
+            session_id="0" * 64,
+        )
     with pytest.raises(OperationalPaperSessionMaterializationConfigIdentityConflictError):
         OperationalPaperSessionMaterializationPlan(
             specification=corrupted_specification,
@@ -513,3 +519,41 @@ def test_materialization_uuid_is_not_paper_session_identity() -> None:
     assert first.session_id == second.session_id
     assert first.config_checksum == second.config_checksum
     assert first.materialization_checksum == second.materialization_checksum
+
+
+def test_distinct_authorization_provenance_can_share_paper_identity() -> None:
+    profile = _profile_revision()
+    authorization = _authorization(profile)
+    authorization_checksum = operational_paper_capital_authorization_specification_checksum(
+        authorization
+    )
+    other_authorization_id = UUID("40000000-0000-4000-8000-000000000099")
+
+    plan_a = build_operational_paper_session_materialization_plan(
+        authorization_id=AUTHORIZATION_ID,
+        authorization_specification=authorization,
+        authorization_checksum=authorization_checksum,
+        profile_revision=profile,
+    )
+    plan_b = build_operational_paper_session_materialization_plan(
+        authorization_id=other_authorization_id,
+        authorization_specification=authorization,
+        authorization_checksum=authorization_checksum,
+        profile_revision=profile,
+    )
+
+    assert plan_a.config == plan_b.config
+    assert plan_a.specification.config_checksum == plan_b.specification.config_checksum
+    assert plan_a.specification.session_id == plan_b.specification.session_id
+    assert (
+        plan_a.specification.authorization_binding.authorization_id
+        != plan_b.specification.authorization_binding.authorization_id
+    )
+
+    checksum_a = operational_paper_session_materialization_specification_checksum(
+        plan_a.specification
+    )
+    checksum_b = operational_paper_session_materialization_specification_checksum(
+        plan_b.specification
+    )
+    assert checksum_a != checksum_b
