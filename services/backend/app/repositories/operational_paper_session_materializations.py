@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
+from typing import NoReturn
 from uuid import UUID, uuid4
 
 from psycopg import Error
@@ -23,6 +24,8 @@ from app.operational_paper_session_materializations import (
     OperationalPaperSessionMaterializationProfileBinding,
     OperationalPaperSessionMaterializationSpecification,
     OperationalPaperSessionMaterializationState,
+    OperationalPaperSessionMaterializationStateTransitionConflictError,
+    materialize_operational_paper_session_materialization,
     operational_paper_session_materialization_specification_checksum,
     operational_paper_session_materialization_specifications_equal,
     prepare_operational_paper_session_materialization,
@@ -162,6 +165,12 @@ def _require_uuid(value: object) -> UUID:
     return value
 
 
+def _expected_record_version(value: object) -> int:
+    if type(value) is not int or not 1 <= value <= _POSTGRESQL_BIGINT_MAX:
+        raise InvalidOperationalPaperSessionMaterializationSpecificationError()
+    return value
+
+
 def _canonical_plan(value: object) -> OperationalPaperSessionMaterializationPlan:
     if not isinstance(value, OperationalPaperSessionMaterializationPlan):
         raise InvalidOperationalPaperSessionMaterializationSpecificationError()
@@ -281,6 +290,22 @@ async def _materialization_row(
     return await cursor.fetchone()
 
 
+async def _locked_materialization_row(
+    connection: DatabaseConnection,
+    materialization_id: UUID,
+) -> Mapping[str, object] | None:
+    cursor = await connection.execute(
+        f"""
+        select {_MATERIALIZATION_COLUMNS}
+        from public.operational_paper_session_materializations
+        where materialization_id = %s
+        for update
+        """,
+        (materialization_id,),
+    )
+    return await cursor.fetchone()
+
+
 async def _authorization_materialization_row(
     connection: DatabaseConnection,
     authorization_id: UUID,
@@ -294,6 +319,19 @@ async def _authorization_materialization_row(
         (authorization_id,),
     )
     return await cursor.fetchone()
+
+
+def _raise_materialization_database_error(error: Error) -> NoReturn:
+    message = error.diag.message_primary or ""
+    if message in {
+        "operational_paper_session_materialization_record_version_conflict",
+        "operational_paper_session_materialization_terminal",
+        "operational_paper_session_materialization_transition_forbidden",
+        "operational_paper_session_materialization_materialized_metadata_required",
+        "operational_paper_session_materialization_materialized_at_invalid",
+    }:
+        raise OperationalPaperSessionMaterializationStateTransitionConflictError() from error
+    raise_domain_error(error)
 
 
 class PostgresOperationalPaperSessionMaterializationRepository:
@@ -459,6 +497,77 @@ class PostgresOperationalPaperSessionMaterializationRepository:
                 )
         except Error as error:
             raise_domain_error(error)
+
+    async def mark_materialized(
+        self,
+        materialization_id: UUID,
+        *,
+        expected_record_version: int,
+        actor_id: UUID,
+        now: datetime,
+    ) -> OperationalPaperSessionMaterialization:
+        """Mark one PREPARED aggregate MATERIALIZED without publishing its config."""
+
+        materialization_id = _require_uuid(materialization_id)
+        expected_record_version = _expected_record_version(expected_record_version)
+        actor_id = _require_uuid(actor_id)
+        now = _now(now)
+
+        try:
+            async with self._database.transaction() as connection:
+                row = await _locked_materialization_row(connection, materialization_id)
+                if row is None:
+                    raise PersistenceError()
+                current = operational_paper_session_materialization_from_row(row)
+
+                if current.state is OperationalPaperSessionMaterializationState.MATERIALIZED:
+                    if (
+                        current.record_version == expected_record_version + 1
+                        and current.materialized_by == actor_id
+                    ):
+                        return current
+                    raise OperationalPaperSessionMaterializationStateTransitionConflictError()
+
+                if (
+                    current.state is not OperationalPaperSessionMaterializationState.PREPARED
+                    or current.record_version != expected_record_version
+                    or now < current.prepared_at
+                ):
+                    raise OperationalPaperSessionMaterializationStateTransitionConflictError()
+
+                materialized = materialize_operational_paper_session_materialization(
+                    current,
+                    materialized_by=actor_id,
+                    materialized_at=now,
+                )
+                cursor = await connection.execute(
+                    f"""
+                    update public.operational_paper_session_materializations
+                    set state = %s,
+                        record_version = %s,
+                        materialized_by = %s,
+                        materialized_at = %s
+                    where materialization_id = %s
+                      and state = %s
+                      and record_version = %s
+                    returning {_MATERIALIZATION_COLUMNS}
+                    """,
+                    (
+                        materialized.state.value,
+                        materialized.record_version,
+                        materialized.materialized_by,
+                        materialized.materialized_at,
+                        current.materialization_id,
+                        current.state.value,
+                        expected_record_version,
+                    ),
+                )
+                updated = await cursor.fetchone()
+                if updated is None:
+                    raise PersistenceError()
+                return operational_paper_session_materialization_from_row(updated)
+        except Error as error:
+            _raise_materialization_database_error(error)
 
     async def list(
         self,

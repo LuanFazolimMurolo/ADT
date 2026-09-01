@@ -1,4 +1,4 @@
-"""Gate 2B-B2B paper-session materialization repository tests."""
+"""Gate 2B-B2B/B2C paper-session materialization repository tests."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import inspect
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import replace
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import cast
@@ -15,8 +15,10 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
+from psycopg.rows import dict_row
 
 from app.database import Database
+from app.domain.errors import PersistenceError
 from app.operational_paper_capital_authorizations import (
     OperationalPaperCapitalAuthorizationCreateIntent,
     OperationalPaperCapitalAuthorizationProfileBinding,
@@ -28,6 +30,7 @@ from app.operational_paper_session_materializations import (
     OperationalPaperSessionMaterializationChecksumMismatchError,
     OperationalPaperSessionMaterializationPlan,
     OperationalPaperSessionMaterializationState,
+    OperationalPaperSessionMaterializationStateTransitionConflictError,
     build_operational_paper_session_materialization_plan,
     operational_paper_session_materialization_specification_checksum,
     prepare_operational_paper_session_materialization,
@@ -37,6 +40,7 @@ from app.repositories.operational_paper_capital_authorizations import (
 )
 from app.repositories.operational_paper_session_materializations import (
     PostgresOperationalPaperSessionMaterializationRepository,
+    _locked_materialization_row,
     _replay_materialization,
 )
 from app.repositories.operational_paper_session_profiles import (
@@ -613,3 +617,393 @@ async def test_materialization_existing_materialized_exact_row_is_valid_prepare_
         )
         == 1
     )
+
+
+def _stored_materialization_rows(
+    database_url: str,
+    materialization_id: UUID,
+) -> list[dict[str, object]]:
+    with psycopg.connect(database_url, row_factory=dict_row) as connection:
+        rows = connection.execute(
+            """
+            select *
+            from public.operational_paper_session_materializations
+            where materialization_id = %s
+            """,
+            (materialization_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+class _TransitionRaceConnection:
+    def __init__(
+        self,
+        connection: object,
+        observation: _TransitionRaceDatabase,
+    ) -> None:
+        self._connection = connection
+        self._observation = observation
+
+    async def execute(
+        self,
+        query: object,
+        params: object = None,
+        **kwargs: object,
+    ) -> object:
+        normalized = " ".join(str(query).lower().split())
+        lock_select = (
+            normalized.startswith("select")
+            and "from public.operational_paper_session_materializations" in normalized
+            and "where materialization_id = %s" in normalized
+            and "for update" in normalized
+        )
+        if lock_select:
+            await self._observation.arrive_at_lock()
+        if normalized.startswith("update public.operational_paper_session_materializations"):
+            self._observation.update_attempts += 1
+        return await self._connection.execute(  # type: ignore[attr-defined]
+            query,
+            params,
+            **kwargs,
+        )
+
+
+class _TransitionRaceDatabase:
+    def __init__(self, database: Database) -> None:
+        self._database = database
+        self._arrival_lock = asyncio.Lock()
+        self._release = asyncio.Event()
+        self.lock_arrivals = 0
+        self.update_attempts = 0
+
+    async def arrive_at_lock(self) -> None:
+        async with self._arrival_lock:
+            self.lock_arrivals += 1
+            if self.lock_arrivals == 2:
+                self._release.set()
+        await self._release.wait()
+
+    def transaction(self) -> AbstractAsyncContextManager[_TransitionRaceConnection]:
+        @asynccontextmanager
+        async def scope() -> AsyncIterator[_TransitionRaceConnection]:
+            async with self._database.transaction() as connection:
+                yield _TransitionRaceConnection(connection, self)
+
+        return scope()
+
+
+@pytest.mark.asyncio
+async def test_materialization_mark_materialized_preserves_exact_provenance(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    repository = PostgresOperationalPaperSessionMaterializationRepository(database)
+    prepared = await repository.prepare(plan, actor_id=auth_user_id, now=PREPARED_AT)
+    materialized_at = PREPARED_AT + timedelta(minutes=1)
+
+    materialized = await repository.mark_materialized(
+        prepared.materialization_id,
+        expected_record_version=1,
+        actor_id=auth_user_id,
+        now=materialized_at,
+    )
+
+    assert materialized == replace(
+        prepared,
+        state=OperationalPaperSessionMaterializationState.MATERIALIZED,
+        record_version=2,
+        materialized_by=auth_user_id,
+        materialized_at=materialized_at,
+    )
+
+
+@pytest.mark.asyncio
+async def test_materialization_mark_materialized_persists_exact_row(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    repository = PostgresOperationalPaperSessionMaterializationRepository(database)
+    prepared = await repository.prepare(plan, actor_id=auth_user_id, now=PREPARED_AT)
+    materialized = await repository.mark_materialized(
+        prepared.materialization_id,
+        expected_record_version=prepared.record_version,
+        actor_id=auth_user_id,
+        now=PREPARED_AT + timedelta(minutes=1),
+    )
+
+    rows = _stored_materialization_rows(database_url, prepared.materialization_id)
+
+    assert rows == [_materialization_row(materialized)]
+
+
+@pytest.mark.asyncio
+async def test_materialization_mark_materialized_exact_retry_preserves_original_timestamp(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    repository = PostgresOperationalPaperSessionMaterializationRepository(database)
+    prepared = await repository.prepare(plan, actor_id=auth_user_id, now=PREPARED_AT)
+    materialized_at = PREPARED_AT + timedelta(minutes=1)
+    first = await repository.mark_materialized(
+        prepared.materialization_id,
+        expected_record_version=1,
+        actor_id=auth_user_id,
+        now=materialized_at,
+    )
+
+    replay = await repository.mark_materialized(
+        prepared.materialization_id,
+        expected_record_version=1,
+        actor_id=auth_user_id,
+        now=materialized_at + timedelta(hours=1),
+    )
+
+    assert replay == first
+    assert replay.record_version == 2
+    assert replay.materialized_at == materialized_at
+    assert _stored_materialization_rows(database_url, prepared.materialization_id) == [
+        _materialization_row(first)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_materialization_mark_materialized_terminal_replay_rejects_wrong_actor(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    repository = PostgresOperationalPaperSessionMaterializationRepository(database)
+    prepared = await repository.prepare(plan, actor_id=auth_user_id, now=PREPARED_AT)
+    materialized = await repository.mark_materialized(
+        prepared.materialization_id,
+        expected_record_version=1,
+        actor_id=auth_user_id,
+        now=PREPARED_AT + timedelta(minutes=1),
+    )
+
+    with pytest.raises(OperationalPaperSessionMaterializationStateTransitionConflictError):
+        await repository.mark_materialized(
+            prepared.materialization_id,
+            expected_record_version=1,
+            actor_id=uuid4(),
+            now=PREPARED_AT + timedelta(minutes=2),
+        )
+
+    assert await repository.get(prepared.materialization_id) == materialized
+
+
+@pytest.mark.asyncio
+async def test_materialization_mark_materialized_rejects_wrong_expected_version(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    repository = PostgresOperationalPaperSessionMaterializationRepository(database)
+    prepared = await repository.prepare(plan, actor_id=auth_user_id, now=PREPARED_AT)
+
+    with pytest.raises(OperationalPaperSessionMaterializationStateTransitionConflictError):
+        await repository.mark_materialized(
+            prepared.materialization_id,
+            expected_record_version=2,
+            actor_id=auth_user_id,
+            now=PREPARED_AT + timedelta(minutes=1),
+        )
+
+    assert await repository.get(prepared.materialization_id) == prepared
+
+
+@pytest.mark.asyncio
+async def test_materialization_mark_materialized_validates_input_before_database() -> None:
+    class _DatabaseMustNotBeAccessed:
+        def transaction(self) -> object:
+            raise AssertionError("invalid mark_materialized input reached PostgreSQL")
+
+    repository = PostgresOperationalPaperSessionMaterializationRepository(
+        cast(Database, _DatabaseMustNotBeAccessed())
+    )
+    materialization_id = uuid4()
+    actor_id = uuid4()
+    invalid_calls: tuple[tuple[object, object, object, object], ...] = (
+        (UUID(int=0), 1, actor_id, PREPARED_AT),
+        (materialization_id, True, actor_id, PREPARED_AT),
+        (materialization_id, 0, actor_id, PREPARED_AT),
+        (materialization_id, 1, UUID(int=0), PREPARED_AT),
+        (materialization_id, 1, actor_id, PREPARED_AT.replace(tzinfo=None)),
+        (
+            materialization_id,
+            1,
+            actor_id,
+            PREPARED_AT.astimezone(timezone(timedelta(hours=1))),
+        ),
+    )
+
+    for candidate_id, candidate_version, candidate_actor, candidate_now in invalid_calls:
+        with pytest.raises(InvalidOperationalPaperSessionMaterializationSpecificationError):
+            await repository.mark_materialized(
+                cast(UUID, candidate_id),
+                expected_record_version=cast(int, candidate_version),
+                actor_id=cast(UUID, candidate_actor),
+                now=cast(datetime, candidate_now),
+            )
+
+
+@pytest.mark.asyncio
+async def test_materialization_mark_materialized_rejects_invalid_chronology(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    repository = PostgresOperationalPaperSessionMaterializationRepository(database)
+    prepared = await repository.prepare(plan, actor_id=auth_user_id, now=PREPARED_AT)
+
+    with pytest.raises(OperationalPaperSessionMaterializationStateTransitionConflictError):
+        await repository.mark_materialized(
+            prepared.materialization_id,
+            expected_record_version=1,
+            actor_id=auth_user_id,
+            now=PREPARED_AT - timedelta(microseconds=1),
+        )
+
+    assert await repository.get(prepared.materialization_id) == prepared
+
+
+@pytest.mark.asyncio
+async def test_materialization_mark_materialized_ignores_post_prepare_authority_revocation(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    repository = PostgresOperationalPaperSessionMaterializationRepository(database)
+    prepared = await repository.prepare(plan, actor_id=auth_user_id, now=PREPARED_AT)
+    await PostgresOperationalPaperCapitalAuthorizationRepository(database).revoke(
+        prepared.authorization_binding.authorization_id,
+        expected_record_version=1,
+        actor_id=auth_user_id,
+        now=PREPARED_AT + timedelta(seconds=1),
+    )
+
+    materialized = await repository.mark_materialized(
+        prepared.materialization_id,
+        expected_record_version=1,
+        actor_id=auth_user_id,
+        now=PREPARED_AT + timedelta(seconds=2),
+    )
+
+    assert materialized.state is OperationalPaperSessionMaterializationState.MATERIALIZED
+    assert materialized.record_version == 2
+
+
+@pytest.mark.asyncio
+async def test_materialization_mark_materialized_concurrent_calls_serialize_to_exact_replay(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    repository = PostgresOperationalPaperSessionMaterializationRepository(database)
+    prepared = await repository.prepare(plan, actor_id=auth_user_id, now=PREPARED_AT)
+    observation = _TransitionRaceDatabase(database)
+    race_repository = PostgresOperationalPaperSessionMaterializationRepository(
+        cast(Database, observation)
+    )
+    materialized_at = PREPARED_AT + timedelta(minutes=1)
+
+    results = await asyncio.gather(
+        race_repository.mark_materialized(
+            prepared.materialization_id,
+            expected_record_version=1,
+            actor_id=auth_user_id,
+            now=materialized_at,
+        ),
+        race_repository.mark_materialized(
+            prepared.materialization_id,
+            expected_record_version=1,
+            actor_id=auth_user_id,
+            now=materialized_at,
+        ),
+    )
+
+    assert observation.lock_arrivals == 2
+    assert observation.update_attempts == 1
+    assert results[0] == results[1]
+    assert results[0].state is OperationalPaperSessionMaterializationState.MATERIALIZED
+    assert results[0].record_version == 2
+    assert await repository.get(prepared.materialization_id) == results[0]
+    assert len(_stored_materialization_rows(database_url, prepared.materialization_id)) == 1
+
+
+@pytest.mark.asyncio
+async def test_materialization_mark_materialized_missing_row_fails_closed(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    missing_id = uuid4()
+    repository = PostgresOperationalPaperSessionMaterializationRepository(database)
+
+    with pytest.raises(PersistenceError):
+        await repository.mark_materialized(
+            missing_id,
+            expected_record_version=1,
+            actor_id=auth_user_id,
+            now=PREPARED_AT,
+        )
+
+    assert _stored_materialization_rows(database_url, missing_id) == []
+
+
+@pytest.mark.asyncio
+async def test_materialization_mark_materialized_has_no_external_or_runtime_side_effect(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    repository = PostgresOperationalPaperSessionMaterializationRepository(database)
+    prepared = await repository.prepare(plan, actor_id=auth_user_id, now=PREPARED_AT)
+
+    def fail_path_write(*args: object, **kwargs: object) -> None:
+        raise AssertionError("mark_materialized attempted a filesystem write")
+
+    monkeypatch.setattr(Path, "write_text", fail_path_write)
+    monkeypatch.setattr(Path, "write_bytes", fail_path_write)
+    monkeypatch.setattr(Path, "mkdir", fail_path_write)
+    transition_source = inspect.getsource(
+        PostgresOperationalPaperSessionMaterializationRepository.mark_materialized
+    ) + inspect.getsource(_locked_materialization_row)
+    for forbidden in (
+        "operational_paper_capital_authorizations",
+        "operational_paper_session_profiles",
+        "operational_mandates",
+        "simulation_runs",
+        "PaperTradingRepository",
+        "ADT_DATA_DIR",
+        "config.json",
+        "state.json",
+        "runner",
+        "Binance",
+        "httpx",
+        "requests",
+    ):
+        assert forbidden not in transition_source
+    assert "for update" in transition_source.lower()
+
+    materialized = await repository.mark_materialized(
+        prepared.materialization_id,
+        expected_record_version=1,
+        actor_id=auth_user_id,
+        now=PREPARED_AT + timedelta(minutes=1),
+    )
+
+    assert materialized.state is OperationalPaperSessionMaterializationState.MATERIALIZED
