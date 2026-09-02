@@ -866,10 +866,9 @@ HTTP requests.
 
 **Status**: Active. Tracks 7-01 through 7-08 are complete, closed and integrated
 into `main`. Track 7-09 — Operational Paper Session Materialization Foundation —
-is active from exact baseline `cb74c810c345c2981a4c2ca15c76acd76d0724a2`.
-Its post-7-08 selection R0 passed and Gate 1 accepted the materialization
-authority and provenance model. Implementation has not started. Phase 7 remains
-active. The exact current handoff is maintained in
+has completed its implementation and full technical closure matrix on feature
+commit `47b89fd6fcb1702b6df093c7a10c1ff1122d4fc9`; final documentation and
+integration remain pending. Phase 7 remains active. The exact current handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
@@ -885,7 +884,7 @@ active. The exact current handoff is maintained in
 - [x] Reconcile abandoned work after restart
 - [x] Authorize and reserve administrative paper capital for exact approved
       operational paper-session profiles
-- [ ] Materialize an approved profile plus authoritative capital into the
+- [x] Materialize an approved profile plus authoritative capital into the
       existing immutable local `PaperSessionConfig`
 - [ ] Establish the ledger and session foundations required by a future ADT
       Official Portfolio and official paper capital without claiming that
@@ -901,7 +900,7 @@ active. The exact current handoff is maintained in
 
 ### 7-09 — Operational Paper Session Materialization Foundation 🚧
 
-**Status**: ACTIVE — selection R0 closed and Gate 1 architecture accepted locally. Implementation has not started.
+**Status**: TECHNICAL CLOSURE PASSED — implementation and the full local technical matrix are complete; final documentation and integration remain pending.
 
 **Goal**: Materialize one exact approved operational paper-session profile plus its authoritative capital authorization into the existing immutable local `PaperSessionConfig`, while preserving existing deterministic `config_checksum` and `session_id` semantics.
 
@@ -917,7 +916,7 @@ active. The exact current handoff is maintained in
 - the approved frozen strategy snapshot is preserved rather than silently replaced by a newer mutable definition; and
 - post-PREPARED reconciliation may finish exact publication after later authority lifecycle changes, but this grants no runner execution authority.
 
-**Expected migration**: Yes. Gate 2B will define the PostgreSQL persistence schema. No 7-09 migration exists yet and remote Supabase remains untouched.
+**Migration**: `supabase/migrations/20260831000000_phase_7_09_operational_paper_session_materializations.sql` is versioned locally and remains **REMOTELY UNAPPLIED**. Remote Supabase was untouched during 7-09.
 
 **Explicitly out of scope**: paper-runner execution or lifecycle control, collector control, `state.json`, RAW synchronization or scanning, Binance/network work, trading execution, orders/fills, PnL settlement, trading-horizon labels, ADT Official Portfolio and real capital.
 
@@ -1477,7 +1476,9 @@ implementation milestone
 published and `main` was advanced by verified pure fast-forward to integrated
 delivery milestone `13374fd99ac4b72fa2e205a3de3c3991ae0a73bb`. Independent
 GitHub verification confirmed remote `main` and the feature identical at tree
-`73abf7c39ed6a746a037b93e781c5eb7ab4570a5`. Gate 5 and 7-08 are closed.
+`73abf7c39ed6a746a037b93e781c5eb7ab4570a5`. Final closure documentation was
+then versioned at `cb74c810c345c2981a4c2ca15c76acd76d0724a2`, tree
+`f7e39c850d1a848ef27c7fdf2343c3c4f54ae262`. Gate 5 and 7-08 are closed.
 Phase 7 remains active.
 
 Starting `main` baseline:
@@ -1497,6 +1498,12 @@ Integrated delivery milestone:
 
 Integrated delivery tree:
 `73abf7c39ed6a746a037b93e781c5eb7ab4570a5`.
+
+Final closure milestone:
+`cb74c810c345c2981a4c2ca15c76acd76d0724a2`.
+
+Final closure tree:
+`f7e39c850d1a848ef27c7fdf2343c3c4f54ae262`.
 
 **Goal**:
 
@@ -1536,13 +1543,15 @@ session.
 Remote Supabase application remains separately reviewed operational work.
 
 The documentation candidate was published after the technical matrix, bringing
-the delivery to 13 commits from starting `main`. Remote `main` advanced from
-`e87c96fe1c756881587d49831ad247bb21a5a92b` to
+the integrated delivery to 13 commits from starting `main`. Remote `main`
+advanced from `e87c96fe1c756881587d49831ad247bb21a5a92b` to
 `13374fd99ac4b72fa2e205a3de3c3991ae0a73bb` by verified pure fast-forward;
 no merge commit, squash, rebase or force push was used. Independent GitHub
 verification confirmed remote `main` and the feature identical at integrated
-tree `73abf7c39ed6a746a037b93e781c5eb7ab4570a5`. Gate 5 and 7-08 are closed.
-The migration remains **VERSIONED / REMOTELY UNAPPLIED**.
+tree `73abf7c39ed6a746a037b93e781c5eb7ab4570a5`. Final closure documentation was
+then committed as `cb74c810c345c2981a4c2ca15c76acd76d0724a2`, with final
+7-08 closure tree `f7e39c850d1a848ef27c7fdf2343c3c4f54ae262`. Gate 5 and
+7-08 are closed. The migration remains **VERSIONED / REMOTELY UNAPPLIED**.
 
 The existing Phase 1 ledger remains authoritative. 7-08 adds capital
 reservation/binding authority only; it does not create another ledger.

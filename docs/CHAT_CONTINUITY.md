@@ -1,6 +1,6 @@
 # ADT Current Development Handoff
 
-Last updated: 2026-08-31
+Last updated: 2026-09-02
 
 ## Current branch
 
@@ -18,7 +18,7 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Current delivery
 
-**7-09 — Operational Paper Session Materialization Foundation — ACTIVE / GATE 1 ACCEPTED**
+**7-09 — Operational Paper Session Materialization Foundation — TECHNICAL CLOSURE PASSED / FINAL DOCUMENTATION**
 
 Starting main baseline: `cb74c810c345c2981a4c2ca15c76acd76d0724a2`.
 
@@ -26,29 +26,41 @@ Starting tree: `f7e39c850d1a848ef27c7fdf2343c3c4f54ae262`.
 
 Selection R0: **CLOSED / PASS**.
 
-Gate 1 — Materialization Authority & Provenance Model: **ACCEPTED / CLOSED LOCALLY**.
+Gate 1 — Materialization Authority & Provenance Model: **REMOTE PUBLISHED / CLOSED / PASS**.
 
-Gate 2A — Pure Domain Contract: **NOT STARTED**.
+Gate 2A — Pure Domain Contract: **REMOTE PUBLISHED / CLOSED / PASS**.
+
+Gate 2B — PostgreSQL Persistence Foundation: **REMOTE PUBLISHED / CLOSED / PASS**.
+
+Gate 2C — Materialization Orchestration, Wiring, Query Facade & Admin API: **REMOTE PUBLISHED / CLOSED / PASS**.
+
+Gate 3A — Technical Closure Matrix: **CLOSED / PASS**.
+
+Gate 3B — Final Documentation & Integration Handoff: **ACTIVE**.
 
 Accepted model: durable PostgreSQL `OperationalPaperSessionMaterialization` provenance plus the existing immutable local `PaperSessionConfig` and deterministic `session_id`.
 
 Initial lifecycle: `PREPARED -> MATERIALIZED`.
 
-Phase 7-09 expects a new PostgreSQL migration, to be defined by Gate 2B. No migration exists yet.
+Phase 7-09 migration: `supabase/migrations/20260831000000_phase_7_09_operational_paper_session_materializations.sql`. It is **VERSIONED / REMOTELY UNAPPLIED**; no remote Supabase mutation was performed during 7-09.
 
 The delivery is materializing but non-running: no run_once, runner/collector control, state.json publication, RAW processing, Binance access, strategy execution, orders/fills or PnL settlement.
 
 Accepted architecture record: [`docs/adr/0004-phase-7-09-operational-paper-session-materialization-authority.md`](./adr/0004-phase-7-09-operational-paper-session-materialization-authority.md)
 
+Validated 7-09 technical candidate: `47b89fd6fcb1702b6df093c7a10c1ff1122d4fc9`.
+
+Validated candidate tree: `ca3c0a21254993c82184e519ef7e9e0dc48bf472`.
+
+Technical closure evidence: 109 targeted materialization tests passed; 799 cross-authority tests passed; the full backend passed with 3523 tests plus one expected opt-in network skip and 88% coverage; Ruff, MyPy and dependency checks passed; deterministic OpenAPI SHA-256 is `dee78c3fa38bde8bb70076e3ad14378468e695ced1a506193042c1535cde3d0f`; three consecutive full Vitest runs passed 276/276 tests; build and bundle budgets passed; and Playwright passed 56/56 tests.
+
 ## Last completed track
 
 **7-08 — Operational Paper Capital Authorization Foundation — COMPLETE / CLOSED**
 
-Gate 5 passed the complete technical closure matrix, the documentation
-candidate was published, and `main` advanced by verified pure fast-forward to
-`13374fd99ac4b72fa2e205a3de3c3991ae0a73bb`. Independent GitHub verification
-confirmed `main` and the feature identical at tree
-`73abf7c39ed6a746a037b93e781c5eb7ab4570a5`. The 7-08 migration remains
+Gate 5 and the final documentation closure passed. The completed 7-08 delivery
+is versioned on `main` at `cb74c810c345c2981a4c2ca15c76acd76d0724a2`, tree
+`f7e39c850d1a848ef27c7fdf2343c3c4f54ae262`. The 7-08 migration remains
 **VERSIONED / REMOTELY UNAPPLIED**. Phase 7 remains active.
 
 Previously closed Phase 7 deliveries remain closed:
@@ -66,15 +78,15 @@ Previously closed Phase 7 deliveries remain closed:
 
 ## Last validated implementation milestone
 
-`4aef702d5c2e46b513d4892948f2ca51a3333e0e`
+`47b89fd6fcb1702b6df093c7a10c1ff1122d4fc9`
 
-## Validated 7-08 candidate tree
+## Validated 7-09 technical candidate tree
 
-`8dcd1507c5cc1a5a7572e40a3a3949a1565cca00`
+`ca3c0a21254993c82184e519ef7e9e0dc48bf472`
 
 ## Integrated 7-08 delivery milestone
 
-`13374fd99ac4b72fa2e205a3de3c3991ae0a73bb`
+`cb74c810c345c2981a4c2ca15c76acd76d0724a2`
 
 ## Integrated 7-07 delivery milestone
 
