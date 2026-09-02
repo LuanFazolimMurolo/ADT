@@ -479,7 +479,7 @@ describe("perfis administrativos de sessão paper", () => {
     mocks.createOperationalPaperSessionProfile
       .mockRejectedValueOnce(new ApiError(0, "network_error", "ambíguo"))
       .mockResolvedValueOnce(currentA);
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     await renderLoaded();
     await fillRichCreate(user);
     await user.click(screen.getByRole("button", { name: "Revisar criação" }));
