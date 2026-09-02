@@ -28,6 +28,7 @@ from app.operational_paper_session_materializations import (
     OperationalPaperSessionMaterialization,
     OperationalPaperSessionMaterializationAuthorizationBinding,
     OperationalPaperSessionMaterializationConfigIdentityConflictError,
+    OperationalPaperSessionMaterializationNotFoundError,
     OperationalPaperSessionMaterializationPlan,
     OperationalPaperSessionMaterializationProfileBindingConflictError,
     OperationalPaperSessionMaterializationState,
@@ -119,6 +120,38 @@ class _RepositoryDouble:
             materialized_by=actor_id,
             materialized_at=now,
         )
+
+
+class _QueryRepositoryDouble:
+    def __init__(
+        self,
+        *,
+        get_result: OperationalPaperSessionMaterialization | None = None,
+        list_result: tuple[list[OperationalPaperSessionMaterialization], int] | None = None,
+    ) -> None:
+        self.get_result = get_result
+        self.list_result = list_result if list_result is not None else ([], 0)
+        self.get_calls: list[UUID] = []
+        self.list_calls: list[
+            tuple[int, int, OperationalPaperSessionMaterializationState | None]
+        ] = []
+
+    async def get(
+        self,
+        materialization_id: UUID,
+    ) -> OperationalPaperSessionMaterialization | None:
+        self.get_calls.append(materialization_id)
+        return self.get_result
+
+    async def list(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        state: OperationalPaperSessionMaterializationState | None = None,
+    ) -> tuple[list[OperationalPaperSessionMaterialization], int]:
+        self.list_calls.append((limit, offset, state))
+        return self.list_result
 
 
 class _PaperRepositoryDouble:
@@ -278,6 +311,62 @@ def _service(
 
 def _config_path(data_dir: Path, session_id: str) -> Path:
     return data_dir / "market" / "paper-trading" / session_id / "config.json"
+
+
+@pytest.mark.asyncio
+async def test_materialization_service_get_returns_repository_instance() -> None:
+    materialization_id = uuid4()
+    materialization = prepare_operational_paper_session_materialization(
+        materialization_id=materialization_id,
+        plan=_domain_plan(),
+        prepared_by=uuid4(),
+        prepared_at=PREPARED_AT,
+    )
+    repository = _QueryRepositoryDouble(get_result=materialization)
+    clock = _SequenceClock()
+
+    result = await _service(repository, object(), clock).get(materialization_id)
+
+    assert result is materialization
+    assert repository.get_calls == [materialization_id]
+    assert clock.calls == []
+
+
+@pytest.mark.asyncio
+async def test_materialization_service_get_missing_raises_stable_not_found() -> None:
+    materialization_id = uuid4()
+    repository = _QueryRepositoryDouble()
+    clock = _SequenceClock()
+
+    with pytest.raises(OperationalPaperSessionMaterializationNotFoundError) as exc_info:
+        await _service(repository, object(), clock).get(materialization_id)
+
+    assert type(exc_info.value) is OperationalPaperSessionMaterializationNotFoundError
+    assert repository.get_calls == [materialization_id]
+    assert clock.calls == []
+
+
+@pytest.mark.asyncio
+async def test_materialization_service_list_delegates_without_transformation() -> None:
+    materialization = prepare_operational_paper_session_materialization(
+        materialization_id=uuid4(),
+        plan=_domain_plan(),
+        prepared_by=uuid4(),
+        prepared_at=PREPARED_AT,
+    )
+    expected = ([materialization], 1)
+    repository = _QueryRepositoryDouble(list_result=expected)
+    clock = _SequenceClock()
+
+    result = await _service(repository, object(), clock).list(
+        limit=7,
+        offset=3,
+        state=OperationalPaperSessionMaterializationState.PREPARED,
+    )
+
+    assert result is expected
+    assert repository.list_calls == [(7, 3, OperationalPaperSessionMaterializationState.PREPARED)]
+    assert clock.calls == []
 
 
 @pytest.mark.asyncio
@@ -712,14 +801,19 @@ async def test_materialization_service_allows_two_provenances_for_one_executable
     assert all(row[2:] == ("MATERIALIZED", 2) for row in rows)
 
 
-def test_materialization_service_has_one_public_mutation_and_no_runtime_surface() -> None:
+def test_materialization_service_has_expected_public_surface_and_no_runtime_surface() -> None:
     source = Path(service_module.__file__).read_text()
     public_methods = {
         name
         for name, value in vars(OperationalPaperSessionMaterializationService).items()
         if callable(value) and not name.startswith("_")
     }
-    assert public_methods == {"materialize", "materialize_authorization"}
+    assert public_methods == {
+        "get",
+        "list",
+        "materialize",
+        "materialize_authorization",
+    }
     assert source.count("self._repository.prepare(") == 1
     assert source.count("self._repository.mark_materialized(") == 1
     for forbidden in (

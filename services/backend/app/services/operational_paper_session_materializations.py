@@ -14,6 +14,7 @@ from app.operational_paper_capital_authorizations import (
 from app.operational_paper_session_materializations import (
     OperationalPaperSessionMaterialization,
     OperationalPaperSessionMaterializationConfigIdentityConflictError,
+    OperationalPaperSessionMaterializationNotFoundError,
     OperationalPaperSessionMaterializationPlan,
     OperationalPaperSessionMaterializationState,
     OperationalPaperSessionMaterializationStateTransitionConflictError,
@@ -112,6 +113,28 @@ class OperationalPaperSessionMaterializationService:
         self._profile_repository = profile_repository
         self._paper_repository = paper_repository
         self._clock = clock
+
+    async def list(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        state: OperationalPaperSessionMaterializationState | None = None,
+    ) -> tuple[list[OperationalPaperSessionMaterialization], int]:
+        return await self._repository.list(
+            limit=limit,
+            offset=offset,
+            state=state,
+        )
+
+    async def get(
+        self,
+        materialization_id: UUID,
+    ) -> OperationalPaperSessionMaterialization:
+        materialization = await self._repository.get(materialization_id)
+        if materialization is None:
+            raise OperationalPaperSessionMaterializationNotFoundError()
+        return materialization
 
     async def materialize(
         self,

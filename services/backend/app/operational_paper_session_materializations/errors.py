@@ -1,6 +1,6 @@
 """Safe domain failures for operational paper-session materializations."""
 
-from app.domain.errors import DomainConflictError, DomainError
+from app.domain.errors import DomainConflictError, DomainError, ResourceNotFoundError
 
 
 class InvalidOperationalPaperSessionMaterializationSpecificationError(DomainError):
@@ -13,6 +13,11 @@ class OperationalPaperSessionMaterializationBoundsExceededError(DomainError):
     code = "operational_paper_session_materialization_bounds_exceeded"
     default_message = "Um limite da materialização operacional de sessão paper foi excedido."
     status_code = 400
+
+
+class OperationalPaperSessionMaterializationNotFoundError(ResourceNotFoundError):
+    code = "operational_paper_session_materialization_not_found"
+    default_message = "A materialização operacional de sessão paper solicitada não foi encontrada."
 
 
 class OperationalPaperSessionMaterializationStateTransitionConflictError(DomainConflictError):
