@@ -239,6 +239,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
                 lock_timeout_seconds=app_settings.market_job_lock_timeout,
                 lock_stale_after_seconds=app_settings.market_job_stale_after,
             )
+            application.state.paper_trading_repository = paper_repository
             paper_timeline_store = PaperPortfolioTimelineArtifactStore(
                 app_settings.data_dir,
                 lock_timeout_seconds=app_settings.market_job_lock_timeout,

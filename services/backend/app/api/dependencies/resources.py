@@ -23,6 +23,7 @@ from app.paper_trading.portfolio_timeline_query import (
     PaperPortfolioTimelineReadService,
 )
 from app.paper_trading.query import PaperTradingReadService
+from app.paper_trading.repository import PaperTradingRepository
 from app.repositories import (
     AdminRepository,
     CapitalMovementRepository,
@@ -36,6 +37,9 @@ from app.repositories.operational_mandates import PostgresOperationalMandateRepo
 from app.repositories.operational_paper_capital_authorizations import (
     PostgresOperationalPaperCapitalAuthorizationRepository,
 )
+from app.repositories.operational_paper_session_materializations import (
+    PostgresOperationalPaperSessionMaterializationRepository,
+)
 from app.repositories.operational_paper_session_profiles import (
     PostgresOperationalPaperSessionProfileRepository,
 )
@@ -45,6 +49,7 @@ from app.services import (
     MarketOperationService,
     OperationalMandateService,
     OperationalPaperCapitalAuthorizationService,
+    OperationalPaperSessionMaterializationService,
     OperationalPaperSessionProfileService,
     PublicSimulationService,
     SettingsService,
@@ -112,6 +117,12 @@ def get_continuous_collection_state_store(
         ContinuousCollectionStateStore,
         request.app.state.continuous_collection_state_store,
     )
+
+
+def get_paper_trading_repository(request: Request) -> PaperTradingRepository:
+    """Return the application-owned immutable paper-session repository."""
+
+    return cast(PaperTradingRepository, request.app.state.paper_trading_repository)
 
 
 def get_paper_trading_read_service(request: Request) -> PaperTradingReadService:
@@ -257,6 +268,21 @@ def get_operational_paper_capital_authorization_service(
 
     return OperationalPaperCapitalAuthorizationService(
         repository=PostgresOperationalPaperCapitalAuthorizationRepository(database),
+        clock=lambda: datetime.now(UTC),
+    )
+
+
+def get_operational_paper_session_materialization_service(
+    database: Database = Depends(get_database),
+    paper_repository: PaperTradingRepository = Depends(get_paper_trading_repository),
+) -> OperationalPaperSessionMaterializationService:
+    """Build the operational paper-session materialization application service."""
+
+    return OperationalPaperSessionMaterializationService(
+        repository=PostgresOperationalPaperSessionMaterializationRepository(database),
+        authorization_repository=PostgresOperationalPaperCapitalAuthorizationRepository(database),
+        profile_repository=PostgresOperationalPaperSessionProfileRepository(database),
+        paper_repository=paper_repository,
         clock=lambda: datetime.now(UTC),
     )
 

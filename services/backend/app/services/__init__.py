@@ -7,6 +7,9 @@ from app.services.operational_mandates import OperationalMandateService
 from app.services.operational_paper_capital_authorizations import (
     OperationalPaperCapitalAuthorizationService,
 )
+from app.services.operational_paper_session_materializations import (
+    OperationalPaperSessionMaterializationService,
+)
 from app.services.operational_paper_session_profiles import (
     OperationalPaperSessionProfileService,
 )
@@ -21,6 +24,7 @@ __all__ = [
     "MarketOperationService",
     "OperationalMandateService",
     "OperationalPaperCapitalAuthorizationService",
+    "OperationalPaperSessionMaterializationService",
     "OperationalPaperSessionProfileService",
     "PublicSimulationService",
     "SettingsService",
