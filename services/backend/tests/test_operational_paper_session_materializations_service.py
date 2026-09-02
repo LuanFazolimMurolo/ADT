@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from dataclasses import replace
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -15,16 +16,22 @@ import pytest
 
 import app.services.operational_paper_session_materializations as service_module
 from app.database import Database
+from app.domain.errors import PersistenceError, PersistenceUnavailableError
 from app.operational_paper_capital_authorizations import (
     OperationalPaperCapitalAuthorizationCreateIntent,
+    OperationalPaperCapitalAuthorizationNotFoundError,
     OperationalPaperCapitalAuthorizationProfileBinding,
+    OperationalPaperCapitalAuthorizationSpecification,
+    operational_paper_capital_authorization_specification_checksum,
 )
 from app.operational_paper_session_materializations import (
     OperationalPaperSessionMaterialization,
     OperationalPaperSessionMaterializationAuthorizationBinding,
     OperationalPaperSessionMaterializationConfigIdentityConflictError,
     OperationalPaperSessionMaterializationPlan,
+    OperationalPaperSessionMaterializationProfileBindingConflictError,
     OperationalPaperSessionMaterializationState,
+    build_operational_paper_session_materialization_plan,
     materialize_operational_paper_session_materialization,
     prepare_operational_paper_session_materialization,
 )
@@ -37,6 +44,9 @@ from app.repositories.operational_paper_capital_authorizations import (
 )
 from app.repositories.operational_paper_session_materializations import (
     PostgresOperationalPaperSessionMaterializationRepository,
+)
+from app.repositories.operational_paper_session_profiles import (
+    PostgresOperationalPaperSessionProfileRepository,
 )
 from app.services.operational_paper_session_materializations import (
     OperationalPaperSessionMaterializationService,
@@ -219,13 +229,48 @@ class _CountingPaperTradingRepository(PaperTradingRepository):
         return super().create(config)
 
 
+class _AuthorizationRepositoryDouble:
+    def __init__(self, authorization: object | None) -> None:
+        self.authorization = authorization
+        self.calls: list[UUID] = []
+
+    async def get(self, authorization_id: UUID) -> object | None:
+        self.calls.append(authorization_id)
+        return self.authorization
+
+
+class _ProfileRevisionRepositoryDouble:
+    def __init__(self, revision: object | None) -> None:
+        self.revision = revision
+        self.calls: list[tuple[UUID, int]] = []
+
+    async def get_revision(self, profile_id: UUID, revision: int) -> object | None:
+        self.calls.append((profile_id, revision))
+        return self.revision
+
+
 def _service(
     repository: object,
     paper_repository: object,
     clock: _SequenceClock,
+    *,
+    authorization_repository: object | None = None,
+    profile_repository: object | None = None,
 ) -> OperationalPaperSessionMaterializationService:
+    if authorization_repository is None:
+        authorization_repository = object()
+    if profile_repository is None:
+        profile_repository = object()
     return OperationalPaperSessionMaterializationService(
         repository=cast(PostgresOperationalPaperSessionMaterializationRepository, repository),
+        authorization_repository=cast(
+            PostgresOperationalPaperCapitalAuthorizationRepository,
+            authorization_repository,
+        ),
+        profile_repository=cast(
+            PostgresOperationalPaperSessionProfileRepository,
+            profile_repository,
+        ),
         paper_repository=cast(PaperTradingRepository, paper_repository),
         clock=clock,
     )
@@ -674,7 +719,7 @@ def test_materialization_service_has_one_public_mutation_and_no_runtime_surface(
         for name, value in vars(OperationalPaperSessionMaterializationService).items()
         if callable(value) and not name.startswith("_")
     }
-    assert public_methods == {"materialize"}
+    assert public_methods == {"materialize", "materialize_authorization"}
     assert source.count("self._repository.prepare(") == 1
     assert source.count("self._repository.mark_materialized(") == 1
     for forbidden in (
@@ -692,3 +737,331 @@ def test_materialization_service_has_one_public_mutation_and_no_runtime_surface(
         "PnL",
     ):
         assert forbidden not in source
+
+
+@pytest.mark.asyncio
+async def test_materialization_service_materializes_authoritative_authorization_id(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+    tmp_path: Path,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    authorization_id = plan.specification.authorization_binding.authorization_id
+    repository = PostgresOperationalPaperSessionMaterializationRepository(database)
+    authorization_repository = PostgresOperationalPaperCapitalAuthorizationRepository(database)
+    profile_repository = PostgresOperationalPaperSessionProfileRepository(database)
+    paper_repository = PaperTradingRepository(tmp_path)
+    service = _service(
+        repository,
+        paper_repository,
+        _SequenceClock(PREPARED_AT, PREPARED_AT + timedelta(minutes=1)),
+        authorization_repository=authorization_repository,
+        profile_repository=profile_repository,
+    )
+
+    materialized = await service.materialize_authorization(
+        authorization_id,
+        actor_id=auth_user_id,
+    )
+
+    assert materialized.state is OperationalPaperSessionMaterializationState.MATERIALIZED
+    assert materialized.authorization_binding == plan.specification.authorization_binding
+    assert materialized.profile_binding == plan.specification.profile_binding
+    assert materialized.session_id == plan.specification.session_id
+    assert materialized.config_checksum == plan.specification.config_checksum
+    assert paper_repository.load_config(materialized.session_id) == plan.config
+    assert plan.config.initial_capital == Decimal("40")
+    assert _materialization_count(database_url, authorization_id) == 1
+
+
+@pytest.mark.asyncio
+async def test_materialization_service_authorization_not_found_fails_before_orchestration() -> None:
+    authorization_id = uuid4()
+    authorization_repository = _AuthorizationRepositoryDouble(None)
+    profile_repository = _ProfileRevisionRepositoryDouble(None)
+    service = _service(
+        object(),
+        object(),
+        _SequenceClock(),
+        authorization_repository=authorization_repository,
+        profile_repository=profile_repository,
+    )
+
+    with pytest.raises(OperationalPaperCapitalAuthorizationNotFoundError):
+        await service.materialize_authorization(authorization_id, actor_id=uuid4())
+
+    assert authorization_repository.calls == [authorization_id]
+    assert profile_repository.calls == []
+
+
+@pytest.mark.asyncio
+async def test_materialization_service_missing_exact_profile_revision_fails_closed(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    authorization_id = plan.specification.authorization_binding.authorization_id
+    authorization_repository = PostgresOperationalPaperCapitalAuthorizationRepository(database)
+    authorization = await authorization_repository.get(authorization_id)
+    assert authorization is not None
+    profile_repository = _ProfileRevisionRepositoryDouble(None)
+    service = _service(
+        object(),
+        object(),
+        _SequenceClock(),
+        authorization_repository=authorization_repository,
+        profile_repository=profile_repository,
+    )
+
+    with pytest.raises(PersistenceError):
+        await service.materialize_authorization(
+            authorization_id,
+            actor_id=auth_user_id,
+        )
+
+    binding = authorization.profile_binding
+    assert profile_repository.calls == [(binding.profile_id, binding.approved_revision)]
+
+
+@pytest.mark.asyncio
+async def test_materialization_service_revoked_before_prepared_is_denied(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+    tmp_path: Path,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    authorization_id = plan.specification.authorization_binding.authorization_id
+    authorization_repository = PostgresOperationalPaperCapitalAuthorizationRepository(database)
+    authorization = await authorization_repository.get(authorization_id)
+    assert authorization is not None
+
+    revoked = await authorization_repository.revoke(
+        authorization_id,
+        expected_record_version=authorization.record_version,
+        actor_id=auth_user_id,
+        now=PREPARED_AT,
+    )
+    assert revoked.state.value == "REVOKED"
+
+    repository = PostgresOperationalPaperSessionMaterializationRepository(database)
+    paper_repository = PaperTradingRepository(tmp_path)
+    service = _service(
+        repository,
+        paper_repository,
+        _SequenceClock(PREPARED_AT + timedelta(minutes=1)),
+        authorization_repository=authorization_repository,
+        profile_repository=PostgresOperationalPaperSessionProfileRepository(database),
+    )
+
+    with pytest.raises(PersistenceUnavailableError):
+        await service.materialize_authorization(
+            authorization_id,
+            actor_id=auth_user_id,
+        )
+
+    assert await repository.get_by_authorization(authorization_id) is None
+    assert _materialization_count(database_url, authorization_id) == 0
+    assert not _config_path(tmp_path, plan.specification.session_id).exists()
+
+
+@pytest.mark.asyncio
+async def test_materialization_service_recovers_prepared_after_authorization_revoke(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+    tmp_path: Path,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    authorization_id = plan.specification.authorization_binding.authorization_id
+
+    repository = PostgresOperationalPaperSessionMaterializationRepository(database)
+    prepared = await repository.prepare(
+        plan,
+        actor_id=auth_user_id,
+        now=PREPARED_AT,
+    )
+    assert prepared.state is OperationalPaperSessionMaterializationState.PREPARED
+
+    authorization_repository = PostgresOperationalPaperCapitalAuthorizationRepository(database)
+    authorization = await authorization_repository.get(authorization_id)
+    assert authorization is not None
+
+    revoked = await authorization_repository.revoke(
+        authorization_id,
+        expected_record_version=authorization.record_version,
+        actor_id=auth_user_id,
+        now=PREPARED_AT + timedelta(minutes=1),
+    )
+    assert revoked.state.value == "REVOKED"
+
+    paper_repository = PaperTradingRepository(tmp_path)
+    materialized = await _service(
+        repository,
+        paper_repository,
+        _SequenceClock(
+            PREPARED_AT + timedelta(minutes=2),
+            PREPARED_AT + timedelta(minutes=3),
+        ),
+        authorization_repository=authorization_repository,
+        profile_repository=PostgresOperationalPaperSessionProfileRepository(database),
+    ).materialize_authorization(
+        authorization_id,
+        actor_id=auth_user_id,
+    )
+
+    assert materialized.materialization_id == prepared.materialization_id
+    assert materialized.state is OperationalPaperSessionMaterializationState.MATERIALIZED
+    assert materialized.record_version == 2
+    assert materialized.authorization_binding.authorization_id == authorization_id
+    assert paper_repository.load_config(materialized.session_id) == plan.config
+    assert _materialization_count(database_url, authorization_id) == 1
+
+
+@pytest.mark.asyncio
+async def test_materialization_service_mismatched_profile_evidence_fails_closed(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    authorization_id = plan.specification.authorization_binding.authorization_id
+    authorization_repository = PostgresOperationalPaperCapitalAuthorizationRepository(database)
+    authorization = await authorization_repository.get(authorization_id)
+    assert authorization is not None
+
+    profile_repository = PostgresOperationalPaperSessionProfileRepository(database)
+    binding = authorization.profile_binding
+    profile_revision = await profile_repository.get_revision(
+        binding.profile_id,
+        binding.approved_revision,
+    )
+    assert profile_revision is not None
+
+    mismatched_revision = replace(
+        profile_revision,
+        profile_id=uuid4(),
+    )
+    observed_profile_repository = _ProfileRevisionRepositoryDouble(mismatched_revision)
+
+    service = _service(
+        object(),
+        object(),
+        _SequenceClock(),
+        authorization_repository=_AuthorizationRepositoryDouble(authorization),
+        profile_repository=observed_profile_repository,
+    )
+
+    with pytest.raises(OperationalPaperSessionMaterializationProfileBindingConflictError):
+        await service.materialize_authorization(
+            authorization_id,
+            actor_id=auth_user_id,
+        )
+
+    assert observed_profile_repository.calls == [(binding.profile_id, binding.approved_revision)]
+
+
+@pytest.mark.asyncio
+async def test_materialization_service_preserves_exact_authorized_decimal_capital(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    plan = await _plan_context(database_url, database, auth_user_id)
+    authorization_id = plan.specification.authorization_binding.authorization_id
+
+    stored_authorization_repository = PostgresOperationalPaperCapitalAuthorizationRepository(
+        database
+    )
+    authorization = await stored_authorization_repository.get(authorization_id)
+    assert authorization is not None
+
+    stored_profile_repository = PostgresOperationalPaperSessionProfileRepository(database)
+    binding = authorization.profile_binding
+    profile_revision = await stored_profile_repository.get_revision(
+        binding.profile_id,
+        binding.approved_revision,
+    )
+    assert profile_revision is not None
+
+    capital = Decimal("1234.56789012")
+    authorization_specification = OperationalPaperCapitalAuthorizationSpecification(
+        schema_version=authorization.schema_version,
+        profile_binding=authorization.profile_binding,
+        simulation_id=authorization.simulation_id,
+        quote_asset=authorization.quote_asset,
+        authorized_capital=capital,
+    )
+    checksum = operational_paper_capital_authorization_specification_checksum(
+        authorization_specification
+    )
+    exact_authorization = replace(
+        authorization,
+        authorized_capital=capital,
+        authorization_checksum=checksum,
+    )
+
+    expected_plan = build_operational_paper_session_materialization_plan(
+        authorization_id=authorization_id,
+        authorization_specification=authorization_specification,
+        authorization_checksum=checksum,
+        profile_revision=profile_revision,
+    )
+
+    events: list[str] = []
+    prepared = prepare_operational_paper_session_materialization(
+        materialization_id=uuid4(),
+        plan=expected_plan,
+        prepared_by=auth_user_id,
+        prepared_at=PREPARED_AT,
+    )
+    repository = _RepositoryDouble(prepared, events)
+    paper_repository = _PaperRepositoryDouble(expected_plan.config, events)
+
+    materialized = await _service(
+        repository,
+        paper_repository,
+        _SequenceClock(
+            PREPARED_AT,
+            PREPARED_AT + timedelta(minutes=1),
+        ),
+        authorization_repository=_AuthorizationRepositoryDouble(exact_authorization),
+        profile_repository=_ProfileRevisionRepositoryDouble(profile_revision),
+    ).materialize_authorization(
+        authorization_id,
+        actor_id=auth_user_id,
+    )
+
+    assert expected_plan.config.initial_capital == capital
+    assert type(expected_plan.config.initial_capital) is Decimal
+    assert paper_repository.config.initial_capital == capital
+    assert type(paper_repository.config.initial_capital) is Decimal
+    assert materialized.config_checksum == expected_plan.specification.config_checksum
+    assert events == ["prepare", "filesystem_create", "mark_materialized"]
+
+
+def test_materialization_service_authoritative_resolution_order_and_boundary() -> None:
+    source = inspect.getsource(
+        OperationalPaperSessionMaterializationService.materialize_authorization
+    )
+
+    authorization_get = source.index("self._authorization_repository.get")
+    profile_get = source.index("self._profile_repository.get_revision")
+    plan_build = source.index("build_operational_paper_session_materialization_plan")
+    materialize = source.index("self.materialize")
+
+    assert authorization_get < profile_get < plan_build < materialize
+
+    forbidden = (
+        "mandate_repository",
+        "simulation_repository",
+        "strategy_definition_repository",
+        "get_current",
+        "FastAPI",
+        "Depends",
+        "Request",
+        "runner",
+    )
+    assert all(token not in source for token in forbidden)

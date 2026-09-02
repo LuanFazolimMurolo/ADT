@@ -6,12 +6,18 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID
 
+from app.domain.errors import PersistenceError
+from app.operational_paper_capital_authorizations import (
+    OperationalPaperCapitalAuthorizationNotFoundError,
+    OperationalPaperCapitalAuthorizationSpecification,
+)
 from app.operational_paper_session_materializations import (
     OperationalPaperSessionMaterialization,
     OperationalPaperSessionMaterializationConfigIdentityConflictError,
     OperationalPaperSessionMaterializationPlan,
     OperationalPaperSessionMaterializationState,
     OperationalPaperSessionMaterializationStateTransitionConflictError,
+    build_operational_paper_session_materialization_plan,
     operational_paper_session_materialization_specification_checksum,
 )
 from app.paper_trading.domain import (
@@ -21,8 +27,14 @@ from app.paper_trading.domain import (
 )
 from app.paper_trading.errors import PaperSessionConflictError, PaperSessionNotFoundError
 from app.paper_trading.repository import PaperTradingRepository
+from app.repositories.operational_paper_capital_authorizations import (
+    PostgresOperationalPaperCapitalAuthorizationRepository,
+)
 from app.repositories.operational_paper_session_materializations import (
     PostgresOperationalPaperSessionMaterializationRepository,
+)
+from app.repositories.operational_paper_session_profiles import (
+    PostgresOperationalPaperSessionProfileRepository,
 )
 
 OperationalPaperSessionMaterializationClock = Callable[[], datetime]
@@ -90,10 +102,14 @@ class OperationalPaperSessionMaterializationService:
         self,
         *,
         repository: PostgresOperationalPaperSessionMaterializationRepository,
+        authorization_repository: PostgresOperationalPaperCapitalAuthorizationRepository,
+        profile_repository: PostgresOperationalPaperSessionProfileRepository,
         paper_repository: PaperTradingRepository,
         clock: OperationalPaperSessionMaterializationClock,
     ) -> None:
         self._repository = repository
+        self._authorization_repository = authorization_repository
+        self._profile_repository = profile_repository
         self._paper_repository = paper_repository
         self._clock = clock
 
@@ -144,3 +160,38 @@ class OperationalPaperSessionMaterializationService:
         )
         _verify_materialized_transition(prepared, materialized, plan, actor_id)
         return materialized
+
+    async def materialize_authorization(
+        self,
+        authorization_id: UUID,
+        *,
+        actor_id: UUID,
+    ) -> OperationalPaperSessionMaterialization:
+        """Resolve frozen authoritative evidence and materialize its paper session."""
+
+        authorization = await self._authorization_repository.get(authorization_id)
+        if authorization is None:
+            raise OperationalPaperCapitalAuthorizationNotFoundError()
+
+        authorization_specification = OperationalPaperCapitalAuthorizationSpecification(
+            schema_version=authorization.schema_version,
+            profile_binding=authorization.profile_binding,
+            simulation_id=authorization.simulation_id,
+            quote_asset=authorization.quote_asset,
+            authorized_capital=authorization.authorized_capital,
+        )
+        binding = authorization.profile_binding
+        profile_revision = await self._profile_repository.get_revision(
+            binding.profile_id,
+            binding.approved_revision,
+        )
+        if profile_revision is None:
+            raise PersistenceError()
+
+        plan = build_operational_paper_session_materialization_plan(
+            authorization_id=authorization.authorization_id,
+            authorization_specification=authorization_specification,
+            authorization_checksum=authorization.authorization_checksum,
+            profile_revision=profile_revision,
+        )
+        return await self.materialize(plan, actor_id=actor_id)
