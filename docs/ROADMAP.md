@@ -864,11 +864,12 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Tracks 7-01 through 7-08 are complete, closed and integrated
+**Status**: Active. Tracks 7-01 through 7-09 are complete, closed and integrated
 into `main`. Track 7-09 — Operational Paper Session Materialization Foundation —
-has completed its implementation and full technical closure matrix on feature
-commit `47b89fd6fcb1702b6df093c7a10c1ff1122d4fc9`; final documentation and
-integration remain pending. Phase 7 remains active. The exact current handoff is maintained in
+was integrated by verified pure fast-forward at
+`370cd850a71adfa9eb45a554dccc379b51746122`, tree
+`9c91ab075651eef5c7e63f84683b5cad1acbc4a0`. Phase 7 remains active. The exact
+current handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
@@ -898,9 +899,9 @@ integration remain pending. Phase 7 remains active. The exact current handoff is
 **Estimated Duration**: 4 weeks
 **Blockers**: Reviewed PostgreSQL operational migrations and persistent worker host
 
-### 7-09 — Operational Paper Session Materialization Foundation 🚧
+### 7-09 — Operational Paper Session Materialization Foundation ✅
 
-**Status**: TECHNICAL CLOSURE PASSED — implementation and the full local technical matrix are complete; final documentation and integration remain pending.
+**Status**: **COMPLETE / CLOSED** — implementation, technical closure, final documentation and pure fast-forward integration are complete.
 
 **Goal**: Materialize one exact approved operational paper-session profile plus its authoritative capital authorization into the existing immutable local `PaperSessionConfig`, while preserving existing deterministic `config_checksum` and `session_id` semantics.
 
@@ -921,6 +922,12 @@ integration remain pending. Phase 7 remains active. The exact current handoff is
 **Explicitly out of scope**: paper-runner execution or lifecycle control, collector control, `state.json`, RAW synchronization or scanning, Binance/network work, trading execution, orders/fills, PnL settlement, trading-horizon labels, ADT Official Portfolio and real capital.
 
 **Architecture record**: [`docs/adr/0004-phase-7-09-operational-paper-session-materialization-authority.md`](./adr/0004-phase-7-09-operational-paper-session-materialization-authority.md)
+
+**Integrated delivery milestone**: `370cd850a71adfa9eb45a554dccc379b51746122`.
+
+**Integrated delivery tree**: `9c91ab075651eef5c7e63f84683b5cad1acbc4a0`.
+
+The full technical closure matrix passed before integration: 109 targeted materialization tests, 799 cross-authority tests, 3523 full-backend tests plus one expected opt-in network skip at 88% coverage, three consecutive 276/276 Vitest runs, build and bundle budgets, and 56/56 Playwright tests. Remote `main` and the feature were independently verified identical after pure fast-forward integration. The migration remains **VERSIONED / REMOTELY UNAPPLIED**.
 
 ### 7-02 — Market Operation Administrative Console ✅
 

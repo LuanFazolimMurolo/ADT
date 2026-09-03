@@ -4,7 +4,7 @@ Last updated: 2026-09-02
 
 ## Current branch
 
-`feat/phase-7-09-operational-paper-session-materialization-foundation`
+`main`
 
 At the start of every session, verify the local branch and HEAD, then inspect
 the corresponding remote branch. This file records the intended handoff; Git
@@ -18,7 +18,7 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Current delivery
 
-**7-09 — Operational Paper Session Materialization Foundation — TECHNICAL CLOSURE PASSED / FINAL DOCUMENTATION**
+**7-09 — Operational Paper Session Materialization Foundation — COMPLETE / CLOSED**
 
 Starting main baseline: `cb74c810c345c2981a4c2ca15c76acd76d0724a2`.
 
@@ -36,7 +36,9 @@ Gate 2C — Materialization Orchestration, Wiring, Query Facade & Admin API: **R
 
 Gate 3A — Technical Closure Matrix: **CLOSED / PASS**.
 
-Gate 3B — Final Documentation & Integration Handoff: **ACTIVE**.
+Gate 3B — Final Documentation & Integration Handoff: **CLOSED / PASS**.
+
+Gate 4 — Pure Fast-Forward Integration: **CLOSED / PASS**.
 
 Accepted model: durable PostgreSQL `OperationalPaperSessionMaterialization` provenance plus the existing immutable local `PaperSessionConfig` and deterministic `session_id`.
 
@@ -54,17 +56,26 @@ Validated candidate tree: `ca3c0a21254993c82184e519ef7e9e0dc48bf472`.
 
 Technical closure evidence: 109 targeted materialization tests passed; 799 cross-authority tests passed; the full backend passed with 3523 tests plus one expected opt-in network skip and 88% coverage; Ruff, MyPy and dependency checks passed; deterministic OpenAPI SHA-256 is `dee78c3fa38bde8bb70076e3ad14378468e695ced1a506193042c1535cde3d0f`; three consecutive full Vitest runs passed 276/276 tests; build and bundle budgets passed; and Playwright passed 56/56 tests.
 
+Integrated 7-09 delivery milestone: `370cd850a71adfa9eb45a554dccc379b51746122`.
+
+Integrated delivery tree: `9c91ab075651eef5c7e63f84683b5cad1acbc4a0`.
+
+Remote `main` and the 7-09 feature were independently verified identical at that commit and tree after a pure fast-forward from `cb74c810c345c2981a4c2ca15c76acd76d0724a2`. No merge commit, squash, rebase or force push was used.
+
 ## Last completed track
 
-**7-08 — Operational Paper Capital Authorization Foundation — COMPLETE / CLOSED**
+**7-09 — Operational Paper Session Materialization Foundation — COMPLETE / CLOSED**
 
-Gate 5 and the final documentation closure passed. The completed 7-08 delivery
-is versioned on `main` at `cb74c810c345c2981a4c2ca15c76acd76d0724a2`, tree
-`f7e39c850d1a848ef27c7fdf2343c3c4f54ae262`. The 7-08 migration remains
+The complete technical closure matrix passed, final documentation was published,
+and `main` advanced by verified pure fast-forward to integrated milestone
+`370cd850a71adfa9eb45a554dccc379b51746122`, tree
+`9c91ab075651eef5c7e63f84683b5cad1acbc4a0`. Remote `main` and the feature were
+independently verified identical. The 7-09 migration remains
 **VERSIONED / REMOTELY UNAPPLIED**. Phase 7 remains active.
 
 Previously closed Phase 7 deliveries remain closed:
 
+- **7-08 — Operational Paper Capital Authorization Foundation — CLOSED**
 - **7-07 — Operational Paper-Session Configuration Foundation — CLOSED**
 - **7-06 — Operational Mandate Foundation — CLOSED**
 - **7-05 — Worker Runtime Observability — CLOSED**
@@ -83,6 +94,14 @@ Previously closed Phase 7 deliveries remain closed:
 ## Validated 7-09 technical candidate tree
 
 `ca3c0a21254993c82184e519ef7e9e0dc48bf472`
+
+## Integrated 7-09 delivery milestone
+
+`370cd850a71adfa9eb45a554dccc379b51746122`
+
+## Integrated 7-09 delivery tree
+
+`9c91ab075651eef5c7e63f84683b5cad1acbc4a0`
 
 ## Integrated 7-08 delivery milestone
 
