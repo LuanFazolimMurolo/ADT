@@ -867,7 +867,7 @@ HTTP requests.
 **Status**: Active. Tracks 7-01 through 7-09 are complete, closed and integrated
 into `main`. Track 7-10 — Operational Paper Session Activation Authority
 Foundation — is the current delivery; Selection R0 is **CLOSED / PASS** and
-Gate 1A is a **LOCAL ARCHITECTURE CANDIDATE / NOT PUBLISHED**. Track 7-09 was
+Gate 1 is **REMOTE PUBLISHED / CLOSED / PASS**. Track 7-09 was
 integrated by verified pure fast-forward at
 `370cd850a71adfa9eb45a554dccc379b51746122`, tree
 `9c91ab075651eef5c7e63f84683b5cad1acbc4a0`. Phase 7 remains active. The exact
@@ -903,7 +903,7 @@ current handoff is maintained in
 
 ### 7-10 — Operational Paper Session Activation Authority Foundation
 
-**Status**: **ACTIVE — GATE 1A LOCAL ARCHITECTURE CANDIDATE / NOT PUBLISHED**.
+**Status**: **ACTIVE — GATE 1 REMOTE PUBLISHED / CLOSED / PASS**.
 Selection R0 is **CLOSED / PASS**. Implementation has not begun.
 
 **Starting main baseline**: `a17472f02b2af15b53950b45c8875b552bb860c5`.
@@ -914,7 +914,7 @@ Selection R0 is **CLOSED / PASS**. Implementation has not begun.
 `MATERIALIZED` operational paper session eligible for a future execution
 attempt, without starting or controlling a runner.
 
-**Gate 1A candidate**:
+**Accepted Gate 1 architecture**:
 
 - use historical `OperationalPaperSessionActivation` grants with lifecycle
   `AUTHORIZED -> REVOKED` and terminal revocation;
@@ -935,7 +935,7 @@ gate is expected to add durable identities/bindings, lifecycle, actors,
 timestamps, idempotency, concurrency/current-grant defenses, RLS and Data API
 denial. No operational migration is created or remotely applied by Gate 1A.
 
-**Architecture candidate**:
+**Accepted architecture record**:
 [`docs/adr/0005-phase-7-10-operational-paper-session-activation-authority.md`](./adr/0005-phase-7-10-operational-paper-session-activation-authority.md)
 
 **Explicitly out of scope**: domain/SQL/repository/service/API/frontend

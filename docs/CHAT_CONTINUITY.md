@@ -26,10 +26,10 @@ Starting tree: `cfc072e9851ebc882049b4ff09c6817e082b7e11`.
 
 Selection R0: **CLOSED / PASS**.
 
-Gate 1A — Activation Authority Architecture Candidate: **LOCAL CANDIDATE /
-NOT PUBLISHED**.
+Gate 1 — Activation Authority Architecture: **REMOTE PUBLISHED / CLOSED /
+PASS**.
 
-Selected candidate: historical PostgreSQL
+Accepted model: historical PostgreSQL
 `OperationalPaperSessionActivation` grants with terminal
 `AUTHORIZED -> REVOKED`, at most one currently authorized grant per exact
 materialization, and new identity for later reauthorization.
@@ -43,7 +43,7 @@ Expected 7-10 migration: **YES, BUT NOT YET CREATED**. Implementation has not
 begun. No domain, SQL, repository, service, API or frontend work exists for
 7-10, and no remote Supabase mutation was performed.
 
-Local candidate architecture record:
+Accepted architecture record:
 [`docs/adr/0005-phase-7-10-operational-paper-session-activation-authority.md`](./adr/0005-phase-7-10-operational-paper-session-activation-authority.md)
 
 ## Last completed track

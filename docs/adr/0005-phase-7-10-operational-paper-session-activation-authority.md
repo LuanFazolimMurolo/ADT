@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — Gate 1A local architecture candidate, not published.
+Accepted — Gate 1
 
 ## Date
 
