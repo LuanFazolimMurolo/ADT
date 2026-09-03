@@ -865,8 +865,10 @@ through an authenticated control plane without executing long-running work in
 HTTP requests.
 
 **Status**: Active. Tracks 7-01 through 7-09 are complete, closed and integrated
-into `main`. Track 7-09 — Operational Paper Session Materialization Foundation —
-was integrated by verified pure fast-forward at
+into `main`. Track 7-10 — Operational Paper Session Activation Authority
+Foundation — is the current delivery; Selection R0 is **CLOSED / PASS** and
+Gate 1A is a **LOCAL ARCHITECTURE CANDIDATE / NOT PUBLISHED**. Track 7-09 was
+integrated by verified pure fast-forward at
 `370cd850a71adfa9eb45a554dccc379b51746122`, tree
 `9c91ab075651eef5c7e63f84683b5cad1acbc4a0`. Phase 7 remains active. The exact
 current handoff is maintained in
@@ -898,6 +900,48 @@ current handoff is maintained in
 **Dependencies**: Phase 6 complete
 **Estimated Duration**: 4 weeks
 **Blockers**: Reviewed PostgreSQL operational migrations and persistent worker host
+
+### 7-10 — Operational Paper Session Activation Authority Foundation
+
+**Status**: **ACTIVE — GATE 1A LOCAL ARCHITECTURE CANDIDATE / NOT PUBLISHED**.
+Selection R0 is **CLOSED / PASS**. Implementation has not begun.
+
+**Starting main baseline**: `a17472f02b2af15b53950b45c8875b552bb860c5`.
+
+**Starting tree**: `cfc072e9851ebc882049b4ff09c6817e082b7e11`.
+
+**Goal**: Establish the durable administrative authority that makes one exact
+`MATERIALIZED` operational paper session eligible for a future execution
+attempt, without starting or controlling a runner.
+
+**Gate 1A candidate**:
+
+- use historical `OperationalPaperSessionActivation` grants with lifecycle
+  `AUTHORIZED -> REVOKED` and terminal revocation;
+- permit at most one currently `AUTHORIZED` grant per materialization;
+- require a new grant identity and new administrator intent for later
+  reauthorization;
+- distinguish administrative eligibility from runtime intent:
+  `ACTIVATED != RUNNING` and `activation != start intent`;
+- preserve each activation as historical evidence while computing effective
+  eligibility from fresh current-authority, exact config and plugin checks;
+- keep PostgreSQL as activation authority and the paper filesystem as canonical
+  executable-config authority; and
+- defer runtime epoch, desired state, lease, heartbeat, worker claim, fencing,
+  supervision and start/pause/resume/stop to future runner-control work.
+
+**Expected migration**: **YES, BUT NOT YET CREATED**. A later implementation
+gate is expected to add durable identities/bindings, lifecycle, actors,
+timestamps, idempotency, concurrency/current-grant defenses, RLS and Data API
+denial. No operational migration is created or remotely applied by Gate 1A.
+
+**Architecture candidate**:
+[`docs/adr/0005-phase-7-10-operational-paper-session-activation-authority.md`](./adr/0005-phase-7-10-operational-paper-session-activation-authority.md)
+
+**Explicitly out of scope**: domain/SQL/repository/service/API/frontend
+implementation; migration creation/application; `run_once`; runner or worker
+process control; runtime state; RAW/Binance work; orders, fills or PnL;
+trading-horizon labels; ADT Official Portfolio; and real-capital execution.
 
 ### 7-09 — Operational Paper Session Materialization Foundation ✅
 

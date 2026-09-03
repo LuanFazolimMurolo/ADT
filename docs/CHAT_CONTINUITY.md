@@ -1,10 +1,10 @@
 # ADT Current Development Handoff
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 ## Current branch
 
-`main`
+`feat/phase-7-10-operational-paper-session-activation-authority-foundation`
 
 At the start of every session, verify the local branch and HEAD, then inspect
 the corresponding remote branch. This file records the intended handoff; Git
@@ -18,49 +18,33 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Current delivery
 
-**7-09 — Operational Paper Session Materialization Foundation — COMPLETE / CLOSED**
+**7-10 — Operational Paper Session Activation Authority Foundation — ACTIVE**
 
-Starting main baseline: `cb74c810c345c2981a4c2ca15c76acd76d0724a2`.
+Starting main baseline: `a17472f02b2af15b53950b45c8875b552bb860c5`.
 
-Starting tree: `f7e39c850d1a848ef27c7fdf2343c3c4f54ae262`.
+Starting tree: `cfc072e9851ebc882049b4ff09c6817e082b7e11`.
 
 Selection R0: **CLOSED / PASS**.
 
-Gate 1 — Materialization Authority & Provenance Model: **REMOTE PUBLISHED / CLOSED / PASS**.
+Gate 1A — Activation Authority Architecture Candidate: **LOCAL CANDIDATE /
+NOT PUBLISHED**.
 
-Gate 2A — Pure Domain Contract: **REMOTE PUBLISHED / CLOSED / PASS**.
+Selected candidate: historical PostgreSQL
+`OperationalPaperSessionActivation` grants with terminal
+`AUTHORIZED -> REVOKED`, at most one currently authorized grant per exact
+materialization, and new identity for later reauthorization.
 
-Gate 2B — PostgreSQL Persistence Foundation: **REMOTE PUBLISHED / CLOSED / PASS**.
+Activation is administrative eligibility only: `ACTIVATED != RUNNING` and
+`activation != start intent`. Future start must freshly revalidate current
+upstream authority, the exact immutable local config and frozen-plugin
+resolvability.
 
-Gate 2C — Materialization Orchestration, Wiring, Query Facade & Admin API: **REMOTE PUBLISHED / CLOSED / PASS**.
+Expected 7-10 migration: **YES, BUT NOT YET CREATED**. Implementation has not
+begun. No domain, SQL, repository, service, API or frontend work exists for
+7-10, and no remote Supabase mutation was performed.
 
-Gate 3A — Technical Closure Matrix: **CLOSED / PASS**.
-
-Gate 3B — Final Documentation & Integration Handoff: **CLOSED / PASS**.
-
-Gate 4 — Pure Fast-Forward Integration: **CLOSED / PASS**.
-
-Accepted model: durable PostgreSQL `OperationalPaperSessionMaterialization` provenance plus the existing immutable local `PaperSessionConfig` and deterministic `session_id`.
-
-Initial lifecycle: `PREPARED -> MATERIALIZED`.
-
-Phase 7-09 migration: `supabase/migrations/20260831000000_phase_7_09_operational_paper_session_materializations.sql`. It is **VERSIONED / REMOTELY UNAPPLIED**; no remote Supabase mutation was performed during 7-09.
-
-The delivery is materializing but non-running: no run_once, runner/collector control, state.json publication, RAW processing, Binance access, strategy execution, orders/fills or PnL settlement.
-
-Accepted architecture record: [`docs/adr/0004-phase-7-09-operational-paper-session-materialization-authority.md`](./adr/0004-phase-7-09-operational-paper-session-materialization-authority.md)
-
-Validated 7-09 technical candidate: `47b89fd6fcb1702b6df093c7a10c1ff1122d4fc9`.
-
-Validated candidate tree: `ca3c0a21254993c82184e519ef7e9e0dc48bf472`.
-
-Technical closure evidence: 109 targeted materialization tests passed; 799 cross-authority tests passed; the full backend passed with 3523 tests plus one expected opt-in network skip and 88% coverage; Ruff, MyPy and dependency checks passed; deterministic OpenAPI SHA-256 is `dee78c3fa38bde8bb70076e3ad14378468e695ced1a506193042c1535cde3d0f`; three consecutive full Vitest runs passed 276/276 tests; build and bundle budgets passed; and Playwright passed 56/56 tests.
-
-Integrated 7-09 delivery milestone: `370cd850a71adfa9eb45a554dccc379b51746122`.
-
-Integrated delivery tree: `9c91ab075651eef5c7e63f84683b5cad1acbc4a0`.
-
-Remote `main` and the 7-09 feature were independently verified identical at that commit and tree after a pure fast-forward from `cb74c810c345c2981a4c2ca15c76acd76d0724a2`. No merge commit, squash, rebase or force push was used.
+Local candidate architecture record:
+[`docs/adr/0005-phase-7-10-operational-paper-session-activation-authority.md`](./adr/0005-phase-7-10-operational-paper-session-activation-authority.md)
 
 ## Last completed track
 
