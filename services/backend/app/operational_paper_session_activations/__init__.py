@@ -26,6 +26,10 @@ from app.operational_paper_session_activations.errors import (
     InvalidOperationalPaperSessionActivationSpecificationError,
     OperationalPaperSessionActivationBoundsExceededError,
     OperationalPaperSessionActivationChecksumMismatchError,
+    OperationalPaperSessionActivationCurrentGrantConflictError,
+    OperationalPaperSessionActivationIdempotencyConflictError,
+    OperationalPaperSessionActivationNotFoundError,
+    OperationalPaperSessionActivationRecordVersionConflictError,
     OperationalPaperSessionActivationStateTransitionConflictError,
 )
 
@@ -39,6 +43,10 @@ __all__ = [
     "OperationalPaperSessionActivationBoundsExceededError",
     "OperationalPaperSessionActivationChecksumMismatchError",
     "OperationalPaperSessionActivationCreateIntent",
+    "OperationalPaperSessionActivationCurrentGrantConflictError",
+    "OperationalPaperSessionActivationIdempotencyConflictError",
+    "OperationalPaperSessionActivationNotFoundError",
+    "OperationalPaperSessionActivationRecordVersionConflictError",
     "OperationalPaperSessionActivationSpecification",
     "OperationalPaperSessionActivationState",
     "OperationalPaperSessionActivationStateTransitionConflictError",
