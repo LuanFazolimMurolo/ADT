@@ -61,6 +61,7 @@ from app.paper_trading.errors import (
     InvalidPaperSessionError,
     PaperSessionConflictError,
     PaperSessionCorruptError,
+    PaperSessionNotFoundError,
     PaperSessionVerificationError,
 )
 from app.paper_trading.query import PaperTradingReadService
@@ -263,6 +264,7 @@ def test_create_is_idempotent_and_distinct_config_gets_distinct_identity(tmp_pat
     config = _config()
     assert repository.create(config) == config
     assert repository.create(config) == config
+    assert repository.load_config(paper_session_id(config)) == config
     changed = PaperSessionConfig(
         **{
             **{item.name: getattr(config, item.name) for item in fields(config)},
@@ -271,6 +273,63 @@ def test_create_is_idempotent_and_distinct_config_gets_distinct_identity(tmp_pat
     )
     # Different logical config receives a different session id, therefore it is valid.
     assert repository.create(changed) == changed
+
+
+@pytest.mark.parametrize("variant", ("whitespace", "key-order"))
+def test_repository_rejects_semantically_valid_noncanonical_config_without_repair(
+    tmp_path: Path,
+    variant: str,
+) -> None:
+    repository = PaperTradingRepository(tmp_path)
+    config = _config()
+    session_id = paper_session_id(config)
+    repository.create(config)
+    canonical = encode_paper_config(config)
+    document = json.loads(canonical)
+    if variant == "whitespace":
+        noncanonical = json.dumps(document, indent=2, sort_keys=True).encode()
+    else:
+        noncanonical = json.dumps(
+            {
+                "session_id": document["session_id"],
+                "checksum": document["checksum"],
+                "config": document["config"],
+            },
+            separators=(",", ":"),
+        ).encode()
+    assert noncanonical != canonical
+    assert decode_paper_config(noncanonical) == config
+
+    config_path = tmp_path / "market" / "paper-trading" / session_id / "config.json"
+    config_path.write_bytes(noncanonical)
+    before = config_path.read_bytes()
+
+    with pytest.raises(PaperSessionCorruptError):
+        repository.load_config(session_id)
+
+    assert config_path.read_bytes() == before
+
+
+def test_repository_load_config_preserves_missing_and_corrupt_errors(tmp_path: Path) -> None:
+    repository = PaperTradingRepository(tmp_path)
+    config = _config()
+    session_id = paper_session_id(config)
+    config_path = tmp_path / "market" / "paper-trading" / session_id / "config.json"
+
+    with pytest.raises(PaperSessionNotFoundError):
+        repository.load_config(session_id)
+
+    config_path.parent.mkdir(parents=True)
+    for raw in (b"{}", b" " * (MAX_PAPER_DOCUMENT_BYTES + 1)):
+        config_path.write_bytes(raw)
+        with pytest.raises(PaperSessionCorruptError):
+            repository.load_config(session_id)
+
+    tampered = json.loads(encode_paper_config(config))
+    tampered["checksum"] = "0" * 64
+    config_path.write_bytes(canonical_json_bytes(tampered))
+    with pytest.raises(PaperSessionCorruptError):
+        repository.load_config(session_id)
 
 
 def test_run_once_preserves_open_order_at_cycle_boundary_and_fills_next_cycle(

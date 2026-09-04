@@ -265,7 +265,11 @@ class PaperTradingRepository:
     @staticmethod
     def _read_config_path(path: Path) -> PaperSessionConfig:
         try:
-            return decode_paper_config(PaperTradingRepository._read_bounded(path))
+            raw = PaperTradingRepository._read_bounded(path)
+            config = decode_paper_config(raw)
+            if raw != encode_paper_config(config):
+                raise PaperSessionCorruptError()
+            return config
         except PaperSessionCorruptError:
             raise
         except Exception:
