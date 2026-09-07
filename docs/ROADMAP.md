@@ -864,14 +864,15 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Tracks 7-01 through 7-09 are complete, closed and integrated
-into `main`. Track 7-10 — Operational Paper Session Activation Authority
-Foundation — is the current delivery; Selection R0 is **CLOSED / PASS** and
-Gate 1 is **REMOTE PUBLISHED / CLOSED / PASS**. Track 7-09 was
-integrated by verified pure fast-forward at
-`370cd850a71adfa9eb45a554dccc379b51746122`, tree
-`9c91ab075651eef5c7e63f84683b5cad1acbc4a0`. Phase 7 remains active. The exact
-current handoff is maintained in
+**Status**: Active. Tracks 7-01 through 7-09 are complete, closed and
+integrated into `main`. Track 7-10 — Operational Paper Session Activation
+Authority Foundation — is **COMPLETE / CLOSED on its published feature branch**
+and has not yet been integrated into `main`. Its published technical-closure
+milestone is `94204f9cb04efabfecf23052a613ae4288d7f1dc`, tree
+`75a3dc49e902bda1ca14c91e8b9080d733d88601`. The 7-10 generated OpenAPI
+contract is synchronized and published, while its PostgreSQL migration remains
+**VERSIONED / REMOTELY UNAPPLIED**. Phase 7 remains active. The exact current
+handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
@@ -901,47 +902,72 @@ current handoff is maintained in
 **Estimated Duration**: 4 weeks
 **Blockers**: Reviewed PostgreSQL operational migrations and persistent worker host
 
-### 7-10 — Operational Paper Session Activation Authority Foundation
+### 7-10 — Operational Paper Session Activation Authority Foundation ✅
 
-**Status**: **ACTIVE — GATE 1 REMOTE PUBLISHED / CLOSED / PASS**.
-Selection R0 is **CLOSED / PASS**. Implementation has not begun.
+**Status**: **COMPLETE / CLOSED — FEATURE-BRANCH PUBLISHED**.
+
+Selection R0 is **CLOSED / PASS**. Gate 1 — Activation Authority Architecture
+is **REMOTE PUBLISHED / CLOSED / PASS**. Gate 2H — Technical Closure
+Verification is **CLOSED / PASS**.
 
 **Starting main baseline**: `a17472f02b2af15b53950b45c8875b552bb860c5`.
 
 **Starting tree**: `cfc072e9851ebc882049b4ff09c6817e082b7e11`.
 
+**Published technical-closure milestone**:
+`94204f9cb04efabfecf23052a613ae4288d7f1dc`, tree
+`75a3dc49e902bda1ca14c91e8b9080d733d88601`.
+
 **Goal**: Establish the durable administrative authority that makes one exact
 `MATERIALIZED` operational paper session eligible for a future execution
 attempt, without starting or controlling a runner.
 
-**Accepted Gate 1 architecture**:
+**Delivered contract**:
 
-- use historical `OperationalPaperSessionActivation` grants with lifecycle
-  `AUTHORIZED -> REVOKED` and terminal revocation;
-- permit at most one currently `AUTHORIZED` grant per materialization;
-- require a new grant identity and new administrator intent for later
-  reauthorization;
-- distinguish administrative eligibility from runtime intent:
-  `ACTIVATED != RUNNING` and `activation != start intent`;
-- preserve each activation as historical evidence while computing effective
-  eligibility from fresh current-authority, exact config and plugin checks;
-- keep PostgreSQL as activation authority and the paper filesystem as canonical
-  executable-config authority; and
-- defer runtime epoch, desired state, lease, heartbeat, worker claim, fencing,
-  supervision and start/pause/resume/stop to future runner-control work.
+- historical PostgreSQL `OperationalPaperSessionActivation` grants with
+  lifecycle `AUTHORIZED -> REVOKED`, terminal revocation and at most one
+  currently `AUTHORIZED` grant per materialization;
+- pure activation domain contracts, canonical activation checksums,
+  actor-scoped idempotency intent fingerprints and reauthorization through a
+  new activation identity;
+- durable PostgreSQL persistence, concurrency/current-grant defenses and
+  idempotency-before-current-grant-conflict semantics;
+- application-service authorization and revocation with exact
+  materialization/config identity checks, fresh upstream-authority validation
+  and frozen strategy-plugin resolution;
+- administrator-only HTTP list/get/authorize/revoke transport;
+- canonical raw-byte enforcement when reading immutable local
+  `PaperSessionConfig`;
+- synchronized generated OpenAPI contracts for all four activation HTTP
+  operations; and
+- no hand-written activation/materialization administration UI requirement for
+  7-10 closure.
 
-**Expected migration**: **YES, BUT NOT YET CREATED**. A later implementation
-gate is expected to add durable identities/bindings, lifecycle, actors,
-timestamps, idempotency, concurrency/current-grant defenses, RLS and Data API
-denial. No operational migration is created or remotely applied by Gate 1A.
+**Verification**: the published technical head passed 291 integrated targeted
+tests covering activation domain, migration contract, repository, service,
+HTTP transport and paper-config hardening. Ruff, MyPy, OpenAPI consistency,
+frontend typecheck, frontend E2E typecheck, ESLint and `git diff --check` also
+passed.
+
+**Migration state**:
+`supabase/migrations/20260903000000_phase_7_10_operational_paper_session_activations.sql`
+is **VERSIONED / REMOTELY UNAPPLIED**. No 7-10 migration was applied to remote
+Supabase during this delivery.
+
+**Runtime boundary**: activation remains administrative execution eligibility,
+not process execution. `ACTIVATED != RUNNING`, `activation != start intent`,
+and the persisted activation state is `AUTHORIZED` or `REVOKED`. Runtime
+epochs, desired state, RAW-readiness enforcement at start, leases, heartbeat,
+worker claim, fencing, supervision and start/pause/resume/stop remain future
+runner-control scope.
 
 **Accepted architecture record**:
 [`docs/adr/0005-phase-7-10-operational-paper-session-activation-authority.md`](./adr/0005-phase-7-10-operational-paper-session-activation-authority.md)
 
-**Explicitly out of scope**: domain/SQL/repository/service/API/frontend
-implementation; migration creation/application; `run_once`; runner or worker
-process control; runtime state; RAW/Binance work; orders, fills or PnL;
-trading-horizon labels; ADT Official Portfolio; and real-capital execution.
+**Explicitly deferred / out of scope**: runtime start authority; `run_once`;
+runner or worker process control; runtime state; RAW/Binance execution work;
+orders, fills or PnL; trading-horizon labels; ADT Official Portfolio; and
+real-capital execution.
 
 ### 7-09 — Operational Paper Session Materialization Foundation ✅
 

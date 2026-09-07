@@ -1,6 +1,6 @@
 # ADT Current Development Handoff
 
-Last updated: 2026-09-03
+Last updated: 2026-09-07
 
 ## Current branch
 
@@ -18,44 +18,72 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Current delivery
 
-**7-10 — Operational Paper Session Activation Authority Foundation — ACTIVE**
+**7-10 — Operational Paper Session Activation Authority Foundation —
+COMPLETE / CLOSED ON FEATURE BRANCH; AWAITING MAIN INTEGRATION**
 
 Starting main baseline: `a17472f02b2af15b53950b45c8875b552bb860c5`.
 
 Starting tree: `cfc072e9851ebc882049b4ff09c6817e082b7e11`.
+
+Published technical-closure milestone:
+`94204f9cb04efabfecf23052a613ae4288d7f1dc`, tree
+`75a3dc49e902bda1ca14c91e8b9080d733d88601`.
+
+The exact current feature HEAD must be verified from Git because this handoff
+file itself participates in the final documentation reconciliation.
 
 Selection R0: **CLOSED / PASS**.
 
 Gate 1 — Activation Authority Architecture: **REMOTE PUBLISHED / CLOSED /
 PASS**.
 
-Accepted model: historical PostgreSQL
-`OperationalPaperSessionActivation` grants with terminal
-`AUTHORIZED -> REVOKED`, at most one currently authorized grant per exact
-materialization, and new identity for later reauthorization.
+Gate 2H — Technical Closure Verification: **CLOSED / PASS**.
+
+Implemented layers:
+
+- activation domain and lifecycle `AUTHORIZED -> REVOKED`;
+- PostgreSQL migration and activation repository;
+- activation application service;
+- administrator-only list/get/authorize/revoke HTTP transport;
+- canonical immutable `PaperSessionConfig` read hardening; and
+- synchronized generated OpenAPI activation contract.
+
+The technical-closure milestone passed **291 integrated targeted tests**.
+Ruff, MyPy, `check:api`, frontend typecheck, frontend E2E typecheck, ESLint and
+`git diff --check` all passed on the published feature tree.
 
 Activation is administrative eligibility only: `ACTIVATED != RUNNING` and
-`activation != start intent`. Future start must freshly revalidate current
-upstream authority, the exact immutable local config and frozen-plugin
-resolvability.
+`activation != start intent`. A future start must freshly revalidate current
+upstream authority, the exact immutable local config, frozen-plugin
+resolvability and RAW readiness before establishing runtime authority.
 
-Expected 7-10 migration: **YES, BUT NOT YET CREATED**. Implementation has not
-begun. No domain, SQL, repository, service, API or frontend work exists for
-7-10, and no remote Supabase mutation was performed.
+The 7-10 migration
+`supabase/migrations/20260903000000_phase_7_10_operational_paper_session_activations.sql`
+is **VERSIONED / REMOTELY UNAPPLIED**. No remote Supabase mutation was
+performed for 7-10.
+
+No hand-written activation or materialization administration page is required
+for 7-10 closure. Runtime epochs, desired state, worker claim, leases,
+heartbeat, fencing, supervision and start/pause/resume/stop remain future
+runner-control scope.
 
 Accepted architecture record:
 [`docs/adr/0005-phase-7-10-operational-paper-session-activation-authority.md`](./adr/0005-phase-7-10-operational-paper-session-activation-authority.md)
 
 ## Last completed track
 
-**7-09 — Operational Paper Session Materialization Foundation — COMPLETE / CLOSED**
+**7-10 — Operational Paper Session Activation Authority Foundation —
+COMPLETE / CLOSED ON FEATURE BRANCH**
 
-The complete technical closure matrix passed, final documentation was published,
-and `main` advanced by verified pure fast-forward to integrated milestone
-`370cd850a71adfa9eb45a554dccc379b51746122`, tree
-`9c91ab075651eef5c7e63f84683b5cad1acbc4a0`. Remote `main` and the feature were
-independently verified identical. The 7-09 migration remains
-**VERSIONED / REMOTELY UNAPPLIED**. Phase 7 remains active.
+The implementation and technical closure are published on the feature branch.
+The stable technical-closure milestone before final documentation
+reconciliation is `94204f9cb04efabfecf23052a613ae4288d7f1dc`, tree
+`75a3dc49e902bda1ca14c91e8b9080d733d88601`.
+
+The 7-10 migration remains **VERSIONED / REMOTELY UNAPPLIED**. Track 7-10 has
+not yet been integrated into `main`; the starting/current main baseline for
+this delivery remains `a17472f02b2af15b53950b45c8875b552bb860c5` until the
+separate integration gate advances it.
 
 Previously closed Phase 7 deliveries remain closed:
 
