@@ -864,12 +864,11 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Tracks 7-01 through 7-09 are complete, closed and
+**Status**: Active. Tracks 7-01 through 7-10 are complete, closed and
 integrated into `main`. Track 7-10 — Operational Paper Session Activation
-Authority Foundation — is **COMPLETE / CLOSED on its published feature branch**
-and has not yet been integrated into `main`. Its published technical-closure
-milestone is `94204f9cb04efabfecf23052a613ae4288d7f1dc`, tree
-`75a3dc49e902bda1ca14c91e8b9080d733d88601`. The 7-10 generated OpenAPI
+Authority Foundation — was integrated by verified pure fast-forward at
+`6994d80235c4c0945fc10cdae6f20caf1324a0fb`, tree
+`8024ced78efd6dd7498817e6c33fd53aa27c5207`. The 7-10 generated OpenAPI
 contract is synchronized and published, while its PostgreSQL migration remains
 **VERSIONED / REMOTELY UNAPPLIED**. Phase 7 remains active. The exact current
 handoff is maintained in
@@ -904,11 +903,12 @@ handoff is maintained in
 
 ### 7-10 — Operational Paper Session Activation Authority Foundation ✅
 
-**Status**: **COMPLETE / CLOSED — FEATURE-BRANCH PUBLISHED**.
+**Status**: **COMPLETE / CLOSED — INTEGRATED INTO `main`**.
 
 Selection R0 is **CLOSED / PASS**. Gate 1 — Activation Authority Architecture
 is **REMOTE PUBLISHED / CLOSED / PASS**. Gate 2H — Technical Closure
-Verification is **CLOSED / PASS**.
+Verification is **CLOSED / PASS**. Gate 2J — Pure Fast-Forward Main Integration
+is **REMOTE INTEGRATED / CLOSED / PASS**.
 
 **Starting main baseline**: `a17472f02b2af15b53950b45c8875b552bb860c5`.
 
@@ -917,6 +917,12 @@ Verification is **CLOSED / PASS**.
 **Published technical-closure milestone**:
 `94204f9cb04efabfecf23052a613ae4288d7f1dc`, tree
 `75a3dc49e902bda1ca14c91e8b9080d733d88601`.
+
+**Verified main-integration milestone**:
+`6994d80235c4c0945fc10cdae6f20caf1324a0fb`, tree
+`8024ced78efd6dd7498817e6c33fd53aa27c5207`. Remote `main` and the 7-10
+feature branch were independently verified identical after the pure
+fast-forward integration.
 
 **Goal**: Establish the durable administrative authority that makes one exact
 `MATERIALIZED` operational paper session eligible for a future execution

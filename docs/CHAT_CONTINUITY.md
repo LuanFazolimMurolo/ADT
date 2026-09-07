@@ -4,7 +4,7 @@ Last updated: 2026-09-07
 
 ## Current branch
 
-`feat/phase-7-10-operational-paper-session-activation-authority-foundation`
+`main`
 
 At the start of every session, verify the local branch and HEAD, then inspect
 the corresponding remote branch. This file records the intended handoff; Git
@@ -19,7 +19,7 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 ## Current delivery
 
 **7-10 — Operational Paper Session Activation Authority Foundation —
-COMPLETE / CLOSED ON FEATURE BRANCH; AWAITING MAIN INTEGRATION**
+COMPLETE / CLOSED / INTEGRATED INTO `main`**
 
 Starting main baseline: `a17472f02b2af15b53950b45c8875b552bb860c5`.
 
@@ -29,8 +29,14 @@ Published technical-closure milestone:
 `94204f9cb04efabfecf23052a613ae4288d7f1dc`, tree
 `75a3dc49e902bda1ca14c91e8b9080d733d88601`.
 
-The exact current feature HEAD must be verified from Git because this handoff
-file itself participates in the final documentation reconciliation.
+Verified main-integration milestone:
+`6994d80235c4c0945fc10cdae6f20caf1324a0fb`, tree
+`8024ced78efd6dd7498817e6c33fd53aa27c5207`. Remote `main` and the 7-10
+feature branch were independently verified identical after pure fast-forward
+integration.
+
+The exact current `main` HEAD must be verified from Git because this handoff
+file itself participates in the post-integration documentation record.
 
 Selection R0: **CLOSED / PASS**.
 
@@ -38,6 +44,9 @@ Gate 1 — Activation Authority Architecture: **REMOTE PUBLISHED / CLOSED /
 PASS**.
 
 Gate 2H — Technical Closure Verification: **CLOSED / PASS**.
+
+Gate 2J — Pure Fast-Forward Main Integration: **REMOTE INTEGRATED / CLOSED /
+PASS**.
 
 Implemented layers:
 
@@ -73,20 +82,23 @@ Accepted architecture record:
 ## Last completed track
 
 **7-10 — Operational Paper Session Activation Authority Foundation —
-COMPLETE / CLOSED ON FEATURE BRANCH**
+COMPLETE / CLOSED / INTEGRATED INTO `main`**
 
-The implementation and technical closure are published on the feature branch.
-The stable technical-closure milestone before final documentation
-reconciliation is `94204f9cb04efabfecf23052a613ae4288d7f1dc`, tree
+The stable technical-closure milestone is
+`94204f9cb04efabfecf23052a613ae4288d7f1dc`, tree
 `75a3dc49e902bda1ca14c91e8b9080d733d88601`.
 
-The 7-10 migration remains **VERSIONED / REMOTELY UNAPPLIED**. Track 7-10 has
-not yet been integrated into `main`; the starting/current main baseline for
-this delivery remains `a17472f02b2af15b53950b45c8875b552bb860c5` until the
-separate integration gate advances it.
+The track was integrated into `main` by verified pure fast-forward at
+`6994d80235c4c0945fc10cdae6f20caf1324a0fb`, tree
+`8024ced78efd6dd7498817e6c33fd53aa27c5207`. Remote `main` and the feature
+branch were independently verified identical at the integration milestone.
+
+The 7-10 migration remains **VERSIONED / REMOTELY UNAPPLIED**. No remote
+Supabase migration application was performed as part of 7-10.
 
 Previously closed Phase 7 deliveries remain closed:
 
+- **7-09 — Operational Paper Session Materialization Foundation — COMPLETE / CLOSED**
 - **7-08 — Operational Paper Capital Authorization Foundation — CLOSED**
 - **7-07 — Operational Paper-Session Configuration Foundation — CLOSED**
 - **7-06 — Operational Mandate Foundation — CLOSED**
