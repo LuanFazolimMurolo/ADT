@@ -1365,6 +1365,28 @@ def test_lease_renewal_preserves_worker_fence_and_claim_time() -> None:
     )
 
 
+def test_lease_renewal_requires_heartbeat_to_advance() -> None:
+    epoch, _ = _started_epoch()
+
+    claimed = claim_operational_paper_session_run_epoch(
+        epoch,
+        worker_id=WORKER_1,
+        claimed_at=NOW + timedelta(seconds=1),
+        lease_expires_at=NOW + timedelta(seconds=61),
+    )
+
+    assert claimed.worker_claim is not None
+
+    with pytest.raises(OperationalPaperSessionRunLeaseError):
+        renew_operational_paper_session_run_worker_claim(
+            claimed,
+            worker_id=WORKER_1,
+            fencing_token=1,
+            heartbeat_at=claimed.worker_claim.heartbeat_at,
+            lease_expires_at=NOW + timedelta(seconds=120),
+        )
+
+
 @pytest.mark.parametrize(
     ("worker_id", "fencing_token"),
     [

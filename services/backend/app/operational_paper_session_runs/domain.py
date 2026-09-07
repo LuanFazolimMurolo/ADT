@@ -1434,7 +1434,7 @@ def renew_operational_paper_session_run_worker_claim(
     lease_expires_at = _require_utc(lease_expires_at)
 
     if (
-        heartbeat_at < claim.heartbeat_at
+        heartbeat_at <= claim.heartbeat_at
         or lease_expires_at <= heartbeat_at
         or lease_expires_at <= claim.lease_expires_at
     ):
