@@ -37,6 +37,9 @@ from app.repositories.operational_mandates import PostgresOperationalMandateRepo
 from app.repositories.operational_paper_capital_authorizations import (
     PostgresOperationalPaperCapitalAuthorizationRepository,
 )
+from app.repositories.operational_paper_session_activations import (
+    PostgresOperationalPaperSessionActivationRepository,
+)
 from app.repositories.operational_paper_session_materializations import (
     PostgresOperationalPaperSessionMaterializationRepository,
 )
@@ -49,6 +52,7 @@ from app.services import (
     MarketOperationService,
     OperationalMandateService,
     OperationalPaperCapitalAuthorizationService,
+    OperationalPaperSessionActivationService,
     OperationalPaperSessionMaterializationService,
     OperationalPaperSessionProfileService,
     PublicSimulationService,
@@ -268,6 +272,24 @@ def get_operational_paper_capital_authorization_service(
 
     return OperationalPaperCapitalAuthorizationService(
         repository=PostgresOperationalPaperCapitalAuthorizationRepository(database),
+        clock=lambda: datetime.now(UTC),
+    )
+
+
+def get_operational_paper_session_activation_service(
+    database: Database = Depends(get_database),
+    paper_repository: PaperTradingRepository = Depends(get_paper_trading_repository),
+) -> OperationalPaperSessionActivationService:
+    """Build the operational paper-session activation application service."""
+
+    return OperationalPaperSessionActivationService(
+        repository=PostgresOperationalPaperSessionActivationRepository(database),
+        materialization_repository=PostgresOperationalPaperSessionMaterializationRepository(
+            database
+        ),
+        profile_repository=PostgresOperationalPaperSessionProfileRepository(database),
+        paper_repository=paper_repository,
+        registry=StrategyPluginRegistry.builtins(),
         clock=lambda: datetime.now(UTC),
     )
 
