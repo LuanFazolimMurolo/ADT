@@ -360,6 +360,49 @@ class PostgresOperationalPaperSessionRunRepository:
         except Error as error:
             _raise_database_error(error)
 
+    async def list_nonterminal(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[runs.OperationalPaperSessionRunEpoch]:
+        """Return a bounded deterministic page of persisted nonterminal epochs."""
+        if (
+            type(limit) is not int
+            or not 1 <= limit <= 100
+            or type(offset) is not int
+            or not 0 <= offset < 1 << 63
+        ):
+            raise runs.OperationalPaperSessionRunBoundsExceededError()
+
+        states = (
+            runs.OperationalPaperSessionRunObservedState.PENDING,
+            runs.OperationalPaperSessionRunObservedState.STARTING,
+            runs.OperationalPaperSessionRunObservedState.RUNNING,
+            runs.OperationalPaperSessionRunObservedState.PAUSED,
+            runs.OperationalPaperSessionRunObservedState.RECOVERING,
+            runs.OperationalPaperSessionRunObservedState.STOPPING,
+        )
+
+        try:
+            async with self._database.transaction() as connection:
+                cursor = await connection.execute(
+                    "select * "
+                    "from public.operational_paper_session_run_epochs "
+                    "where observed_state in (%s, %s, %s, %s, %s, %s) "
+                    "order by start_requested_at asc, epoch_id asc "
+                    "limit %s offset %s",
+                    (
+                        *(state.value for state in states),
+                        limit,
+                        offset,
+                    ),
+                )
+                rows = await cursor.fetchall()
+                return [operational_paper_session_run_epoch_from_row(row) for row in rows]
+        except Error as error:
+            _raise_database_error(error)
+
     async def resolve_start_replay(
         self,
         intent: runs.OperationalPaperSessionRunEpochStartIntent,

@@ -1244,3 +1244,69 @@ async def test_resolve_start_replay_actor_scope_on_terminal_history(
         )
         == stopped
     )
+
+
+@pytest.mark.asyncio
+async def test_list_nonterminal_is_bounded_read_only_and_excludes_terminal(
+    repository: PostgresOperationalPaperSessionRunRepository,
+    pending: runs.OperationalPaperSessionRunEpoch,
+) -> None:
+    before = await repository.get(pending.epoch_id)
+    assert before == pending
+
+    listed = await repository.list_nonterminal()
+    assert listed == [pending]
+
+    assert await repository.list_nonterminal(limit=1, offset=0) == [pending]
+    assert await repository.list_nonterminal(limit=1, offset=1) == []
+
+    after_read = await repository.get(pending.epoch_id)
+    assert after_read == before
+
+    await repository.request_command(
+        _intent(pending, "STOP"),
+        actor_id=pending.start_requested_by,
+        idempotency_key="discovery:stop",
+        now=START_AT + timedelta(seconds=1),
+    )
+
+    stop_requested = await repository.get(pending.epoch_id)
+    assert stop_requested is not None
+    assert stop_requested.desired_state is runs.OperationalPaperSessionRunDesiredState.STOPPED
+    assert stop_requested.observed_state is runs.OperationalPaperSessionRunObservedState.PENDING
+
+    # Desired STOPPED is still operationally nonterminal until settlement.
+    assert await repository.list_nonterminal() == [stop_requested]
+
+    stopped = await repository.settle_unclaimed(
+        pending.epoch_id,
+        expected_record_version=stop_requested.record_version,
+        now=START_AT + timedelta(seconds=2),
+    )
+
+    assert stopped.observed_state is runs.OperationalPaperSessionRunObservedState.STOPPED
+    assert await repository.list_nonterminal() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "limit, offset",
+    [
+        (0, 0),
+        (101, 0),
+        (True, 0),
+        (1, -1),
+        (1, True),
+        (1, 1 << 63),
+    ],
+)
+async def test_list_nonterminal_rejects_unbounded_pagination(
+    repository: PostgresOperationalPaperSessionRunRepository,
+    limit: int,
+    offset: int,
+) -> None:
+    with pytest.raises(runs.OperationalPaperSessionRunBoundsExceededError):
+        await repository.list_nonterminal(
+            limit=limit,
+            offset=offset,
+        )
