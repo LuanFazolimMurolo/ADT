@@ -216,6 +216,31 @@ class OperationalPaperSessionRunService:
         """Fresh first/every-cycle validation; does not settle or interrupt execution."""
         return await self._execution_eligibility(epoch_id, resuming=False)
 
+    async def get(
+        self,
+        epoch_id: UUID,
+    ) -> runs.OperationalPaperSessionRunEpoch:
+        """Return one exact persisted run epoch."""
+        epoch = await self._repository.get(epoch_id)
+        if epoch is None:
+            raise runs.OperationalPaperSessionRunNotFoundError()
+        return epoch
+
+    async def list_commands(
+        self,
+        epoch_id: UUID,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[runs.OperationalPaperSessionRunEpochCommand]:
+        """Return bounded immutable command history for one existing epoch."""
+        await self.get(epoch_id)
+        return await self._repository.list_commands(
+            epoch_id,
+            limit=limit,
+            offset=offset,
+        )
+
     @staticmethod
     def _require_command(
         intent: runs.OperationalPaperSessionRunEpochCommandIntent,
