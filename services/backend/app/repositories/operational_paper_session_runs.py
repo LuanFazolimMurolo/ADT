@@ -360,6 +360,28 @@ class PostgresOperationalPaperSessionRunRepository:
         except Error as error:
             _raise_database_error(error)
 
+    async def resolve_start_replay(
+        self,
+        intent: runs.OperationalPaperSessionRunEpochStartIntent,
+        *,
+        actor_id: UUID,
+        idempotency_key: str,
+    ) -> runs.OperationalPaperSessionRunEpoch | None:
+        """Read historical START reuse without requiring current execution eligibility.
+
+        Return the current persisted form of the original epoch, including terminal
+        history. A miss grants no creation authority: START must still perform its
+        own transactional replay check after the caller validates fresh eligibility.
+        """
+        fingerprint = runs.operational_paper_session_run_epoch_start_intent_fingerprint(intent)
+        actor_id = _uuid(actor_id)
+        key = runs.validate_operational_paper_session_run_idempotency_key(idempotency_key)
+        try:
+            async with self._database.transaction() as connection:
+                return await self._start_replay(connection, actor_id, key, fingerprint)
+        except Error as error:
+            _raise_database_error(error)
+
     async def start(
         self,
         specification: runs.OperationalPaperSessionRunEpochSpecification,
@@ -428,7 +450,7 @@ class PostgresOperationalPaperSessionRunRepository:
         actor_id: UUID,
         key: str,
         fingerprint: str,
-        checksum: str,
+        checksum: str | None = None,
     ) -> runs.OperationalPaperSessionRunEpoch | None:
         command = await _command_replay(connection, actor_id, key)
         if command is None:
@@ -436,7 +458,7 @@ class PostgresOperationalPaperSessionRunRepository:
         if (
             command.command_type is not runs.OperationalPaperSessionRunCommandType.START
             or command.intent_fingerprint != fingerprint
-            or command.epoch_checksum != checksum
+            or (checksum is not None and command.epoch_checksum != checksum)
         ):
             raise runs.OperationalPaperSessionRunIdempotencyConflictError()
         epoch = await _epoch(connection, command.epoch_id)

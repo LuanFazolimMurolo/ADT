@@ -1,6 +1,8 @@
 """Gate 2C preflight: domain-authorized mutations must be persistable."""
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import timedelta
 from uuid import UUID, uuid4
@@ -15,6 +17,9 @@ import app.repositories.operational_paper_session_runs as repository_module
 from app.database import Database
 from app.database.pool import DatabaseConnection
 from app.domain.errors import PersistenceError
+from app.repositories.operational_paper_session_activations import (
+    PostgresOperationalPaperSessionActivationRepository,
+)
 from app.repositories.operational_paper_session_runs import (
     PostgresOperationalPaperSessionRunRepository,
     operational_paper_session_run_command_from_row,
@@ -209,6 +214,18 @@ async def test_concurrent_starts(
     auth_user_id: UUID,
     same_key: bool,
 ) -> None:
+    for index in range(2):
+        assert (
+            await repository.resolve_start_replay(
+                runs.OperationalPaperSessionRunEpochStartIntent(
+                    activation_id=specification.activation_id,
+                    activation_checksum=specification.activation_checksum,
+                ),
+                actor_id=auth_user_id,
+                idempotency_key="race" if same_key else f"race:{index}",
+            )
+            is None
+        )
     results = await asyncio.gather(
         *[
             repository.start(
@@ -1007,3 +1024,223 @@ def test_transaction_concurrency_errors_are_safe_version_conflicts(
     with pytest.raises(runs.OperationalPaperSessionRunRecordVersionConflictError) as caught:
         repository_module._raise_database_error(error_type(diagnostic))
     assert diagnostic not in str(caught.value)
+
+
+class _ReadOnlyDatabase(Database):
+    """Have PostgreSQL reject writes and row locks in resolver integration tests."""
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[DatabaseConnection]:
+        async with super().transaction() as connection:
+            await connection.execute("set transaction read only")
+            yield connection
+
+
+@pytest_asyncio.fixture
+async def replay_repository(
+    database_url: str,
+) -> AsyncIterator[PostgresOperationalPaperSessionRunRepository]:
+    database = _ReadOnlyDatabase(database_url, min_size=1, max_size=1, timeout=2)
+    await database.open()
+    try:
+        yield PostgresOperationalPaperSessionRunRepository(database)
+    finally:
+        await database.close()
+
+
+def _start_intent(
+    epoch: runs.OperationalPaperSessionRunEpoch,
+) -> runs.OperationalPaperSessionRunEpochStartIntent:
+    return runs.OperationalPaperSessionRunEpochStartIntent(
+        activation_id=epoch.activation_id,
+        activation_checksum=epoch.activation_checksum,
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_start_replay_miss_is_read_only(
+    replay_repository: PostgresOperationalPaperSessionRunRepository,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    async def counts() -> list[int]:
+        async with database.transaction() as connection:
+            cursor = await connection.execute(
+                "select count(*) as count from public.operational_paper_session_run_epochs "
+                "union all "
+                "select count(*) as count from public.operational_paper_session_run_commands"
+            )
+            return [int(row["count"]) for row in await cursor.fetchall()]
+
+    before = await counts()
+    assert before == [0, 0]
+    assert (
+        await replay_repository.resolve_start_replay(
+            runs.OperationalPaperSessionRunEpochStartIntent(
+                activation_id=uuid4(), activation_checksum="0" * 64
+            ),
+            actor_id=auth_user_id,
+            idempotency_key="unused",
+        )
+        is None
+    )
+    assert await counts() == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_claim", [False, True], ids=["pending", "claimed"])
+async def test_resolve_start_replay_current_preserves_all_runtime_and_commands(
+    repository: PostgresOperationalPaperSessionRunRepository,
+    replay_repository: PostgresOperationalPaperSessionRunRepository,
+    pending: runs.OperationalPaperSessionRunEpoch,
+    with_claim: bool,
+) -> None:
+    current = pending
+    if with_claim:
+        current = await repository.claim(
+            pending.epoch_id,
+            expected_record_version=pending.record_version,
+            worker_id=uuid4(),
+            now=START_AT + timedelta(seconds=1),
+            lease_expires_at=START_AT + timedelta(seconds=61),
+        )
+    commands = await repository.list_commands(current.epoch_id)
+    replay = await replay_repository.resolve_start_replay(
+        _start_intent(pending),
+        actor_id=pending.start_requested_by,
+        idempotency_key=pending.start_idempotency_key,
+    )
+    assert replay == current
+    # Whole-aggregate equality includes version, desired/observed state and claim/fence.
+    assert await repository.get(current.epoch_id) == current
+    assert await repository.list_commands(current.epoch_id) == commands
+    assert len(commands) == 1
+
+
+@pytest.mark.asyncio
+async def test_resolve_start_replay_terminal_history_after_authority_loss(
+    repository: PostgresOperationalPaperSessionRunRepository,
+    replay_repository: PostgresOperationalPaperSessionRunRepository,
+    database: Database,
+    pending: runs.OperationalPaperSessionRunEpoch,
+    specification: runs.OperationalPaperSessionRunEpochSpecification,
+) -> None:
+    stop = await _command(repository, pending, "STOP")
+    stopped = await repository.settle_unclaimed(
+        stop.epoch_id,
+        expected_record_version=stop.record_version,
+        now=START_AT + timedelta(seconds=10),
+    )
+    assert stopped.observed_state is runs.OperationalPaperSessionRunObservedState.STOPPED
+    later = await repository.start(
+        specification,
+        actor_id=pending.start_requested_by,
+        idempotency_key="later-start",
+        now=START_AT + timedelta(seconds=11),
+    )
+    activations = PostgresOperationalPaperSessionActivationRepository(database)
+    activation = await activations.get(pending.activation_id)
+    assert activation is not None
+    await activations.revoke(
+        activation.activation_id,
+        expected_record_version=activation.record_version,
+        actor_id=pending.start_requested_by,
+        now=START_AT + timedelta(seconds=12),
+    )
+    commands = await repository.list_commands(stopped.epoch_id)
+    assert (
+        await replay_repository.resolve_start_replay(
+            _start_intent(pending),
+            actor_id=pending.start_requested_by,
+            idempotency_key=pending.start_idempotency_key,
+        )
+        == stopped
+    )
+    assert await repository.get(stopped.epoch_id) == stopped
+    assert await repository.get_current_for_session(stopped.session_id) == later
+    assert await repository.list_commands(stopped.epoch_id) == commands
+    assert len(commands) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed_field", ["activation_id", "activation_checksum"])
+async def test_resolve_start_replay_divergent_intent_conflicts(
+    replay_repository: PostgresOperationalPaperSessionRunRepository,
+    pending: runs.OperationalPaperSessionRunEpoch,
+    changed_field: str,
+) -> None:
+    intent = _start_intent(pending)
+    divergent = (
+        replace(intent, activation_id=uuid4())
+        if changed_field == "activation_id"
+        else replace(intent, activation_checksum="0" * 64)
+    )
+    with pytest.raises(runs.OperationalPaperSessionRunIdempotencyConflictError):
+        await replay_repository.resolve_start_replay(
+            divergent,
+            actor_id=pending.start_requested_by,
+            idempotency_key=pending.start_idempotency_key,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["PAUSE", "RESUME", "STOP"])
+async def test_resolve_start_replay_command_collision_conflicts(
+    repository: PostgresOperationalPaperSessionRunRepository,
+    replay_repository: PostgresOperationalPaperSessionRunRepository,
+    pending: runs.OperationalPaperSessionRunEpoch,
+    kind: str,
+) -> None:
+    current = pending
+    if kind == "RESUME":
+        paused = await _command(repository, current, "PAUSE")
+        current = await repository.settle_unclaimed(
+            paused.epoch_id,
+            expected_record_version=paused.record_version,
+            now=START_AT + timedelta(seconds=10),
+        )
+    command = await repository.request_command(
+        _intent(current, kind),
+        actor_id=current.start_requested_by,
+        idempotency_key="command-collision",
+        now=START_AT + timedelta(seconds=11),
+    )
+    with pytest.raises(runs.OperationalPaperSessionRunIdempotencyConflictError):
+        await replay_repository.resolve_start_replay(
+            _start_intent(pending),
+            actor_id=pending.start_requested_by,
+            idempotency_key=command.idempotency_key,
+        )
+    assert (await repository.list_commands(current.epoch_id))[-1] == command
+
+
+@pytest.mark.asyncio
+async def test_resolve_start_replay_actor_scope_on_terminal_history(
+    repository: PostgresOperationalPaperSessionRunRepository,
+    replay_repository: PostgresOperationalPaperSessionRunRepository,
+    database_url: str,
+    pending: runs.OperationalPaperSessionRunEpoch,
+) -> None:
+    other = uuid4()
+    with psycopg.connect(database_url) as connection:
+        add_auth_user(connection, other)
+    stop = await _command(repository, pending, "STOP")
+    stopped = await repository.settle_unclaimed(
+        stop.epoch_id,
+        expected_record_version=stop.record_version,
+        now=START_AT + timedelta(seconds=10),
+    )
+    assert (
+        await replay_repository.resolve_start_replay(
+            _start_intent(pending), actor_id=other, idempotency_key=pending.start_idempotency_key
+        )
+        is None
+    )
+    assert (
+        await replay_repository.resolve_start_replay(
+            _start_intent(pending),
+            actor_id=pending.start_requested_by,
+            idempotency_key=pending.start_idempotency_key,
+        )
+        == stopped
+    )
