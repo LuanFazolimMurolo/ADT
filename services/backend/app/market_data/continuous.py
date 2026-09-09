@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -595,7 +596,9 @@ class ContinuousCollectionRunner:
         last_state: ContinuousCollectionState | None = None
         with self._lock_manager.acquire(_COLLECTION_LOCK_KEY):
             if self._startup_hook is not None:
-                self._startup_hook()
+                startup_result = self._startup_hook()
+                if inspect.isawaitable(startup_result):
+                    await startup_result
             previous = self._state_store.read()
             cycle_index = previous.cycle_index + 1 if previous is not None else 1
             completed = 0

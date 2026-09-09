@@ -530,3 +530,100 @@ async def test_runner_rejects_concurrent_collector_for_same_volume(tmp_path: Pat
         with pytest.raises(MarketJobLockTimeoutError):
             await runner.run((TARGET,), max_cycles=1)
     assert startup_calls == []
+
+
+@pytest.mark.asyncio
+async def test_runner_awaits_async_startup_hook_while_collection_lock_is_held(
+    tmp_path: Path,
+) -> None:
+    plan = IncrementalUpdatePlan(
+        "NOOP",
+        None,
+        None,
+        utc(2026, 8, 2, 12),
+    )
+    manager = DatasetLockManager(
+        tmp_path,
+        timeout_seconds=0,
+        stale_after_seconds=60,
+    )
+    state_store = ContinuousCollectionStateStore(tmp_path)
+    startup_calls: list[str] = []
+
+    async def startup_hook() -> None:
+        startup_calls.append("entered")
+
+        with pytest.raises(MarketJobLockTimeoutError):
+            with manager.acquire("adt:continuous-market-collection:v1"):
+                raise AssertionError("collection lock must already be held")
+
+        startup_calls.append("awaited")
+
+    runner = ContinuousCollectionRunner(
+        service=_service(
+            {INSTRUMENT.symbol: plan},
+            {},
+        ),
+        state_store=state_store,
+        lock_manager=manager,
+        startup_hook=startup_hook,
+    )
+
+    latest = await runner.run(
+        (TARGET,),
+        max_cycles=1,
+    )
+
+    assert startup_calls == [
+        "entered",
+        "awaited",
+    ]
+    assert latest.cycle_index == 1
+    assert state_store.read() == latest
+
+
+@pytest.mark.asyncio
+async def test_runner_async_startup_hook_failure_prevents_collection_cycle(
+    tmp_path: Path,
+) -> None:
+    plan = IncrementalUpdatePlan(
+        "NOOP",
+        None,
+        None,
+        utc(2026, 8, 2, 12),
+    )
+    manager = DatasetLockManager(
+        tmp_path,
+        timeout_seconds=0,
+        stale_after_seconds=60,
+    )
+    state_store = ContinuousCollectionStateStore(tmp_path)
+
+    async def startup_hook() -> None:
+        raise RuntimeError("async startup hook failed")
+
+    runner = ContinuousCollectionRunner(
+        service=_service(
+            {INSTRUMENT.symbol: plan},
+            {},
+        ),
+        state_store=state_store,
+        lock_manager=manager,
+        startup_hook=startup_hook,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="async startup hook failed",
+    ):
+        await runner.run(
+            (TARGET,),
+            max_cycles=1,
+        )
+
+    assert state_store.read() is None
+
+    # The context manager must release the physical exclusion
+    # even when the awaited hook fails closed.
+    with manager.acquire("adt:continuous-market-collection:v1"):
+        pass
