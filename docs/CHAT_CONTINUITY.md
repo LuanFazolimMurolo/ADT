@@ -1,6 +1,6 @@
 # ADT Current Development Handoff
 
-Last updated: 2026-09-07
+Last updated: 2026-09-08
 
 ## Current branch
 
@@ -18,86 +18,125 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Current delivery
 
-**7-10 — Operational Paper Session Activation Authority Foundation —
-COMPLETE / CLOSED / INTEGRATED INTO `main`**
+**7-11 — Operational Paper Runner Control Foundation —
+COMPLETE / CLOSED / INTEGRATED INTO `main` / REMOTE SCHEMA DEPLOYED**
 
-Starting main baseline: `a17472f02b2af15b53950b45c8875b552bb860c5`.
+Starting main baseline:
+`f13a9616cff603ad0de387ed0a307b226bff7684`.
 
-Starting tree: `cfc072e9851ebc882049b4ff09c6817e082b7e11`.
+Starting tree:
+`4259476acefc4726d40593d982424781ff247fd4`.
 
-Published technical-closure milestone:
-`94204f9cb04efabfecf23052a613ae4288d7f1dc`, tree
-`75a3dc49e902bda1ca14c91e8b9080d733d88601`.
+Accepted architecture milestone:
+`925286d2bdccbae62c691a61633fe609c45a6a75`.
 
-Verified main-integration milestone:
-`6994d80235c4c0945fc10cdae6f20caf1324a0fb`, tree
-`8024ced78efd6dd7498817e6c33fd53aa27c5207`. Remote `main` and the 7-10
-feature branch were independently verified identical after pure fast-forward
-integration.
+Published and integrated implementation milestone:
+`01dace767a978d1deb2ea75fc300142def217e62`, tree
+`580116a5f78ca03e1bcb9bbcc8afebba19fbad8c`.
 
-The exact current `main` HEAD must be verified from Git because this handoff
-file itself participates in the post-integration documentation record.
+Remote `main`, local `main` and the published 7-11 feature were verified
+identical at the implementation milestone after pure fast-forward integration.
+No merge commit, rebase, squash or force push was used.
 
 Selection R0: **CLOSED / PASS**.
 
-Gate 1 — Activation Authority Architecture: **REMOTE PUBLISHED / CLOSED /
+Gate 1 — Runner-Control Authority Architecture: **REMOTE PUBLISHED / CLOSED /
 PASS**.
 
-Gate 2H — Technical Closure Verification: **CLOSED / PASS**.
+Gate 2A through Gate 3 — domain, persistence, repository, application,
+worker/supervisor and protected administrator API: **CLOSED / PASS**.
 
-Gate 2J — Pure Fast-Forward Main Integration: **REMOTE INTEGRATED / CLOSED /
-PASS**.
+Gate 4 — hand-written runner-control UI: **NOT REQUIRED / SKIPPED**.
 
-Implemented layers:
+Gate 5A — generated OpenAPI/frontend contract synchronization:
+**CLOSED / PASS**.
 
-- activation domain and lifecycle `AUTHORIZED -> REVOKED`;
-- PostgreSQL migration and activation repository;
-- activation application service;
-- administrator-only list/get/authorize/revoke HTTP transport;
-- canonical immutable `PaperSessionConfig` read hardening; and
-- synchronized generated OpenAPI activation contract.
+Gate 5B — backend/global integration verification: **CLOSED / PASS**.
 
-The technical-closure milestone passed **291 integrated targeted tests**.
-Ruff, MyPy, `check:api`, frontend typecheck, frontend E2E typecheck, ESLint and
-`git diff --check` all passed on the published feature tree.
+Gate 5C — final local closure and publication verification:
+**CLOSED / PASS**.
 
-Activation is administrative eligibility only: `ACTIVATED != RUNNING` and
-`activation != start intent`. A future start must freshly revalidate current
-upstream authority, the exact immutable local config, frozen-plugin
-resolvability and RAW readiness before establishing runtime authority.
+Main integration: **PURE FAST-FORWARD / REMOTE INTEGRATED / CLOSED / PASS**.
 
-The 7-10 migration
-`supabase/migrations/20260903000000_phase_7_10_operational_paper_session_activations.sql`
-is **VERSIONED / REMOTELY UNAPPLIED**. No remote Supabase mutation was
-performed for 7-10.
+Implemented 7-11 layers include:
 
-No hand-written activation or materialization administration page is required
-for 7-10 closure. Runtime epochs, desired state, worker claim, leases,
-heartbeat, fencing, supervision and start/pause/resume/stop remain future
-runner-control scope.
+- durable PostgreSQL `OperationalPaperSessionRunEpoch` authority;
+- START, PAUSE, RESUME and STOP desired-state control;
+- explicit desired/observed lifecycle separation;
+- worker claim, lease, heartbeat and monotonic fencing-token authority;
+- same-epoch recovery after worker loss;
+- fresh execution-eligibility validation before start/resume/every cycle;
+- separate persistent supervisor ownership of physical runner convergence;
+- protected administrator-only HTTP control-plane endpoints;
+- bounded immutable command history;
+- API redaction of worker identity and replay internals; and
+- synchronized generated OpenAPI contracts.
+
+The final 7-11 implementation stack passed 401 targeted/integrated tests. The
+full backend passed 4,181 tests with one expected skip. Global Ruff, Ruff
+format, strict production MyPy, compileall, generated API consistency,
+frontend typecheck, lint, Vitest, production build and bundle budget all
+passed.
+
+The remote Supabase schema was subsequently reconciled after 7-11 integration.
+The remote migration history had intentionally remained at
+`20260801000000`, so eight ordered Phase 7 migrations were pending. A
+read-only collision audit proved the remote schema was still at the expected
+baseline with no Phase 7 relation/function collisions. The migrations
+
+- `20260810000000`,
+- `20260819000000`,
+- `20260821000000`,
+- `20260823000000`,
+- `20260827000000`,
+- `20260831000000`,
+- `20260903000000`, and
+- `20260907000000`
+
+were then applied in chronological order to the linked ADT Supabase project.
+
+Post-deploy verification proved exact local/remote migration-history parity
+through `20260907000000`, an empty `db push --dry-run`, the expanded canonical
+market-operation timeframe constraint, and presence of the Phase 7 operational
+mandate, profile, capital authorization, materialization, activation and
+runner-control relations.
+
+**Current remote migration state**:
+**APPLIED / SYNCHRONIZED THROUGH `20260907000000`**.
+
+Earlier delivery sections that state a migration was
+`VERSIONED / REMOTELY UNAPPLIED` are intentionally retained as historical
+closure evidence describing the state at that earlier delivery milestone; they
+do not describe the current remote database state.
+
+Runner-control authority is still paper-only. FastAPI persists and reads
+control-plane intent; a separate supervisor owns physical runner execution.
+`AUTHORIZED` activation does not mean `RUNNING`, and this delivery does not
+introduce exchange credentials, live orders or real-capital execution.
 
 Accepted architecture record:
-[`docs/adr/0005-phase-7-10-operational-paper-session-activation-authority.md`](./adr/0005-phase-7-10-operational-paper-session-activation-authority.md)
+[`docs/adr/0006-phase-7-11-operational-paper-runner-control-authority.md`](./adr/0006-phase-7-11-operational-paper-runner-control-authority.md)
 
 ## Last completed track
 
-**7-10 — Operational Paper Session Activation Authority Foundation —
-COMPLETE / CLOSED / INTEGRATED INTO `main`**
+**7-11 — Operational Paper Runner Control Foundation —
+COMPLETE / CLOSED / INTEGRATED INTO `main` / REMOTE SCHEMA DEPLOYED**
 
-The stable technical-closure milestone is
-`94204f9cb04efabfecf23052a613ae4288d7f1dc`, tree
-`75a3dc49e902bda1ca14c91e8b9080d733d88601`.
+The integrated implementation milestone is
+`01dace767a978d1deb2ea75fc300142def217e62`, tree
+`580116a5f78ca03e1bcb9bbcc8afebba19fbad8c`.
 
-The track was integrated into `main` by verified pure fast-forward at
-`6994d80235c4c0945fc10cdae6f20caf1324a0fb`, tree
-`8024ced78efd6dd7498817e6c33fd53aa27c5207`. Remote `main` and the feature
-branch were independently verified identical at the integration milestone.
+The track was integrated into `main` by verified pure fast-forward. Local
+`main`, remote `main` and the published feature were verified identical.
 
-The 7-10 migration remains **VERSIONED / REMOTELY UNAPPLIED**. No remote
-Supabase migration application was performed as part of 7-10.
+The linked ADT Supabase migration history is now **APPLIED / SYNCHRONIZED**
+through `20260907000000`. The ordered remote deployment included the eight
+previously pending Phase 7 migrations from `20260810000000` through
+`20260907000000`; post-deploy dry-run reported the remote database up to date.
 
 Previously closed Phase 7 deliveries remain closed:
 
+- **7-10 — Operational Paper Session Activation Authority Foundation — COMPLETE / CLOSED**
 - **7-09 — Operational Paper Session Materialization Foundation — COMPLETE / CLOSED**
 - **7-08 — Operational Paper Capital Authorization Foundation — CLOSED**
 - **7-07 — Operational Paper-Session Configuration Foundation — CLOSED**

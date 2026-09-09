@@ -859,19 +859,28 @@ service validation are not claimed by this local closure record.
 ---
 
 ## Phase 7: Operational Control Plane
-
 **Goal**: Create, validate and operate market-data and paper-trading workflows
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Tracks 7-01 through 7-10 are complete, closed and
-integrated into `main`. Track 7-10 — Operational Paper Session Activation
-Authority Foundation — was integrated by verified pure fast-forward at
-`6994d80235c4c0945fc10cdae6f20caf1324a0fb`, tree
-`8024ced78efd6dd7498817e6c33fd53aa27c5207`. The 7-10 generated OpenAPI
-contract is synchronized and published, while its PostgreSQL migration remains
-**VERSIONED / REMOTELY UNAPPLIED**. Phase 7 remains active. The exact current
-handoff is maintained in
+**Status**: Active. Tracks 7-01 through 7-11 are complete, closed and
+integrated into `main`. Track 7-11 — Operational Paper Runner Control
+Foundation — is **COMPLETE / CLOSED / INTEGRATED INTO `main`** at
+`01dace767a978d1deb2ea75fc300142def217e62`, tree
+`580116a5f78ca03e1bcb9bbcc8afebba19fbad8c`.
+
+The linked ADT Supabase migration history is now **APPLIED / SYNCHRONIZED
+THROUGH `20260907000000`**. Eight previously pending ordered Phase 7
+migrations, from `20260810000000` through `20260907000000`, were applied after
+a read-only remote-schema collision audit. Post-deploy `db push --dry-run`
+reported the remote database up to date and direct PostgreSQL validation
+confirmed the expected Phase 7 relations and timeframe constraint.
+
+Earlier track sections that say their migration was remotely unapplied are
+historical closure records for those earlier milestones, not the current
+database state.
+
+Phase 7 remains active. The exact current handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
@@ -900,6 +909,129 @@ handoff is maintained in
 **Dependencies**: Phase 6 complete
 **Estimated Duration**: 4 weeks
 **Blockers**: Reviewed PostgreSQL operational migrations and persistent worker host
+
+### 7-11 — Operational Paper Runner Control Foundation ✅
+
+**Status**: **COMPLETE / CLOSED — INTEGRATED INTO `main` — REMOTE SCHEMA
+DEPLOYED**.
+
+**Starting main baseline**:
+`f13a9616cff603ad0de387ed0a307b226bff7684`.
+
+**Starting tree**:
+`4259476acefc4726d40593d982424781ff247fd4`.
+
+**Accepted architecture milestone**:
+`925286d2bdccbae62c691a61633fe609c45a6a75`.
+
+**Integrated implementation milestone**:
+`01dace767a978d1deb2ea75fc300142def217e62`.
+
+**Integrated implementation tree**:
+`580116a5f78ca03e1bcb9bbcc8afebba19fbad8c`.
+
+**Goal**: Establish durable administrative paper-runner control authority for
+one exact activated immutable paper session without executing long-running
+runner work inside HTTP requests and without introducing real-capital or
+exchange-order authority.
+
+**Delivered contract**:
+
+- durable PostgreSQL `OperationalPaperSessionRunEpoch` aggregates;
+- every genuine START creates a new epoch while terminal epochs never reopen;
+- at most one nonterminal epoch exists for a deterministic `session_id`;
+- desired states `RUNNING`, `PAUSED`, `STOPPED`;
+- observed states `PENDING`, `STARTING`, `RUNNING`, `PAUSED`, `RECOVERING`,
+  `STOPPING`, `STOPPED`, `FAILED`;
+- START, PAUSE, RESUME and STOP command persistence with optimistic
+  `record_version`;
+- worker claim/reclaim with monotonic positive fencing tokens;
+- exact worker/fence/version/lease proof for worker-owned mutations;
+- same-epoch recovery after lease expiry or worker crash;
+- fresh execution eligibility before first execution and every subsequent
+  physical cycle;
+- FastAPI restricted to protected control-plane persistence/read operations;
+- separate persistent supervisor ownership of physical runner convergence;
+- continued local filesystem ownership of immutable `PaperSessionConfig`,
+  runner state/artifacts and process-local `flock`;
+- bounded immutable command-history reads;
+- redacted administrator API that exposes fencing/lease timing while hiding
+  internal worker identity and replay fingerprints; and
+- generated OpenAPI synchronization for the six runner-control endpoints.
+
+**Verification**:
+
+- complete Phase 7-11 targeted/integrated stack: **401/401 PASS**;
+- legacy continuous paper runner: **25/25 PASS**;
+- full backend: **4,181 passed, 1 expected skip**;
+- global Ruff and Ruff format: **PASS**;
+- strict production MyPy: **PASS, 264 source files**;
+- compileall: **PASS**;
+- generated OpenAPI determinism and `check:api`: **PASS**;
+- frontend typecheck and lint: **PASS**;
+- frontend Vitest: **32 files, 276 tests PASS**;
+- production build and bundle budget: **PASS**; and
+- final local closure, publication and pure-fast-forward integration audits:
+  **PASS**.
+
+**Main integration**:
+
+Remote `main` advanced from
+`f13a9616cff603ad0de387ed0a307b226bff7684` to
+`01dace767a978d1deb2ea75fc300142def217e62` by pure fast-forward. No merge
+commit, rebase, squash or force push was used. Local `main`, remote `main` and
+the published feature branch were verified at exact SHA parity.
+
+**Remote migration reconciliation**:
+
+Before deployment, the linked ADT Supabase migration history ended at
+`20260801000000`. Eight ordered migrations were therefore pending:
+
+- `20260810000000_phase_7_01_market_operation_timeframes.sql`;
+- `20260819000000_phase_7_05_worker_runtime_observability.sql`;
+- `20260821000000_phase_7_06_operational_mandates.sql`;
+- `20260823000000_phase_7_07_operational_paper_session_profiles.sql`;
+- `20260827000000_phase_7_08_operational_paper_capital_authorizations.sql`;
+- `20260831000000_phase_7_09_operational_paper_session_materializations.sql`;
+- `20260903000000_phase_7_10_operational_paper_session_activations.sql`; and
+- `20260907000000_phase_7_11_operational_paper_session_run_epochs.sql`.
+
+A read-only PostgreSQL audit first proved the expected pre-Phase-7 schema,
+absence of Phase 7 relation/function collisions and the baseline
+`market_data_operations_identity_check`. The eight migrations were then
+applied in chronological order through the linked Supabase CLI using the
+direct database connection.
+
+Post-deploy verification proved:
+
+- exact migration history through `20260907000000`;
+- `db push --dry-run` reports the remote database up to date;
+- Phase 7 worker-runtime, mandate, profile, capital-authorization,
+  materialization, activation and runner-control relations exist;
+- the canonical market-operation timeframe constraint contains the expanded
+  registry; and
+- `operational_paper_session_run_epochs` exists as the 7-11 runtime-control
+  authority.
+
+**Current migration state**:
+**APPLIED / REMOTE SYNCHRONIZED THROUGH `20260907000000`**.
+
+Earlier sections below intentionally retain statements such as
+`VERSIONED / REMOTELY UNAPPLIED` where those statements describe the state at
+the time that earlier track closed.
+
+**Runtime boundary**: activation `AUTHORIZED` is not runner `RUNNING`. FastAPI
+does not launch a permanent runner or execute `run_once`; the persistent
+supervisor owns physical execution. This track remains paper-only and introduces
+no Binance credentials, live orders, real capital or official-portfolio
+authority.
+
+**Accepted architecture record**:
+[`docs/adr/0006-phase-7-11-operational-paper-runner-control-authority.md`](./adr/0006-phase-7-11-operational-paper-runner-control-authority.md)
+
+**Explicitly deferred / out of scope**: real-capital execution, exchange
+credentials, live orders/fills, ADT Official Portfolio, trading-horizon labels
+and unrelated remaining Phase 7 administration scope.
 
 ### 7-10 — Operational Paper Session Activation Authority Foundation ✅
 
