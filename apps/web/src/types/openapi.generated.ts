@@ -764,6 +764,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/operational-paper-session-runs/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Operational Paper Session Run
+         * @description Persist or replay START without launching physical execution.
+         */
+        post: operations["start_operational_paper_session_run_api_v1_admin_operational_paper_session_runs_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/operational-paper-session-runs/{epoch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Operational Paper Session Run
+         * @description Return one exact persisted run epoch.
+         */
+        get: operations["get_operational_paper_session_run_api_v1_admin_operational_paper_session_runs__epoch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/operational-paper-session-runs/{epoch_id}/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Operational Paper Session Run Commands
+         * @description Return bounded immutable command history.
+         */
+        get: operations["list_operational_paper_session_run_commands_api_v1_admin_operational_paper_session_runs__epoch_id__commands_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/operational-paper-session-runs/{epoch_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause Operational Paper Session Run
+         * @description Persist PAUSE; the supervisor owns physical convergence.
+         */
+        post: operations["pause_operational_paper_session_run_api_v1_admin_operational_paper_session_runs__epoch_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/operational-paper-session-runs/{epoch_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Operational Paper Session Run
+         * @description Persist RESUME after application-layer eligibility checks.
+         */
+        post: operations["resume_operational_paper_session_run_api_v1_admin_operational_paper_session_runs__epoch_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/operational-paper-session-runs/{epoch_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop Operational Paper Session Run
+         * @description Persist STOP without waiting for physical convergence.
+         */
+        post: operations["stop_operational_paper_session_run_api_v1_admin_operational_paper_session_runs__epoch_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/paper-trading/dashboard": {
         parameters: {
             query?: never;
@@ -3668,6 +3788,197 @@ export interface components {
             strategy_definition_id: string;
             /** Strategy Lifecycle Version */
             strategy_lifecycle_version: number;
+        };
+        /**
+         * OperationalPaperSessionRunCommandListResponse
+         * @description Bounded immutable command-history page.
+         */
+        OperationalPaperSessionRunCommandListResponse: {
+            /** Items */
+            items: components["schemas"]["OperationalPaperSessionRunCommandResponse"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * OperationalPaperSessionRunCommandRequest
+         * @description Request one lifecycle command using optimistic concurrency.
+         */
+        OperationalPaperSessionRunCommandRequest: {
+            /** Epoch Checksum */
+            epoch_checksum: string;
+            /** Expected Record Version */
+            expected_record_version: number;
+            /** Idempotency Key */
+            idempotency_key: string;
+        };
+        /**
+         * OperationalPaperSessionRunCommandResponse
+         * @description Immutable administrator command without replay internals.
+         */
+        OperationalPaperSessionRunCommandResponse: {
+            /**
+             * Actor Id
+             * Format: uuid
+             */
+            actor_id: string;
+            /** Command Contract Version */
+            command_contract_version: number;
+            /**
+             * Command Id
+             * Format: uuid
+             */
+            command_id: string;
+            command_type: components["schemas"]["OperationalPaperSessionRunCommandType"];
+            desired_state: components["schemas"]["OperationalPaperSessionRunDesiredState"];
+            /** Epoch Checksum */
+            epoch_checksum: string;
+            /**
+             * Epoch Id
+             * Format: uuid
+             */
+            epoch_id: string;
+            /** Expected Record Version */
+            expected_record_version: number | null;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /** Resulting Record Version */
+            resulting_record_version: number;
+        };
+        /**
+         * OperationalPaperSessionRunCommandType
+         * @enum {string}
+         */
+        OperationalPaperSessionRunCommandType: "START" | "PAUSE" | "RESUME" | "STOP";
+        /**
+         * OperationalPaperSessionRunDesiredState
+         * @enum {string}
+         */
+        OperationalPaperSessionRunDesiredState: "RUNNING" | "PAUSED" | "STOPPED";
+        /**
+         * OperationalPaperSessionRunEpochResponse
+         * @description Auditable run epoch without replay secrets or worker identity.
+         */
+        OperationalPaperSessionRunEpochResponse: {
+            /** Activation Checksum */
+            activation_checksum: string;
+            /**
+             * Activation Id
+             * Format: uuid
+             */
+            activation_id: string;
+            authorization_binding: components["schemas"]["OperationalPaperSessionMaterializationAuthorizationBindingResponse"];
+            /** Config Checksum */
+            config_checksum: string;
+            desired_state: components["schemas"]["OperationalPaperSessionRunDesiredState"];
+            /** Epoch Checksum */
+            epoch_checksum: string;
+            /**
+             * Epoch Id
+             * Format: uuid
+             */
+            epoch_id: string;
+            failure: components["schemas"]["OperationalPaperSessionRunFailureResponse"] | null;
+            /** Fencing Token */
+            fencing_token: number;
+            lease: components["schemas"]["OperationalPaperSessionRunLeaseResponse"] | null;
+            mandate_binding: components["schemas"]["OperationalPaperSessionMaterializationMandateBindingResponse"];
+            /** Materialization Checksum */
+            materialization_checksum: string;
+            /**
+             * Materialization Id
+             * Format: uuid
+             */
+            materialization_id: string;
+            observed_state: components["schemas"]["OperationalPaperSessionRunObservedState"];
+            profile_binding: components["schemas"]["OperationalPaperSessionMaterializationProfileBindingResponse"];
+            /** Record Version */
+            record_version: number;
+            /** Run Contract Version */
+            run_contract_version: number;
+            /** Schema Version */
+            schema_version: number;
+            /** Session Id */
+            session_id: string;
+            /**
+             * Simulation Id
+             * Format: uuid
+             */
+            simulation_id: string;
+            /**
+             * Start Requested At
+             * Format: date-time
+             */
+            start_requested_at: string;
+            /**
+             * Start Requested By
+             * Format: uuid
+             */
+            start_requested_by: string;
+            /** Terminal At */
+            terminal_at: string | null;
+        };
+        /**
+         * OperationalPaperSessionRunFailureCode
+         * @enum {string}
+         */
+        OperationalPaperSessionRunFailureCode: "AUTHORITY_LOST" | "ACTIVATION_REVOKED" | "CONFIG_UNAVAILABLE" | "CONFIG_IDENTITY_CONFLICT" | "PLUGIN_UNAVAILABLE" | "RAW_NOT_READY" | "LOCAL_RUNNER_BUSY" | "LOCAL_STATE_INVALID" | "LEASE_LOST" | "INTERNAL_ERROR";
+        /**
+         * OperationalPaperSessionRunFailureResponse
+         * @description Closed run failure evidence without arbitrary diagnostics.
+         */
+        OperationalPaperSessionRunFailureResponse: {
+            code: components["schemas"]["OperationalPaperSessionRunFailureCode"];
+            /**
+             * Failed At
+             * Format: date-time
+             */
+            failed_at: string;
+        };
+        /**
+         * OperationalPaperSessionRunLeaseResponse
+         * @description Worker lease timing without internal worker identity.
+         */
+        OperationalPaperSessionRunLeaseResponse: {
+            /**
+             * Claimed At
+             * Format: date-time
+             */
+            claimed_at: string;
+            /**
+             * Heartbeat At
+             * Format: date-time
+             */
+            heartbeat_at: string;
+            /**
+             * Lease Expires At
+             * Format: date-time
+             */
+            lease_expires_at: string;
+        };
+        /**
+         * OperationalPaperSessionRunObservedState
+         * @enum {string}
+         */
+        OperationalPaperSessionRunObservedState: "PENDING" | "STARTING" | "RUNNING" | "PAUSED" | "RECOVERING" | "STOPPING" | "STOPPED" | "FAILED";
+        /**
+         * OperationalPaperSessionRunStartRequest
+         * @description Create or replay one administrator-scoped START intent.
+         */
+        OperationalPaperSessionRunStartRequest: {
+            /** Activation Checksum */
+            activation_checksum: string;
+            /**
+             * Activation Id
+             * Format: uuid
+             */
+            activation_id: string;
+            /** Idempotency Key */
+            idempotency_key: string;
         };
         /**
          * OrderSide
@@ -10873,6 +11184,761 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OperationalPaperSessionProfileRevisionResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    start_operational_paper_session_run_api_v1_admin_operational_paper_session_runs_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationalPaperSessionRunStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationalPaperSessionRunEpochResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_operational_paper_session_run_api_v1_admin_operational_paper_session_runs__epoch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                epoch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationalPaperSessionRunEpochResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_operational_paper_session_run_commands_api_v1_admin_operational_paper_session_runs__epoch_id__commands_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                epoch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationalPaperSessionRunCommandListResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    pause_operational_paper_session_run_api_v1_admin_operational_paper_session_runs__epoch_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                epoch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationalPaperSessionRunCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationalPaperSessionRunCommandResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resume_operational_paper_session_run_api_v1_admin_operational_paper_session_runs__epoch_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                epoch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationalPaperSessionRunCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationalPaperSessionRunCommandResponse"];
+                };
+            };
+            /** @description Malformed administrative request. */
+            400: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication is missing or invalid. */
+            401: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The authenticated user is not an administrator. */
+            403: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested resource does not exist. */
+            404: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The requested state change is not allowed. */
+            409: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request body exceeds the application limit. */
+            413: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The request does not satisfy the declared contract. */
+            422: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An unexpected failure was safely normalized. */
+            500: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A required service is temporarily unavailable. */
+            503: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    stop_operational_paper_session_run_api_v1_admin_operational_paper_session_runs__epoch_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                epoch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationalPaperSessionRunCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description UUID correlation identifier assigned to this request. */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationalPaperSessionRunCommandResponse"];
                 };
             };
             /** @description Malformed administrative request. */
