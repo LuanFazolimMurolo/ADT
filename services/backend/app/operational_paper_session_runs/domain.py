@@ -218,9 +218,7 @@ class OperationalPaperSessionRunEpochSpecification:
             materialization_id = _require_uuid(self.materialization_id)
             materialization_checksum = _require_sha256(self.materialization_checksum)
 
-            authorization_binding = _revalidate_authorization_binding(
-                self.authorization_binding
-            )
+            authorization_binding = _revalidate_authorization_binding(self.authorization_binding)
             profile_binding = _revalidate_profile_binding(self.profile_binding)
             mandate_binding = _revalidate_mandate_binding(self.mandate_binding)
 
@@ -257,19 +255,13 @@ def operational_paper_session_run_epoch_specification_payload(
         "materialization_id": str(canonical.materialization_id),
         "materialization_checksum": canonical.materialization_checksum,
         "authorization_id": str(canonical.authorization_binding.authorization_id),
-        "authorization_checksum": (
-            canonical.authorization_binding.authorization_checksum
-        ),
+        "authorization_checksum": (canonical.authorization_binding.authorization_checksum),
         "profile_id": str(canonical.profile_binding.profile_id),
         "profile_approved_revision": canonical.profile_binding.approved_revision,
-        "profile_specification_checksum": (
-            canonical.profile_binding.specification_checksum
-        ),
+        "profile_specification_checksum": (canonical.profile_binding.specification_checksum),
         "mandate_id": str(canonical.mandate_binding.mandate_id),
         "mandate_approved_revision": canonical.mandate_binding.approved_revision,
-        "mandate_specification_checksum": (
-            canonical.mandate_binding.specification_checksum
-        ),
+        "mandate_specification_checksum": (canonical.mandate_binding.specification_checksum),
         "simulation_id": str(canonical.simulation_id),
         "session_id": canonical.session_id,
         "config_checksum": canonical.config_checksum,
@@ -417,9 +409,7 @@ class OperationalPaperSessionRunEpochCommandIntent:
             ):
                 raise ValueError
 
-            expected_record_version = _require_positive_bigint(
-                self.expected_record_version
-            )
+            expected_record_version = _require_positive_bigint(self.expected_record_version)
         except OperationalPaperSessionRunBoundsExceededError:
             raise
         except Exception:
@@ -495,8 +485,7 @@ class OperationalPaperSessionRunWorkerClaim:
             return False
 
         return (
-            self.worker_id == canonical_worker_id
-            and self.fencing_token == canonical_fencing_token
+            self.worker_id == canonical_worker_id and self.fencing_token == canonical_fencing_token
         )
 
     def is_active(self, now: datetime) -> bool:
@@ -698,17 +687,12 @@ class OperationalPaperSessionRunEpochCommand:
             ):
                 raise ValueError
 
-            if (
-                self.desired_state
-                is not operational_paper_session_run_command_target(
-                    self.command_type
-                )
+            if self.desired_state is not operational_paper_session_run_command_target(
+                self.command_type
             ):
                 raise ValueError
 
-            resulting_record_version = _require_positive_bigint(
-                self.resulting_record_version
-            )
+            resulting_record_version = _require_positive_bigint(self.resulting_record_version)
 
             expected_record_version: int | None
 
@@ -719,28 +703,19 @@ class OperationalPaperSessionRunEpochCommand:
                     raise ValueError
                 expected_record_version = None
             else:
-                expected_record_version = _require_positive_bigint(
-                    self.expected_record_version
-                )
+                expected_record_version = _require_positive_bigint(self.expected_record_version)
                 if resulting_record_version != expected_record_version + 1:
                     raise ValueError
 
             actor_id = _require_uuid(self.actor_id)
             requested_at = _require_utc(self.requested_at)
 
-            idempotency_key = (
-                validate_operational_paper_session_run_idempotency_key(
-                    self.idempotency_key
-                )
+            idempotency_key = validate_operational_paper_session_run_idempotency_key(
+                self.idempotency_key
             )
-            intent_fingerprint = _require_sha256(
-                self.intent_fingerprint
-            )
+            intent_fingerprint = _require_sha256(self.intent_fingerprint)
 
-            if (
-                self.command_type
-                is not OperationalPaperSessionRunCommandType.START
-            ):
+            if self.command_type is not OperationalPaperSessionRunCommandType.START:
                 if expected_record_version is None:
                     raise ValueError
 
@@ -837,19 +812,13 @@ class OperationalPaperSessionRunEpoch:
                 raise ValueError
 
             if (
-                self.observed_state
-                is OperationalPaperSessionRunObservedState.STOPPING
-                and self.desired_state
-                is not OperationalPaperSessionRunDesiredState.STOPPED
+                self.observed_state is OperationalPaperSessionRunObservedState.STOPPING
+                and self.desired_state is not OperationalPaperSessionRunDesiredState.STOPPED
             ):
                 raise ValueError
 
-            record_version = _require_positive_bigint(
-                self.record_version
-            )
-            fencing_token = _require_nonnegative_bigint(
-                self.fencing_token
-            )
+            record_version = _require_positive_bigint(self.record_version)
+            fencing_token = _require_nonnegative_bigint(self.fencing_token)
 
             specification = OperationalPaperSessionRunEpochSpecification(
                 schema_version=self.schema_version,
@@ -866,31 +835,21 @@ class OperationalPaperSessionRunEpoch:
                 config_checksum=self.config_checksum,
             )
 
-            specification = (
-                validate_operational_paper_session_run_epoch_specification_checksum(
-                    specification,
-                    self.epoch_checksum,
-                )
+            specification = validate_operational_paper_session_run_epoch_specification_checksum(
+                specification,
+                self.epoch_checksum,
             )
 
             epoch_checksum = _require_sha256(self.epoch_checksum)
 
-            start_requested_by = _require_uuid(
-                self.start_requested_by
-            )
-            start_requested_at = _require_utc(
-                self.start_requested_at
+            start_requested_by = _require_uuid(self.start_requested_by)
+            start_requested_at = _require_utc(self.start_requested_at)
+
+            start_idempotency_key = validate_operational_paper_session_run_idempotency_key(
+                self.start_idempotency_key
             )
 
-            start_idempotency_key = (
-                validate_operational_paper_session_run_idempotency_key(
-                    self.start_idempotency_key
-                )
-            )
-
-            start_intent_fingerprint = _require_sha256(
-                self.start_intent_fingerprint
-            )
+            start_intent_fingerprint = _require_sha256(self.start_intent_fingerprint)
 
             expected_start_fingerprint = (
                 operational_paper_session_run_epoch_start_intent_fingerprint(
@@ -905,9 +864,7 @@ class OperationalPaperSessionRunEpoch:
                 raise ValueError
 
             worker_claim = (
-                None
-                if self.worker_claim is None
-                else _revalidate_worker_claim(self.worker_claim)
+                None if self.worker_claim is None else _revalidate_worker_claim(self.worker_claim)
             )
 
             if worker_claim is not None:
@@ -934,22 +891,11 @@ class OperationalPaperSessionRunEpoch:
             }:
                 raise OperationalPaperSessionRunLeaseError()
 
-            failure = (
-                None
-                if self.failure is None
-                else _revalidate_failure(self.failure)
-            )
+            failure = None if self.failure is None else _revalidate_failure(self.failure)
 
-            terminal_at = (
-                None
-                if self.terminal_at is None
-                else _require_utc(self.terminal_at)
-            )
+            terminal_at = None if self.terminal_at is None else _require_utc(self.terminal_at)
 
-            if (
-                self.observed_state
-                is OperationalPaperSessionRunObservedState.FAILED
-            ):
+            if self.observed_state is OperationalPaperSessionRunObservedState.FAILED:
                 if (
                     failure is None
                     or terminal_at is None
@@ -958,13 +904,9 @@ class OperationalPaperSessionRunEpoch:
                 ):
                     raise ValueError
 
-            elif (
-                self.observed_state
-                is OperationalPaperSessionRunObservedState.STOPPED
-            ):
+            elif self.observed_state is OperationalPaperSessionRunObservedState.STOPPED:
                 if (
-                    self.desired_state
-                    is not OperationalPaperSessionRunDesiredState.STOPPED
+                    self.desired_state is not OperationalPaperSessionRunDesiredState.STOPPED
                     or failure is not None
                     or terminal_at is None
                     or worker_claim is not None
@@ -974,10 +916,7 @@ class OperationalPaperSessionRunEpoch:
             elif failure is not None or terminal_at is not None:
                 raise ValueError
 
-            if (
-                terminal_at is not None
-                and terminal_at < start_requested_at
-            ):
+            if terminal_at is not None and terminal_at < start_requested_at:
                 raise ValueError
 
         except OperationalPaperSessionRunBoundsExceededError:
@@ -1104,23 +1043,11 @@ def start_operational_paper_session_run_epoch(
     requested_by = _require_uuid(requested_by)
     requested_at = _require_utc(requested_at)
 
-    idempotency_key = (
-        validate_operational_paper_session_run_idempotency_key(
-            idempotency_key
-        )
-    )
+    idempotency_key = validate_operational_paper_session_run_idempotency_key(idempotency_key)
 
-    epoch_checksum = (
-        operational_paper_session_run_epoch_specification_checksum(
-            canonical
-        )
-    )
+    epoch_checksum = operational_paper_session_run_epoch_specification_checksum(canonical)
 
-    fingerprint = (
-        operational_paper_session_run_epoch_start_intent_fingerprint(
-            intent
-        )
-    )
+    fingerprint = operational_paper_session_run_epoch_start_intent_fingerprint(intent)
 
     epoch = OperationalPaperSessionRunEpoch(
         epoch_id=epoch_id,
@@ -1149,9 +1076,7 @@ def start_operational_paper_session_run_epoch(
 
     command = OperationalPaperSessionRunEpochCommand(
         command_id=command_id,
-        command_contract_version=(
-            OPERATIONAL_PAPER_SESSION_RUN_COMMAND_CONTRACT_VERSION
-        ),
+        command_contract_version=(OPERATIONAL_PAPER_SESSION_RUN_COMMAND_CONTRACT_VERSION),
         epoch_id=epoch.epoch_id,
         epoch_checksum=epoch.epoch_checksum,
         command_type=OperationalPaperSessionRunCommandType.START,
@@ -1171,9 +1096,7 @@ def operational_paper_session_run_epoch_is_terminal(
     epoch: OperationalPaperSessionRunEpoch,
 ) -> bool:
     canonical = _revalidate_epoch(epoch)
-    return canonical.observed_state in (
-        TERMINAL_OPERATIONAL_PAPER_SESSION_RUN_STATES
-    )
+    return canonical.observed_state in (TERMINAL_OPERATIONAL_PAPER_SESSION_RUN_STATES)
 
 
 def _revalidate_worker_claim(
@@ -1259,9 +1182,7 @@ def is_operational_paper_session_run_command_allowed(
     if operational_paper_session_run_epoch_is_terminal(canonical):
         return False
 
-    return command_type in _ALLOWED_DESIRED_COMMANDS[
-        canonical.desired_state
-    ]
+    return command_type in _ALLOWED_DESIRED_COMMANDS[canonical.desired_state]
 
 
 def request_operational_paper_session_run_epoch_command(
@@ -1285,8 +1206,7 @@ def request_operational_paper_session_run_epoch_command(
     if (
         command_intent.epoch_id != canonical.epoch_id
         or command_intent.epoch_checksum != canonical.epoch_checksum
-        or command_intent.expected_record_version
-        != canonical.record_version
+        or command_intent.expected_record_version != canonical.record_version
     ):
         raise OperationalPaperSessionRunCommandConflictError()
 
@@ -1303,26 +1223,16 @@ def request_operational_paper_session_run_epoch_command(
     if requested_at < canonical.start_requested_at:
         raise InvalidOperationalPaperSessionRunSpecificationError()
 
-    idempotency_key = (
-        validate_operational_paper_session_run_idempotency_key(
-            idempotency_key
-        )
-    )
+    idempotency_key = validate_operational_paper_session_run_idempotency_key(idempotency_key)
 
-    desired_state = operational_paper_session_run_command_target(
-        command_intent.command_type
-    )
+    desired_state = operational_paper_session_run_command_target(command_intent.command_type)
 
     resulting_record_version = canonical.record_version + 1
 
     if resulting_record_version > _POSTGRESQL_BIGINT_MAX:
         raise OperationalPaperSessionRunBoundsExceededError()
 
-    fingerprint = (
-        operational_paper_session_run_epoch_command_intent_fingerprint(
-            command_intent
-        )
-    )
+    fingerprint = operational_paper_session_run_epoch_command_intent_fingerprint(command_intent)
 
     updated = replace(
         canonical,
@@ -1332,9 +1242,7 @@ def request_operational_paper_session_run_epoch_command(
 
     command = OperationalPaperSessionRunEpochCommand(
         command_id=command_id,
-        command_contract_version=(
-            OPERATIONAL_PAPER_SESSION_RUN_COMMAND_CONTRACT_VERSION
-        ),
+        command_contract_version=(OPERATIONAL_PAPER_SESSION_RUN_COMMAND_CONTRACT_VERSION),
         epoch_id=canonical.epoch_id,
         epoch_checksum=canonical.epoch_checksum,
         command_type=command_intent.command_type,
@@ -1363,8 +1271,7 @@ def claim_operational_paper_session_run_epoch(
         raise OperationalPaperSessionRunCommandConflictError()
 
     if (
-        canonical.desired_state
-        is not OperationalPaperSessionRunDesiredState.RUNNING
+        canonical.desired_state is not OperationalPaperSessionRunDesiredState.RUNNING
         or canonical.observed_state
         not in {
             OperationalPaperSessionRunObservedState.PENDING,
@@ -1378,15 +1285,10 @@ def claim_operational_paper_session_run_epoch(
     claimed_at = _require_utc(claimed_at)
     lease_expires_at = _require_utc(lease_expires_at)
 
-    if (
-        claimed_at < canonical.start_requested_at
-        or lease_expires_at <= claimed_at
-    ):
+    if claimed_at < canonical.start_requested_at or lease_expires_at <= claimed_at:
         raise OperationalPaperSessionRunLeaseError()
 
-    fencing_token = _next_fencing_token(
-        canonical.fencing_token
-    )
+    fencing_token = _next_fencing_token(canonical.fencing_token)
 
     claim = OperationalPaperSessionRunWorkerClaim(
         epoch_id=canonical.epoch_id,
@@ -1405,9 +1307,7 @@ def claim_operational_paper_session_run_epoch(
     return replace(
         canonical,
         observed_state=OperationalPaperSessionRunObservedState.STARTING,
-        record_version=_next_record_version(
-            canonical.record_version
-        ),
+        record_version=_next_record_version(canonical.record_version),
         fencing_token=fencing_token,
         worker_claim=claim,
     )
@@ -1451,9 +1351,7 @@ def renew_operational_paper_session_run_worker_claim(
 
     return replace(
         canonical,
-        record_version=_next_record_version(
-            canonical.record_version
-        ),
+        record_version=_next_record_version(canonical.record_version),
         worker_claim=renewed,
     )
 
@@ -1472,16 +1370,12 @@ def recover_operational_paper_session_run_epoch(
 
     previous_claim = canonical.worker_claim
 
-    if (
-        previous_claim is None
-        or canonical.observed_state
-        not in {
-            OperationalPaperSessionRunObservedState.STARTING,
-            OperationalPaperSessionRunObservedState.RUNNING,
-            OperationalPaperSessionRunObservedState.RECOVERING,
-            OperationalPaperSessionRunObservedState.STOPPING,
-        }
-    ):
+    if previous_claim is None or canonical.observed_state not in {
+        OperationalPaperSessionRunObservedState.STARTING,
+        OperationalPaperSessionRunObservedState.RUNNING,
+        OperationalPaperSessionRunObservedState.RECOVERING,
+        OperationalPaperSessionRunObservedState.STOPPING,
+    }:
         raise OperationalPaperSessionRunLeaseError()
 
     recovered_at = _require_utc(recovered_at)
@@ -1495,9 +1389,7 @@ def recover_operational_paper_session_run_epoch(
     if lease_expires_at <= recovered_at:
         raise OperationalPaperSessionRunLeaseError()
 
-    fencing_token = _next_fencing_token(
-        canonical.fencing_token
-    )
+    fencing_token = _next_fencing_token(canonical.fencing_token)
 
     recovered_claim = OperationalPaperSessionRunWorkerClaim(
         epoch_id=canonical.epoch_id,
@@ -1508,10 +1400,7 @@ def recover_operational_paper_session_run_epoch(
         lease_expires_at=lease_expires_at,
     )
 
-    if (
-        canonical.observed_state
-        is not OperationalPaperSessionRunObservedState.RECOVERING
-    ):
+    if canonical.observed_state is not OperationalPaperSessionRunObservedState.RECOVERING:
         require_operational_paper_session_run_transition(
             canonical.observed_state,
             OperationalPaperSessionRunObservedState.RECOVERING,
@@ -1520,9 +1409,7 @@ def recover_operational_paper_session_run_epoch(
     return replace(
         canonical,
         observed_state=OperationalPaperSessionRunObservedState.RECOVERING,
-        record_version=_next_record_version(
-            canonical.record_version
-        ),
+        record_version=_next_record_version(canonical.record_version),
         fencing_token=fencing_token,
         worker_claim=recovered_claim,
     )
@@ -1538,10 +1425,8 @@ def mark_operational_paper_session_run_epoch_starting(
     canonical = _revalidate_epoch(epoch)
 
     if (
-        canonical.observed_state
-        is not OperationalPaperSessionRunObservedState.RECOVERING
-        or canonical.desired_state
-        is not OperationalPaperSessionRunDesiredState.RUNNING
+        canonical.observed_state is not OperationalPaperSessionRunObservedState.RECOVERING
+        or canonical.desired_state is not OperationalPaperSessionRunDesiredState.RUNNING
     ):
         raise OperationalPaperSessionRunStateTransitionConflictError()
 
@@ -1560,9 +1445,7 @@ def mark_operational_paper_session_run_epoch_starting(
     return replace(
         canonical,
         observed_state=OperationalPaperSessionRunObservedState.STARTING,
-        record_version=_next_record_version(
-            canonical.record_version
-        ),
+        record_version=_next_record_version(canonical.record_version),
     )
 
 
@@ -1579,18 +1462,13 @@ def _require_current_active_claim(
         raise OperationalPaperSessionRunLeaseError()
 
     canonical_worker_id = _require_uuid(worker_id)
-    canonical_fencing_token = _require_positive_bigint(
-        fencing_token
-    )
+    canonical_fencing_token = _require_positive_bigint(fencing_token)
     current = _require_utc(now)
 
-    if (
-        not claim.belongs_to(
-            canonical_worker_id,
-            canonical_fencing_token,
-        )
-        or not claim.is_active(current)
-    ):
+    if not claim.belongs_to(
+        canonical_worker_id,
+        canonical_fencing_token,
+    ) or not claim.is_active(current):
         raise OperationalPaperSessionRunLeaseError()
 
     return claim
@@ -1624,10 +1502,8 @@ def mark_operational_paper_session_run_epoch_running(
     canonical = _revalidate_epoch(epoch)
 
     if (
-        canonical.observed_state
-        is not OperationalPaperSessionRunObservedState.STARTING
-        or canonical.desired_state
-        is not OperationalPaperSessionRunDesiredState.RUNNING
+        canonical.observed_state is not OperationalPaperSessionRunObservedState.STARTING
+        or canonical.desired_state is not OperationalPaperSessionRunDesiredState.RUNNING
     ):
         raise OperationalPaperSessionRunStateTransitionConflictError()
 
@@ -1646,9 +1522,7 @@ def mark_operational_paper_session_run_epoch_running(
     return replace(
         canonical,
         observed_state=OperationalPaperSessionRunObservedState.RUNNING,
-        record_version=_next_record_version(
-            canonical.record_version
-        ),
+        record_version=_next_record_version(canonical.record_version),
     )
 
 
@@ -1662,8 +1536,7 @@ def settle_operational_paper_session_run_epoch_paused(
     canonical = _revalidate_epoch(epoch)
 
     if (
-        canonical.desired_state
-        is not OperationalPaperSessionRunDesiredState.PAUSED
+        canonical.desired_state is not OperationalPaperSessionRunDesiredState.PAUSED
         or canonical.observed_state
         not in {
             OperationalPaperSessionRunObservedState.STARTING,
@@ -1688,9 +1561,7 @@ def settle_operational_paper_session_run_epoch_paused(
     return replace(
         canonical,
         observed_state=OperationalPaperSessionRunObservedState.PAUSED,
-        record_version=_next_record_version(
-            canonical.record_version
-        ),
+        record_version=_next_record_version(canonical.record_version),
         worker_claim=None,
     )
 
@@ -1705,8 +1576,7 @@ def mark_operational_paper_session_run_epoch_stopping(
     canonical = _revalidate_epoch(epoch)
 
     if (
-        canonical.desired_state
-        is not OperationalPaperSessionRunDesiredState.STOPPED
+        canonical.desired_state is not OperationalPaperSessionRunDesiredState.STOPPED
         or canonical.observed_state
         not in {
             OperationalPaperSessionRunObservedState.STARTING,
@@ -1731,9 +1601,7 @@ def mark_operational_paper_session_run_epoch_stopping(
     return replace(
         canonical,
         observed_state=OperationalPaperSessionRunObservedState.STOPPING,
-        record_version=_next_record_version(
-            canonical.record_version
-        ),
+        record_version=_next_record_version(canonical.record_version),
     )
 
 
@@ -1747,10 +1615,8 @@ def settle_operational_paper_session_run_epoch_stopped(
     canonical = _revalidate_epoch(epoch)
 
     if (
-        canonical.desired_state
-        is not OperationalPaperSessionRunDesiredState.STOPPED
-        or canonical.observed_state
-        is not OperationalPaperSessionRunObservedState.STOPPING
+        canonical.desired_state is not OperationalPaperSessionRunDesiredState.STOPPED
+        or canonical.observed_state is not OperationalPaperSessionRunObservedState.STOPPING
     ):
         raise OperationalPaperSessionRunStateTransitionConflictError()
 
@@ -1771,9 +1637,7 @@ def settle_operational_paper_session_run_epoch_stopped(
     return replace(
         canonical,
         observed_state=OperationalPaperSessionRunObservedState.STOPPED,
-        record_version=_next_record_version(
-            canonical.record_version
-        ),
+        record_version=_next_record_version(canonical.record_version),
         worker_claim=None,
         terminal_at=observed_at,
     )
@@ -1797,20 +1661,11 @@ def settle_unclaimed_operational_paper_session_run_epoch(
     if observed_at < canonical.start_requested_at:
         raise InvalidOperationalPaperSessionRunSpecificationError()
 
-    if (
-        canonical.desired_state
-        is OperationalPaperSessionRunDesiredState.PAUSED
-    ):
-        if (
-            canonical.observed_state
-            is OperationalPaperSessionRunObservedState.PAUSED
-        ):
+    if canonical.desired_state is OperationalPaperSessionRunDesiredState.PAUSED:
+        if canonical.observed_state is OperationalPaperSessionRunObservedState.PAUSED:
             return canonical
 
-        if (
-            canonical.observed_state
-            is not OperationalPaperSessionRunObservedState.PENDING
-        ):
+        if canonical.observed_state is not OperationalPaperSessionRunObservedState.PENDING:
             raise OperationalPaperSessionRunStateTransitionConflictError()
 
         require_operational_paper_session_run_transition(
@@ -1821,15 +1676,10 @@ def settle_unclaimed_operational_paper_session_run_epoch(
         return replace(
             canonical,
             observed_state=OperationalPaperSessionRunObservedState.PAUSED,
-            record_version=_next_record_version(
-                canonical.record_version
-            ),
+            record_version=_next_record_version(canonical.record_version),
         )
 
-    if (
-        canonical.desired_state
-        is OperationalPaperSessionRunDesiredState.STOPPED
-    ):
+    if canonical.desired_state is OperationalPaperSessionRunDesiredState.STOPPED:
         if canonical.observed_state not in {
             OperationalPaperSessionRunObservedState.PENDING,
             OperationalPaperSessionRunObservedState.PAUSED,
@@ -1844,9 +1694,7 @@ def settle_unclaimed_operational_paper_session_run_epoch(
         return replace(
             canonical,
             observed_state=OperationalPaperSessionRunObservedState.STOPPED,
-            record_version=_next_record_version(
-                canonical.record_version
-            ),
+            record_version=_next_record_version(canonical.record_version),
             terminal_at=observed_at,
         )
 
@@ -1899,9 +1747,7 @@ def fail_claimed_operational_paper_session_run_epoch(
     return replace(
         canonical,
         observed_state=OperationalPaperSessionRunObservedState.FAILED,
-        record_version=_next_record_version(
-            canonical.record_version
-        ),
+        record_version=_next_record_version(canonical.record_version),
         worker_claim=None,
         failure=failure,
         terminal_at=failed_at,
@@ -1919,14 +1765,10 @@ def fail_unclaimed_operational_paper_session_run_epoch(
     if operational_paper_session_run_epoch_is_terminal(canonical):
         raise OperationalPaperSessionRunStateTransitionConflictError()
 
-    if (
-        canonical.worker_claim is not None
-        or canonical.observed_state
-        not in {
-            OperationalPaperSessionRunObservedState.PENDING,
-            OperationalPaperSessionRunObservedState.PAUSED,
-        }
-    ):
+    if canonical.worker_claim is not None or canonical.observed_state not in {
+        OperationalPaperSessionRunObservedState.PENDING,
+        OperationalPaperSessionRunObservedState.PAUSED,
+    }:
         raise OperationalPaperSessionRunLeaseError()
 
     if not isinstance(code, OperationalPaperSessionRunFailureCode):
@@ -1950,9 +1792,7 @@ def fail_unclaimed_operational_paper_session_run_epoch(
     return replace(
         canonical,
         observed_state=OperationalPaperSessionRunObservedState.FAILED,
-        record_version=_next_record_version(
-            canonical.record_version
-        ),
+        record_version=_next_record_version(canonical.record_version),
         failure=failure,
         terminal_at=failed_at,
     )

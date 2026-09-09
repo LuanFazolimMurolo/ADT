@@ -165,13 +165,8 @@ def _started_epoch():
 
 def test_public_contract_contains_no_private_or_duplicate_exports() -> None:
     assert len(public_contract.__all__) == 54
-    assert len(public_contract.__all__) == len(
-        set(public_contract.__all__)
-    )
-    assert all(
-        not name.startswith("_")
-        for name in public_contract.__all__
-    )
+    assert len(public_contract.__all__) == len(set(public_contract.__all__))
+    assert all(not name.startswith("_") for name in public_contract.__all__)
 
 
 def test_contract_constants_are_exact() -> None:
@@ -224,9 +219,7 @@ def test_enums_are_exact() -> None:
 def test_specification_payload_is_exact_and_checksum_deterministic() -> None:
     specification = _specification()
 
-    assert operational_paper_session_run_epoch_specification_payload(
-        specification
-    ) == {
+    assert operational_paper_session_run_epoch_specification_payload(specification) == {
         "schema_version": 1,
         "run_contract_version": 1,
         "activation_id": str(ACTIVATION_ID),
@@ -246,15 +239,11 @@ def test_specification_payload_is_exact_and_checksum_deterministic() -> None:
         "config_checksum": "1" * 64,
     }
 
-    checksum = operational_paper_session_run_epoch_specification_checksum(
-        specification
-    )
+    checksum = operational_paper_session_run_epoch_specification_checksum(specification)
 
     assert SHA256.fullmatch(checksum)
     assert checksum == (
-        operational_paper_session_run_epoch_specification_checksum(
-            _specification()
-        )
+        operational_paper_session_run_epoch_specification_checksum(_specification())
     )
 
 
@@ -274,18 +263,10 @@ def test_identity_dimensions_change_epoch_checksum(
     field_name: str,
     changed_value: object,
 ) -> None:
-    baseline = (
-        operational_paper_session_run_epoch_specification_checksum(
-            _specification()
-        )
-    )
+    baseline = operational_paper_session_run_epoch_specification_checksum(_specification())
 
-    changed = (
-        operational_paper_session_run_epoch_specification_checksum(
-            _specification(
-                **{field_name: changed_value}
-            )
-        )
+    changed = operational_paper_session_run_epoch_specification_checksum(
+        _specification(**{field_name: changed_value})
     )
 
     assert changed != baseline
@@ -299,34 +280,23 @@ def test_start_intent_is_minimal_and_fingerprint_deterministic() -> None:
         "activation_checksum",
     }
 
-    fingerprint = (
-        operational_paper_session_run_epoch_start_intent_fingerprint(
-            intent
-        )
-    )
+    fingerprint = operational_paper_session_run_epoch_start_intent_fingerprint(intent)
 
     assert SHA256.fullmatch(fingerprint)
 
     assert fingerprint == (
-        operational_paper_session_run_epoch_start_intent_fingerprint(
-            _start_intent()
-        )
+        operational_paper_session_run_epoch_start_intent_fingerprint(_start_intent())
     )
 
     assert fingerprint != (
         operational_paper_session_run_epoch_start_intent_fingerprint(
-            _start_intent(
-                activation_checksum="9" * 64
-            )
+            _start_intent(activation_checksum="9" * 64)
         )
     )
 
 
 def test_start_intent_excludes_generated_and_runtime_state() -> None:
-    names = {
-        field.name
-        for field in fields(_start_intent())
-    }
+    names = {field.name for field in fields(_start_intent())}
 
     forbidden = {
         "epoch_id",
@@ -360,12 +330,7 @@ def test_start_intent_excludes_generated_and_runtime_state() -> None:
 def test_safe_idempotency_key_is_preserved(
     key: str,
 ) -> None:
-    assert (
-        validate_operational_paper_session_run_idempotency_key(
-            key
-        )
-        == key
-    )
+    assert validate_operational_paper_session_run_idempotency_key(key) == key
 
 
 @pytest.mark.parametrize(
@@ -387,9 +352,7 @@ def test_invalid_idempotency_key_is_rejected(
             OperationalPaperSessionRunBoundsExceededError,
         )
     ):
-        validate_operational_paper_session_run_idempotency_key(
-            key
-        )
+        validate_operational_paper_session_run_idempotency_key(key)
 
 
 def test_start_creates_exact_initial_epoch_and_command() -> None:
@@ -398,23 +361,14 @@ def test_start_creates_exact_initial_epoch_and_command() -> None:
     assert epoch.epoch_id == EPOCH_ID
     assert epoch.record_version == 1
     assert epoch.fencing_token == 0
-    assert (
-        epoch.desired_state
-        is OperationalPaperSessionRunDesiredState.RUNNING
-    )
-    assert (
-        epoch.observed_state
-        is OperationalPaperSessionRunObservedState.PENDING
-    )
+    assert epoch.desired_state is OperationalPaperSessionRunDesiredState.RUNNING
+    assert epoch.observed_state is OperationalPaperSessionRunObservedState.PENDING
     assert epoch.worker_claim is None
     assert epoch.failure is None
     assert epoch.terminal_at is None
 
     assert command.command_id == COMMAND_ID
-    assert (
-        command.command_type
-        is OperationalPaperSessionRunCommandType.START
-    )
+    assert command.command_type is OperationalPaperSessionRunCommandType.START
     assert command.expected_record_version is None
     assert command.resulting_record_version == 1
     assert command.epoch_id == epoch.epoch_id
@@ -438,9 +392,7 @@ def test_epoch_and_intents_are_frozen() -> None:
 def test_command_intent_cannot_encode_start() -> None:
     epoch, _ = _started_epoch()
 
-    with pytest.raises(
-        InvalidOperationalPaperSessionRunSpecificationError
-    ):
+    with pytest.raises(InvalidOperationalPaperSessionRunSpecificationError):
         OperationalPaperSessionRunEpochCommandIntent(
             epoch_id=epoch.epoch_id,
             epoch_checksum=epoch.epoch_checksum,
@@ -451,33 +403,23 @@ def test_command_intent_cannot_encode_start() -> None:
 
 def test_command_targets_are_exact() -> None:
     assert (
-        operational_paper_session_run_command_target(
-            OperationalPaperSessionRunCommandType.START
-        )
+        operational_paper_session_run_command_target(OperationalPaperSessionRunCommandType.START)
         is OperationalPaperSessionRunDesiredState.RUNNING
     )
     assert (
-        operational_paper_session_run_command_target(
-            OperationalPaperSessionRunCommandType.PAUSE
-        )
+        operational_paper_session_run_command_target(OperationalPaperSessionRunCommandType.PAUSE)
         is OperationalPaperSessionRunDesiredState.PAUSED
     )
     assert (
-        operational_paper_session_run_command_target(
-            OperationalPaperSessionRunCommandType.RESUME
-        )
+        operational_paper_session_run_command_target(OperationalPaperSessionRunCommandType.RESUME)
         is OperationalPaperSessionRunDesiredState.RUNNING
     )
     assert (
-        operational_paper_session_run_command_target(
-            OperationalPaperSessionRunCommandType.STOP
-        )
+        operational_paper_session_run_command_target(OperationalPaperSessionRunCommandType.STOP)
         is OperationalPaperSessionRunDesiredState.STOPPED
     )
 
-    with pytest.raises(
-        OperationalPaperSessionRunCommandConflictError
-    ):
+    with pytest.raises(OperationalPaperSessionRunCommandConflictError):
         operational_paper_session_run_command_target(
             "PAUSE"  # type: ignore[arg-type]
         )
@@ -525,9 +467,7 @@ def test_observed_state_transition_matrix_is_exact() -> None:
         OperationalPaperSessionRunObservedState.FAILED: set(),
     }
 
-    all_states = tuple(
-        OperationalPaperSessionRunObservedState
-    )
+    all_states = tuple(OperationalPaperSessionRunObservedState)
 
     for current in all_states:
         for target in all_states:
@@ -547,9 +487,7 @@ def test_observed_state_transition_matrix_is_exact() -> None:
                     target,
                 )
             else:
-                with pytest.raises(
-                    OperationalPaperSessionRunStateTransitionConflictError
-                ):
+                with pytest.raises(OperationalPaperSessionRunStateTransitionConflictError):
                     require_operational_paper_session_run_transition(
                         current,
                         target,
@@ -571,9 +509,7 @@ def test_transition_helpers_reject_non_state_values() -> None:
         )
     )
 
-    with pytest.raises(
-        OperationalPaperSessionRunStateTransitionConflictError
-    ):
+    with pytest.raises(OperationalPaperSessionRunStateTransitionConflictError):
         require_operational_paper_session_run_transition(
             "RUNNING",  # type: ignore[arg-type]
             OperationalPaperSessionRunObservedState.PAUSED,
@@ -604,10 +540,7 @@ def test_command_intent_is_minimal() -> None:
         expected_record_version=epoch.record_version,
     )
 
-    assert {
-        field.name
-        for field in fields(intent)
-    } == {
+    assert {field.name for field in fields(intent)} == {
         "epoch_id",
         "epoch_checksum",
         "command_type",
@@ -625,11 +558,7 @@ def test_command_intent_fingerprint_is_deterministic() -> None:
         expected_record_version=epoch.record_version,
     )
 
-    fingerprint = (
-        operational_paper_session_run_epoch_command_intent_fingerprint(
-            intent
-        )
-    )
+    fingerprint = operational_paper_session_run_epoch_command_intent_fingerprint(intent)
 
     rebuilt = OperationalPaperSessionRunEpochCommandIntent(
         epoch_id=epoch.epoch_id,
@@ -640,31 +569,16 @@ def test_command_intent_fingerprint_is_deterministic() -> None:
 
     assert SHA256.fullmatch(fingerprint)
 
-    assert fingerprint == (
-        operational_paper_session_run_epoch_command_intent_fingerprint(
-            rebuilt
-        )
-    )
+    assert fingerprint == (operational_paper_session_run_epoch_command_intent_fingerprint(rebuilt))
 
 
 @pytest.mark.parametrize(
     "changed",
     [
-        {
-            "command_type":
-                OperationalPaperSessionRunCommandType.STOP
-        },
-        {
-            "expected_record_version": 2
-        },
-        {
-            "epoch_checksum": "9" * 64
-        },
-        {
-            "epoch_id": UUID(
-                "10000000-0000-4000-8000-000000000099"
-            )
-        },
+        {"command_type": OperationalPaperSessionRunCommandType.STOP},
+        {"expected_record_version": 2},
+        {"epoch_checksum": "9" * 64},
+        {"epoch_id": UUID("10000000-0000-4000-8000-000000000099")},
     ],
 )
 def test_command_intent_dimensions_change_fingerprint(
@@ -675,35 +589,24 @@ def test_command_intent_dimensions_change_fingerprint(
     values: dict[str, object] = {
         "epoch_id": epoch.epoch_id,
         "epoch_checksum": epoch.epoch_checksum,
-        "command_type":
-            OperationalPaperSessionRunCommandType.PAUSE,
+        "command_type": OperationalPaperSessionRunCommandType.PAUSE,
         "expected_record_version": epoch.record_version,
     }
 
-    baseline_intent = (
-        OperationalPaperSessionRunEpochCommandIntent(
-            **values  # type: ignore[arg-type]
-        )
+    baseline_intent = OperationalPaperSessionRunEpochCommandIntent(
+        **values  # type: ignore[arg-type]
     )
 
-    baseline = (
-        operational_paper_session_run_epoch_command_intent_fingerprint(
-            baseline_intent
-        )
-    )
+    baseline = operational_paper_session_run_epoch_command_intent_fingerprint(baseline_intent)
 
     values.update(changed)
 
-    changed_intent = (
-        OperationalPaperSessionRunEpochCommandIntent(
-            **values  # type: ignore[arg-type]
-        )
+    changed_intent = OperationalPaperSessionRunEpochCommandIntent(
+        **values  # type: ignore[arg-type]
     )
 
-    changed_fingerprint = (
-        operational_paper_session_run_epoch_command_intent_fingerprint(
-            changed_intent
-        )
+    changed_fingerprint = operational_paper_session_run_epoch_command_intent_fingerprint(
+        changed_intent
     )
 
     assert changed_fingerprint != baseline
@@ -712,24 +615,12 @@ def test_command_intent_dimensions_change_fingerprint(
 @pytest.mark.parametrize(
     "changes",
     [
-        {
-            "epoch_id": UUID(int=0)
-        },
-        {
-            "epoch_checksum": "BAD"
-        },
-        {
-            "epoch_checksum": "A" * 64
-        },
-        {
-            "command_type": "PAUSE"
-        },
-        {
-            "expected_record_version": 0
-        },
-        {
-            "expected_record_version": True
-        },
+        {"epoch_id": UUID(int=0)},
+        {"epoch_checksum": "BAD"},
+        {"epoch_checksum": "A" * 64},
+        {"command_type": "PAUSE"},
+        {"expected_record_version": 0},
+        {"expected_record_version": True},
     ],
 )
 def test_invalid_command_intent_fails_closed(
@@ -740,16 +631,13 @@ def test_invalid_command_intent_fails_closed(
     values: dict[str, object] = {
         "epoch_id": epoch.epoch_id,
         "epoch_checksum": epoch.epoch_checksum,
-        "command_type":
-            OperationalPaperSessionRunCommandType.PAUSE,
+        "command_type": OperationalPaperSessionRunCommandType.PAUSE,
         "expected_record_version": epoch.record_version,
     }
 
     values.update(changes)
 
-    with pytest.raises(
-        InvalidOperationalPaperSessionRunSpecificationError
-    ):
+    with pytest.raises(InvalidOperationalPaperSessionRunSpecificationError):
         OperationalPaperSessionRunEpochCommandIntent(
             **values  # type: ignore[arg-type]
         )
@@ -775,49 +663,31 @@ def test_pause_request_changes_desired_state_and_records_command() -> None:
         OperationalPaperSessionRunCommandType.PAUSE,
     )
 
-    updated, command = (
-        request_operational_paper_session_run_epoch_command(
-            epoch,
-            command_id=UUID(
-                "12000000-0000-4000-8000-000000000001"
-            ),
-            intent=intent,
-            actor_id=ACTOR_ID,
-            requested_at=NOW + timedelta(seconds=1),
-            idempotency_key="run:pause:1",
-        )
+    updated, command = request_operational_paper_session_run_epoch_command(
+        epoch,
+        command_id=UUID("12000000-0000-4000-8000-000000000001"),
+        intent=intent,
+        actor_id=ACTOR_ID,
+        requested_at=NOW + timedelta(seconds=1),
+        idempotency_key="run:pause:1",
     )
 
-    assert (
-        updated.desired_state
-        is OperationalPaperSessionRunDesiredState.PAUSED
-    )
-    assert (
-        updated.observed_state
-        is OperationalPaperSessionRunObservedState.PENDING
-    )
+    assert updated.desired_state is OperationalPaperSessionRunDesiredState.PAUSED
+    assert updated.observed_state is OperationalPaperSessionRunObservedState.PENDING
     assert updated.record_version == 2
     assert updated.fencing_token == 0
     assert updated.epoch_checksum == epoch.epoch_checksum
     assert updated.worker_claim is None
 
-    assert (
-        command.command_type
-        is OperationalPaperSessionRunCommandType.PAUSE
-    )
-    assert (
-        command.desired_state
-        is OperationalPaperSessionRunDesiredState.PAUSED
-    )
+    assert command.command_type is OperationalPaperSessionRunCommandType.PAUSE
+    assert command.desired_state is OperationalPaperSessionRunDesiredState.PAUSED
     assert command.expected_record_version == 1
     assert command.resulting_record_version == 2
     assert command.actor_id == ACTOR_ID
     assert command.requested_at == NOW + timedelta(seconds=1)
     assert command.idempotency_key == "run:pause:1"
     assert command.intent_fingerprint == (
-        operational_paper_session_run_epoch_command_intent_fingerprint(
-            intent
-        )
+        operational_paper_session_run_epoch_command_intent_fingerprint(intent)
     )
 
 
@@ -826,9 +696,7 @@ def test_pending_pause_settles_without_worker_or_fence() -> None:
 
     epoch, _ = request_operational_paper_session_run_epoch_command(
         epoch,
-        command_id=UUID(
-            "12000000-0000-4000-8000-000000000002"
-        ),
+        command_id=UUID("12000000-0000-4000-8000-000000000002"),
         intent=_command_intent(
             epoch,
             OperationalPaperSessionRunCommandType.PAUSE,
@@ -843,14 +711,8 @@ def test_pending_pause_settles_without_worker_or_fence() -> None:
         observed_at=NOW + timedelta(seconds=2),
     )
 
-    assert (
-        paused.desired_state
-        is OperationalPaperSessionRunDesiredState.PAUSED
-    )
-    assert (
-        paused.observed_state
-        is OperationalPaperSessionRunObservedState.PAUSED
-    )
+    assert paused.desired_state is OperationalPaperSessionRunDesiredState.PAUSED
+    assert paused.observed_state is OperationalPaperSessionRunObservedState.PAUSED
     assert paused.record_version == 3
     assert paused.fencing_token == 0
     assert paused.worker_claim is None
@@ -862,9 +724,7 @@ def test_resume_changes_desired_state_but_does_not_fake_running() -> None:
 
     epoch, _ = request_operational_paper_session_run_epoch_command(
         epoch,
-        command_id=UUID(
-            "12000000-0000-4000-8000-000000000003"
-        ),
+        command_id=UUID("12000000-0000-4000-8000-000000000003"),
         intent=_command_intent(
             epoch,
             OperationalPaperSessionRunCommandType.PAUSE,
@@ -886,34 +746,21 @@ def test_resume_changes_desired_state_but_does_not_fake_running() -> None:
         OperationalPaperSessionRunCommandType.RESUME,
     )
 
-    resumed, command = (
-        request_operational_paper_session_run_epoch_command(
-            epoch,
-            command_id=UUID(
-                "13000000-0000-4000-8000-000000000001"
-            ),
-            intent=intent,
-            actor_id=ACTOR_ID,
-            requested_at=NOW + timedelta(seconds=3),
-            idempotency_key="run:resume:1",
-        )
+    resumed, command = request_operational_paper_session_run_epoch_command(
+        epoch,
+        command_id=UUID("13000000-0000-4000-8000-000000000001"),
+        intent=intent,
+        actor_id=ACTOR_ID,
+        requested_at=NOW + timedelta(seconds=3),
+        idempotency_key="run:resume:1",
     )
 
-    assert (
-        resumed.desired_state
-        is OperationalPaperSessionRunDesiredState.RUNNING
-    )
-    assert (
-        resumed.observed_state
-        is OperationalPaperSessionRunObservedState.PAUSED
-    )
+    assert resumed.desired_state is OperationalPaperSessionRunDesiredState.RUNNING
+    assert resumed.observed_state is OperationalPaperSessionRunObservedState.PAUSED
     assert resumed.record_version == previous_version + 1
     assert resumed.worker_claim is None
 
-    assert (
-        command.command_type
-        is OperationalPaperSessionRunCommandType.RESUME
-    )
+    assert command.command_type is OperationalPaperSessionRunCommandType.RESUME
     assert command.expected_record_version == previous_version
     assert command.resulting_record_version == previous_version + 1
 
@@ -923,9 +770,7 @@ def test_stop_from_paused_settles_terminally_without_worker() -> None:
 
     epoch, _ = request_operational_paper_session_run_epoch_command(
         epoch,
-        command_id=UUID(
-            "12000000-0000-4000-8000-000000000004"
-        ),
+        command_id=UUID("12000000-0000-4000-8000-000000000004"),
         intent=_command_intent(
             epoch,
             OperationalPaperSessionRunCommandType.PAUSE,
@@ -940,48 +785,29 @@ def test_stop_from_paused_settles_terminally_without_worker() -> None:
         observed_at=NOW + timedelta(seconds=2),
     )
 
-    epoch, command = (
-        request_operational_paper_session_run_epoch_command(
+    epoch, command = request_operational_paper_session_run_epoch_command(
+        epoch,
+        command_id=UUID("14000000-0000-4000-8000-000000000001"),
+        intent=_command_intent(
             epoch,
-            command_id=UUID(
-                "14000000-0000-4000-8000-000000000001"
-            ),
-            intent=_command_intent(
-                epoch,
-                OperationalPaperSessionRunCommandType.STOP,
-            ),
-            actor_id=ACTOR_ID,
-            requested_at=NOW + timedelta(seconds=3),
-            idempotency_key="run:stop:1",
-        )
+            OperationalPaperSessionRunCommandType.STOP,
+        ),
+        actor_id=ACTOR_ID,
+        requested_at=NOW + timedelta(seconds=3),
+        idempotency_key="run:stop:1",
     )
 
-    assert (
-        epoch.desired_state
-        is OperationalPaperSessionRunDesiredState.STOPPED
-    )
-    assert (
-        epoch.observed_state
-        is OperationalPaperSessionRunObservedState.PAUSED
-    )
-    assert (
-        command.command_type
-        is OperationalPaperSessionRunCommandType.STOP
-    )
+    assert epoch.desired_state is OperationalPaperSessionRunDesiredState.STOPPED
+    assert epoch.observed_state is OperationalPaperSessionRunObservedState.PAUSED
+    assert command.command_type is OperationalPaperSessionRunCommandType.STOP
 
     stopped = settle_unclaimed_operational_paper_session_run_epoch(
         epoch,
         observed_at=NOW + timedelta(seconds=4),
     )
 
-    assert (
-        stopped.observed_state
-        is OperationalPaperSessionRunObservedState.STOPPED
-    )
-    assert (
-        stopped.desired_state
-        is OperationalPaperSessionRunDesiredState.STOPPED
-    )
+    assert stopped.observed_state is OperationalPaperSessionRunObservedState.STOPPED
+    assert stopped.desired_state is OperationalPaperSessionRunDesiredState.STOPPED
     assert stopped.worker_claim is None
     assert stopped.failure is None
     assert stopped.terminal_at == NOW + timedelta(seconds=4)
@@ -1007,20 +833,16 @@ def test_allowed_commands_follow_current_desired_state() -> None:
         OperationalPaperSessionRunCommandType.START,
     )
 
-    paused_requested, _ = (
-        request_operational_paper_session_run_epoch_command(
+    paused_requested, _ = request_operational_paper_session_run_epoch_command(
+        epoch,
+        command_id=UUID("12000000-0000-4000-8000-000000000005"),
+        intent=_command_intent(
             epoch,
-            command_id=UUID(
-                "12000000-0000-4000-8000-000000000005"
-            ),
-            intent=_command_intent(
-                epoch,
-                OperationalPaperSessionRunCommandType.PAUSE,
-            ),
-            actor_id=ACTOR_ID,
-            requested_at=NOW + timedelta(seconds=1),
-            idempotency_key="run:pause:5",
-        )
+            OperationalPaperSessionRunCommandType.PAUSE,
+        ),
+        actor_id=ACTOR_ID,
+        requested_at=NOW + timedelta(seconds=1),
+        idempotency_key="run:pause:5",
     )
 
     assert not is_operational_paper_session_run_command_allowed(
@@ -1036,20 +858,16 @@ def test_allowed_commands_follow_current_desired_state() -> None:
         OperationalPaperSessionRunCommandType.STOP,
     )
 
-    stopped_requested, _ = (
-        request_operational_paper_session_run_epoch_command(
+    stopped_requested, _ = request_operational_paper_session_run_epoch_command(
+        paused_requested,
+        command_id=UUID("14000000-0000-4000-8000-000000000002"),
+        intent=_command_intent(
             paused_requested,
-            command_id=UUID(
-                "14000000-0000-4000-8000-000000000002"
-            ),
-            intent=_command_intent(
-                paused_requested,
-                OperationalPaperSessionRunCommandType.STOP,
-            ),
-            actor_id=ACTOR_ID,
-            requested_at=NOW + timedelta(seconds=2),
-            idempotency_key="run:stop:2",
-        )
+            OperationalPaperSessionRunCommandType.STOP,
+        ),
+        actor_id=ACTOR_ID,
+        requested_at=NOW + timedelta(seconds=2),
+        idempotency_key="run:stop:2",
     )
 
     for command_type in OperationalPaperSessionRunCommandType:
@@ -1064,9 +882,7 @@ def test_duplicate_pause_is_rejected_after_desired_state_changes() -> None:
 
     epoch, _ = request_operational_paper_session_run_epoch_command(
         epoch,
-        command_id=UUID(
-            "12000000-0000-4000-8000-000000000006"
-        ),
+        command_id=UUID("12000000-0000-4000-8000-000000000006"),
         intent=_command_intent(
             epoch,
             OperationalPaperSessionRunCommandType.PAUSE,
@@ -1076,14 +892,10 @@ def test_duplicate_pause_is_rejected_after_desired_state_changes() -> None:
         idempotency_key="run:pause:6",
     )
 
-    with pytest.raises(
-        OperationalPaperSessionRunCommandConflictError
-    ):
+    with pytest.raises(OperationalPaperSessionRunCommandConflictError):
         request_operational_paper_session_run_epoch_command(
             epoch,
-            command_id=UUID(
-                "12000000-0000-4000-8000-000000000007"
-            ),
+            command_id=UUID("12000000-0000-4000-8000-000000000007"),
             intent=_command_intent(
                 epoch,
                 OperationalPaperSessionRunCommandType.PAUSE,
@@ -1097,17 +909,9 @@ def test_duplicate_pause_is_rejected_after_desired_state_changes() -> None:
 @pytest.mark.parametrize(
     "change",
     [
-        {
-            "epoch_id": UUID(
-                "10000000-0000-4000-8000-000000000099"
-            )
-        },
-        {
-            "epoch_checksum": "9" * 64
-        },
-        {
-            "expected_record_version": 2
-        },
+        {"epoch_id": UUID("10000000-0000-4000-8000-000000000099")},
+        {"epoch_checksum": "9" * 64},
+        {"expected_record_version": 2},
     ],
 )
 def test_divergent_command_intent_is_rejected(
@@ -1118,8 +922,7 @@ def test_divergent_command_intent_is_rejected(
     values: dict[str, object] = {
         "epoch_id": epoch.epoch_id,
         "epoch_checksum": epoch.epoch_checksum,
-        "command_type":
-            OperationalPaperSessionRunCommandType.PAUSE,
+        "command_type": OperationalPaperSessionRunCommandType.PAUSE,
         "expected_record_version": epoch.record_version,
     }
 
@@ -1129,14 +932,10 @@ def test_divergent_command_intent_is_rejected(
         **values  # type: ignore[arg-type]
     )
 
-    with pytest.raises(
-        OperationalPaperSessionRunCommandConflictError
-    ):
+    with pytest.raises(OperationalPaperSessionRunCommandConflictError):
         request_operational_paper_session_run_epoch_command(
             epoch,
-            command_id=UUID(
-                "12000000-0000-4000-8000-000000000008"
-            ),
+            command_id=UUID("12000000-0000-4000-8000-000000000008"),
             intent=intent,
             actor_id=ACTOR_ID,
             requested_at=NOW + timedelta(seconds=1),
@@ -1147,14 +946,10 @@ def test_divergent_command_intent_is_rejected(
 def test_command_timestamp_cannot_predate_epoch_start() -> None:
     epoch, _ = _started_epoch()
 
-    with pytest.raises(
-        InvalidOperationalPaperSessionRunSpecificationError
-    ):
+    with pytest.raises(InvalidOperationalPaperSessionRunSpecificationError):
         request_operational_paper_session_run_epoch_command(
             epoch,
-            command_id=UUID(
-                "12000000-0000-4000-8000-000000000009"
-            ),
+            command_id=UUID("12000000-0000-4000-8000-000000000009"),
             intent=_command_intent(
                 epoch,
                 OperationalPaperSessionRunCommandType.PAUSE,
@@ -1170,9 +965,7 @@ def test_terminal_epoch_rejects_new_commands() -> None:
 
     epoch, _ = request_operational_paper_session_run_epoch_command(
         epoch,
-        command_id=UUID(
-            "14000000-0000-4000-8000-000000000003"
-        ),
+        command_id=UUID("14000000-0000-4000-8000-000000000003"),
         intent=_command_intent(
             epoch,
             OperationalPaperSessionRunCommandType.STOP,
@@ -1194,14 +987,10 @@ def test_terminal_epoch_rejects_new_commands() -> None:
         expected_record_version=epoch.record_version,
     )
 
-    with pytest.raises(
-        OperationalPaperSessionRunCommandConflictError
-    ):
+    with pytest.raises(OperationalPaperSessionRunCommandConflictError):
         request_operational_paper_session_run_epoch_command(
             epoch,
-            command_id=UUID(
-                "14000000-0000-4000-8000-000000000004"
-            ),
+            command_id=UUID("14000000-0000-4000-8000-000000000004"),
             intent=intent,
             actor_id=ACTOR_ID,
             requested_at=NOW + timedelta(seconds=3),
@@ -1213,9 +1002,7 @@ def test_terminal_epoch_rejects_new_commands() -> None:
     "start_intent",
     [
         OperationalPaperSessionRunEpochStartIntent(
-            activation_id=UUID(
-                "20000000-0000-4000-8000-000000000099"
-            ),
+            activation_id=UUID("20000000-0000-4000-8000-000000000099"),
             activation_checksum="a" * 64,
         ),
         OperationalPaperSessionRunEpochStartIntent(
@@ -1227,9 +1014,7 @@ def test_terminal_epoch_rejects_new_commands() -> None:
 def test_start_rejects_activation_identity_mismatch(
     start_intent: OperationalPaperSessionRunEpochStartIntent,
 ) -> None:
-    with pytest.raises(
-        OperationalPaperSessionRunCommandConflictError
-    ):
+    with pytest.raises(OperationalPaperSessionRunCommandConflictError):
         start_operational_paper_session_run_epoch(
             epoch_id=EPOCH_ID,
             command_id=COMMAND_ID,
@@ -1255,14 +1040,8 @@ def test_initial_worker_claim_creates_starting_state_and_first_fence() -> None:
         lease_expires_at=NOW + timedelta(seconds=61),
     )
 
-    assert (
-        claimed.observed_state
-        is OperationalPaperSessionRunObservedState.STARTING
-    )
-    assert (
-        claimed.desired_state
-        is OperationalPaperSessionRunDesiredState.RUNNING
-    )
+    assert claimed.observed_state is OperationalPaperSessionRunObservedState.STARTING
+    assert claimed.desired_state is OperationalPaperSessionRunDesiredState.RUNNING
     assert claimed.record_version == 2
     assert claimed.fencing_token == 1
 
@@ -1272,10 +1051,7 @@ def test_initial_worker_claim_creates_starting_state_and_first_fence() -> None:
     assert claimed.worker_claim.fencing_token == 1
     assert claimed.worker_claim.claimed_at == NOW + timedelta(seconds=1)
     assert claimed.worker_claim.heartbeat_at == NOW + timedelta(seconds=1)
-    assert (
-        claimed.worker_claim.lease_expires_at
-        == NOW + timedelta(seconds=61)
-    )
+    assert claimed.worker_claim.lease_expires_at == NOW + timedelta(seconds=61)
 
 
 def test_duplicate_claim_is_rejected() -> None:
@@ -1302,9 +1078,7 @@ def test_claim_requires_desired_running() -> None:
 
     epoch, _ = request_operational_paper_session_run_epoch_command(
         epoch,
-        command_id=UUID(
-            "15000000-0000-4000-8000-000000000001"
-        ),
+        command_id=UUID("15000000-0000-4000-8000-000000000001"),
         intent=_command_intent(
             epoch,
             OperationalPaperSessionRunCommandType.PAUSE,
@@ -1314,10 +1088,7 @@ def test_claim_requires_desired_running() -> None:
         idempotency_key="run:pause:claim-block",
     )
 
-    assert (
-        epoch.desired_state
-        is OperationalPaperSessionRunDesiredState.PAUSED
-    )
+    assert epoch.desired_state is OperationalPaperSessionRunDesiredState.PAUSED
 
     with pytest.raises(OperationalPaperSessionRunLeaseError):
         claim_operational_paper_session_run_epoch(
@@ -1351,18 +1122,9 @@ def test_lease_renewal_preserves_worker_fence_and_claim_time() -> None:
     assert renewed.worker_claim is not None
     assert renewed.worker_claim.worker_id == WORKER_1
     assert renewed.worker_claim.fencing_token == 1
-    assert (
-        renewed.worker_claim.claimed_at
-        == claimed.worker_claim.claimed_at
-    )
-    assert (
-        renewed.worker_claim.heartbeat_at
-        == NOW + timedelta(seconds=20)
-    )
-    assert (
-        renewed.worker_claim.lease_expires_at
-        == NOW + timedelta(seconds=120)
-    )
+    assert renewed.worker_claim.claimed_at == claimed.worker_claim.claimed_at
+    assert renewed.worker_claim.heartbeat_at == NOW + timedelta(seconds=20)
+    assert renewed.worker_claim.lease_expires_at == NOW + timedelta(seconds=120)
 
 
 def test_lease_renewal_requires_heartbeat_to_advance() -> None:
@@ -1499,20 +1261,14 @@ def test_recovery_replaces_worker_and_increments_fence() -> None:
         lease_expires_at=NOW + timedelta(seconds=71),
     )
 
-    assert (
-        recovered.observed_state
-        is OperationalPaperSessionRunObservedState.RECOVERING
-    )
+    assert recovered.observed_state is OperationalPaperSessionRunObservedState.RECOVERING
     assert recovered.record_version == claimed.record_version + 1
     assert recovered.fencing_token == 2
 
     assert recovered.worker_claim is not None
     assert recovered.worker_claim.worker_id == WORKER_2
     assert recovered.worker_claim.fencing_token == 2
-    assert (
-        recovered.worker_claim.claimed_at
-        == NOW + timedelta(seconds=11)
-    )
+    assert recovered.worker_claim.claimed_at == NOW + timedelta(seconds=11)
 
 
 def test_stale_worker_is_rejected_after_recovery() -> None:
@@ -1565,10 +1321,7 @@ def test_recovery_owner_can_return_to_starting_then_running() -> None:
         observed_at=NOW + timedelta(seconds=12),
     )
 
-    assert (
-        starting.observed_state
-        is OperationalPaperSessionRunObservedState.STARTING
-    )
+    assert starting.observed_state is OperationalPaperSessionRunObservedState.STARTING
     assert starting.fencing_token == 2
     assert starting.worker_claim is not None
     assert starting.worker_claim.worker_id == WORKER_2
@@ -1580,10 +1333,7 @@ def test_recovery_owner_can_return_to_starting_then_running() -> None:
         observed_at=NOW + timedelta(seconds=13),
     )
 
-    assert (
-        running.observed_state
-        is OperationalPaperSessionRunObservedState.RUNNING
-    )
+    assert running.observed_state is OperationalPaperSessionRunObservedState.RUNNING
     assert running.fencing_token == 2
     assert running.worker_claim is not None
     assert running.worker_claim.worker_id == WORKER_2
@@ -1616,9 +1366,7 @@ def _paused_epoch() -> OperationalPaperSessionRunEpoch:
 
     epoch, _ = request_operational_paper_session_run_epoch_command(
         epoch,
-        command_id=UUID(
-            "16000000-0000-4000-8000-000000000001"
-        ),
+        command_id=UUID("16000000-0000-4000-8000-000000000001"),
         intent=_command_intent(
             epoch,
             OperationalPaperSessionRunCommandType.PAUSE,
@@ -1640,20 +1388,16 @@ def test_running_pause_releases_claim_and_preserves_fence() -> None:
     running = _running_epoch()
     previous_version = running.record_version
 
-    requested, command = (
-        request_operational_paper_session_run_epoch_command(
+    requested, command = request_operational_paper_session_run_epoch_command(
+        running,
+        command_id=UUID("16000000-0000-4000-8000-000000000002"),
+        intent=_command_intent(
             running,
-            command_id=UUID(
-                "16000000-0000-4000-8000-000000000002"
-            ),
-            intent=_command_intent(
-                running,
-                OperationalPaperSessionRunCommandType.PAUSE,
-            ),
-            actor_id=ACTOR_ID,
-            requested_at=NOW + timedelta(seconds=3),
-            idempotency_key="run:pause:running",
-        )
+            OperationalPaperSessionRunCommandType.PAUSE,
+        ),
+        actor_id=ACTOR_ID,
+        requested_at=NOW + timedelta(seconds=3),
+        idempotency_key="run:pause:running",
     )
 
     assert requested.record_version == previous_version + 1
@@ -1667,22 +1411,13 @@ def test_running_pause_releases_claim_and_preserves_fence() -> None:
         observed_at=NOW + timedelta(seconds=4),
     )
 
-    assert (
-        paused.desired_state
-        is OperationalPaperSessionRunDesiredState.PAUSED
-    )
-    assert (
-        paused.observed_state
-        is OperationalPaperSessionRunObservedState.PAUSED
-    )
+    assert paused.desired_state is OperationalPaperSessionRunDesiredState.PAUSED
+    assert paused.observed_state is OperationalPaperSessionRunObservedState.PAUSED
     assert paused.record_version == previous_version + 2
     assert paused.fencing_token == 1
     assert paused.worker_claim is None
     assert paused.terminal_at is None
-    assert (
-        command.command_type
-        is OperationalPaperSessionRunCommandType.PAUSE
-    )
+    assert command.command_type is OperationalPaperSessionRunCommandType.PAUSE
 
 
 def test_paused_resume_requires_new_claim_and_new_fence() -> None:
@@ -1693,9 +1428,7 @@ def test_paused_resume_requires_new_claim_and_new_fence() -> None:
 
     resumed, _ = request_operational_paper_session_run_epoch_command(
         paused,
-        command_id=UUID(
-            "17000000-0000-4000-8000-000000000001"
-        ),
+        command_id=UUID("17000000-0000-4000-8000-000000000001"),
         intent=_command_intent(
             paused,
             OperationalPaperSessionRunCommandType.RESUME,
@@ -1705,14 +1438,8 @@ def test_paused_resume_requires_new_claim_and_new_fence() -> None:
         idempotency_key="run:resume:cycle",
     )
 
-    assert (
-        resumed.desired_state
-        is OperationalPaperSessionRunDesiredState.RUNNING
-    )
-    assert (
-        resumed.observed_state
-        is OperationalPaperSessionRunObservedState.PAUSED
-    )
+    assert resumed.desired_state is OperationalPaperSessionRunDesiredState.RUNNING
+    assert resumed.observed_state is OperationalPaperSessionRunObservedState.PAUSED
     assert resumed.worker_claim is None
     assert resumed.fencing_token == 1
 
@@ -1723,10 +1450,7 @@ def test_paused_resume_requires_new_claim_and_new_fence() -> None:
         lease_expires_at=NOW + timedelta(seconds=66),
     )
 
-    assert (
-        reclaimed.observed_state
-        is OperationalPaperSessionRunObservedState.STARTING
-    )
+    assert reclaimed.observed_state is OperationalPaperSessionRunObservedState.STARTING
     assert reclaimed.fencing_token == 2
     assert reclaimed.worker_claim is not None
     assert reclaimed.worker_claim.worker_id == WORKER_2
@@ -1739,10 +1463,7 @@ def test_paused_resume_requires_new_claim_and_new_fence() -> None:
         observed_at=NOW + timedelta(seconds=7),
     )
 
-    assert (
-        running.observed_state
-        is OperationalPaperSessionRunObservedState.RUNNING
-    )
+    assert running.observed_state is OperationalPaperSessionRunObservedState.RUNNING
     assert running.fencing_token == 2
 
 
@@ -1751,9 +1472,7 @@ def test_old_worker_cannot_act_after_pause_resume_reclaim() -> None:
 
     resumed, _ = request_operational_paper_session_run_epoch_command(
         paused,
-        command_id=UUID(
-            "17000000-0000-4000-8000-000000000002"
-        ),
+        command_id=UUID("17000000-0000-4000-8000-000000000002"),
         intent=_command_intent(
             paused,
             OperationalPaperSessionRunCommandType.RESUME,
@@ -1785,10 +1504,7 @@ def test_old_worker_cannot_act_after_pause_resume_reclaim() -> None:
         observed_at=NOW + timedelta(seconds=7),
     )
 
-    assert (
-        running.observed_state
-        is OperationalPaperSessionRunObservedState.RUNNING
-    )
+    assert running.observed_state is OperationalPaperSessionRunObservedState.RUNNING
 
 
 def test_active_stop_uses_stopping_boundary_then_terminal() -> None:
@@ -1796,9 +1512,7 @@ def test_active_stop_uses_stopping_boundary_then_terminal() -> None:
 
     requested, _ = request_operational_paper_session_run_epoch_command(
         running,
-        command_id=UUID(
-            "18000000-0000-4000-8000-000000000001"
-        ),
+        command_id=UUID("18000000-0000-4000-8000-000000000001"),
         intent=_command_intent(
             running,
             OperationalPaperSessionRunCommandType.STOP,
@@ -1808,14 +1522,8 @@ def test_active_stop_uses_stopping_boundary_then_terminal() -> None:
         idempotency_key="run:stop:active",
     )
 
-    assert (
-        requested.desired_state
-        is OperationalPaperSessionRunDesiredState.STOPPED
-    )
-    assert (
-        requested.observed_state
-        is OperationalPaperSessionRunObservedState.RUNNING
-    )
+    assert requested.desired_state is OperationalPaperSessionRunDesiredState.STOPPED
+    assert requested.observed_state is OperationalPaperSessionRunObservedState.RUNNING
 
     stopping = mark_operational_paper_session_run_epoch_stopping(
         requested,
@@ -1824,10 +1532,7 @@ def test_active_stop_uses_stopping_boundary_then_terminal() -> None:
         observed_at=NOW + timedelta(seconds=4),
     )
 
-    assert (
-        stopping.observed_state
-        is OperationalPaperSessionRunObservedState.STOPPING
-    )
+    assert stopping.observed_state is OperationalPaperSessionRunObservedState.STOPPING
     assert stopping.worker_claim is not None
 
     stopped = settle_operational_paper_session_run_epoch_stopped(
@@ -1837,14 +1542,8 @@ def test_active_stop_uses_stopping_boundary_then_terminal() -> None:
         observed_at=NOW + timedelta(seconds=5),
     )
 
-    assert (
-        stopped.observed_state
-        is OperationalPaperSessionRunObservedState.STOPPED
-    )
-    assert (
-        stopped.desired_state
-        is OperationalPaperSessionRunDesiredState.STOPPED
-    )
+    assert stopped.observed_state is OperationalPaperSessionRunObservedState.STOPPED
+    assert stopped.desired_state is OperationalPaperSessionRunDesiredState.STOPPED
     assert stopped.worker_claim is None
     assert stopped.failure is None
     assert stopped.fencing_token == 1
@@ -1857,9 +1556,7 @@ def test_stopping_crash_recovers_same_epoch_with_higher_fence() -> None:
 
     requested, _ = request_operational_paper_session_run_epoch_command(
         running,
-        command_id=UUID(
-            "18000000-0000-4000-8000-000000000002"
-        ),
+        command_id=UUID("18000000-0000-4000-8000-000000000002"),
         intent=_command_intent(
             running,
             OperationalPaperSessionRunCommandType.STOP,
@@ -1889,14 +1586,8 @@ def test_stopping_crash_recovers_same_epoch_with_higher_fence() -> None:
     assert recovered.epoch_id == original_epoch_id
     assert recovered.epoch_checksum == original_checksum
     assert recovered.fencing_token == 2
-    assert (
-        recovered.observed_state
-        is OperationalPaperSessionRunObservedState.RECOVERING
-    )
-    assert (
-        recovered.desired_state
-        is OperationalPaperSessionRunDesiredState.STOPPED
-    )
+    assert recovered.observed_state is OperationalPaperSessionRunObservedState.RECOVERING
+    assert recovered.desired_state is OperationalPaperSessionRunDesiredState.STOPPED
 
     stopping_again = mark_operational_paper_session_run_epoch_stopping(
         recovered,
@@ -1914,10 +1605,7 @@ def test_stopping_crash_recovers_same_epoch_with_higher_fence() -> None:
 
     assert stopped.epoch_id == original_epoch_id
     assert stopped.fencing_token == 2
-    assert (
-        stopped.observed_state
-        is OperationalPaperSessionRunObservedState.STOPPED
-    )
+    assert stopped.observed_state is OperationalPaperSessionRunObservedState.STOPPED
 
 
 def test_pause_requested_crash_recovers_and_settles_paused() -> None:
@@ -1925,9 +1613,7 @@ def test_pause_requested_crash_recovers_and_settles_paused() -> None:
 
     requested, _ = request_operational_paper_session_run_epoch_command(
         running,
-        command_id=UUID(
-            "16000000-0000-4000-8000-000000000003"
-        ),
+        command_id=UUID("16000000-0000-4000-8000-000000000003"),
         intent=_command_intent(
             running,
             OperationalPaperSessionRunCommandType.PAUSE,
@@ -1944,14 +1630,8 @@ def test_pause_requested_crash_recovers_and_settles_paused() -> None:
         lease_expires_at=NOW + timedelta(seconds=71),
     )
 
-    assert (
-        recovered.desired_state
-        is OperationalPaperSessionRunDesiredState.PAUSED
-    )
-    assert (
-        recovered.observed_state
-        is OperationalPaperSessionRunObservedState.RECOVERING
-    )
+    assert recovered.desired_state is OperationalPaperSessionRunDesiredState.PAUSED
+    assert recovered.observed_state is OperationalPaperSessionRunObservedState.RECOVERING
     assert recovered.fencing_token == 2
 
     paused = settle_operational_paper_session_run_epoch_paused(
@@ -1961,10 +1641,7 @@ def test_pause_requested_crash_recovers_and_settles_paused() -> None:
         observed_at=NOW + timedelta(seconds=12),
     )
 
-    assert (
-        paused.observed_state
-        is OperationalPaperSessionRunObservedState.PAUSED
-    )
+    assert paused.observed_state is OperationalPaperSessionRunObservedState.PAUSED
     assert paused.worker_claim is None
     assert paused.fencing_token == 2
 
@@ -1980,16 +1657,10 @@ def test_claimed_failure_is_terminal_and_sanitized() -> None:
         failed_at=NOW + timedelta(seconds=3),
     )
 
-    assert (
-        failed.observed_state
-        is OperationalPaperSessionRunObservedState.FAILED
-    )
+    assert failed.observed_state is OperationalPaperSessionRunObservedState.FAILED
     assert failed.worker_claim is None
     assert failed.failure is not None
-    assert (
-        failed.failure.code
-        is OperationalPaperSessionRunFailureCode.AUTHORITY_LOST
-    )
+    assert failed.failure.code is OperationalPaperSessionRunFailureCode.AUTHORITY_LOST
     assert failed.failure.failed_at == NOW + timedelta(seconds=3)
     assert failed.terminal_at == NOW + timedelta(seconds=3)
     assert operational_paper_session_run_epoch_is_terminal(failed)
@@ -2040,10 +1711,7 @@ def test_unclaimed_failure_terminalizes_before_worker_claim(
         failed_at=NOW + timedelta(seconds=1),
     )
 
-    assert (
-        failed.observed_state
-        is OperationalPaperSessionRunObservedState.FAILED
-    )
+    assert failed.observed_state is OperationalPaperSessionRunObservedState.FAILED
     assert failed.worker_claim is None
     assert failed.fencing_token == 0
     assert failed.failure is not None
@@ -2057,9 +1725,7 @@ def test_terminal_unclaimed_settlement_is_stable_noop() -> None:
 
     requested, _ = request_operational_paper_session_run_epoch_command(
         epoch,
-        command_id=UUID(
-            "18000000-0000-4000-8000-000000000003"
-        ),
+        command_id=UUID("18000000-0000-4000-8000-000000000003"),
         intent=_command_intent(
             epoch,
             OperationalPaperSessionRunCommandType.STOP,
@@ -2085,10 +1751,7 @@ def test_terminal_unclaimed_settlement_is_stable_noop() -> None:
 
 
 def test_epoch_specification_field_set_is_exact_and_runtime_free() -> None:
-    names = {
-        field.name
-        for field in fields(_specification())
-    }
+    names = {field.name for field in fields(_specification())}
 
     assert names == {
         "schema_version",
@@ -2135,10 +1798,7 @@ def test_epoch_specification_field_set_is_exact_and_runtime_free() -> None:
 def test_epoch_aggregate_field_set_is_exact() -> None:
     epoch, _ = _started_epoch()
 
-    assert {
-        field.name
-        for field in fields(epoch)
-    } == {
+    assert {field.name for field in fields(epoch)} == {
         "epoch_id",
         "schema_version",
         "run_contract_version",
@@ -2179,10 +1839,7 @@ def test_worker_claim_and_failure_payloads_are_closed() -> None:
 
     assert claimed.worker_claim is not None
 
-    assert {
-        field.name
-        for field in fields(claimed.worker_claim)
-    } == {
+    assert {field.name for field in fields(claimed.worker_claim)} == {
         "epoch_id",
         "worker_id",
         "fencing_token",
@@ -2201,10 +1858,7 @@ def test_worker_claim_and_failure_payloads_are_closed() -> None:
 
     assert failed.failure is not None
 
-    assert {
-        field.name
-        for field in fields(failed.failure)
-    } == {
+    assert {field.name for field in fields(failed.failure)} == {
         "code",
         "failed_at",
     }
@@ -2219,17 +1873,11 @@ def test_epoch_checksum_excludes_generated_and_runtime_metadata() -> None:
     first, _ = _started_epoch()
 
     second, _ = start_operational_paper_session_run_epoch(
-        epoch_id=UUID(
-            "10000000-0000-4000-8000-000000000099"
-        ),
-        command_id=UUID(
-            "11000000-0000-4000-8000-000000000099"
-        ),
+        epoch_id=UUID("10000000-0000-4000-8000-000000000099"),
+        command_id=UUID("11000000-0000-4000-8000-000000000099"),
         specification=_specification(),
         start_intent=_start_intent(),
-        requested_by=UUID(
-            "70000000-0000-4000-8000-000000000099"
-        ),
+        requested_by=UUID("70000000-0000-4000-8000-000000000099"),
         requested_at=NOW + timedelta(seconds=10),
         idempotency_key="run:start:metadata-independent",
     )
@@ -2240,10 +1888,7 @@ def test_epoch_checksum_excludes_generated_and_runtime_metadata() -> None:
     assert first.start_idempotency_key != second.start_idempotency_key
 
     assert first.epoch_checksum == second.epoch_checksum
-    assert (
-        first.activation_checksum
-        == second.activation_checksum
-    )
+    assert first.activation_checksum == second.activation_checksum
 
 
 def test_corrupted_frozen_specification_is_revalidated_by_checksum_helper() -> None:
@@ -2255,12 +1900,8 @@ def test_corrupted_frozen_specification_is_revalidated_by_checksum_helper() -> N
         "BAD",
     )
 
-    with pytest.raises(
-        InvalidOperationalPaperSessionRunSpecificationError
-    ):
-        operational_paper_session_run_epoch_specification_checksum(
-            specification
-        )
+    with pytest.raises(InvalidOperationalPaperSessionRunSpecificationError):
+        operational_paper_session_run_epoch_specification_checksum(specification)
 
 
 def test_corrupted_frozen_epoch_is_revalidated_by_public_helper() -> None:
@@ -2272,12 +1913,8 @@ def test_corrupted_frozen_epoch_is_revalidated_by_public_helper() -> None:
         OperationalPaperSessionRunObservedState.STOPPED,
     )
 
-    with pytest.raises(
-        InvalidOperationalPaperSessionRunSpecificationError
-    ):
-        operational_paper_session_run_epoch_is_terminal(
-            epoch
-        )
+    with pytest.raises(InvalidOperationalPaperSessionRunSpecificationError):
+        operational_paper_session_run_epoch_is_terminal(epoch)
 
 
 def test_pure_domain_contracts_exclude_financial_process_and_secret_fields() -> None:
@@ -2335,10 +1972,7 @@ def test_pure_domain_contracts_exclude_financial_process_and_secret_fields() -> 
 
     for contract in contracts:
         contract_fields = tuple(fields(contract))
-        names = {
-            field.name.lower()
-            for field in contract_fields
-        }
+        names = {field.name.lower() for field in contract_fields}
 
         assert forbidden_names.isdisjoint(names)
 

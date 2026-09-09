@@ -29,8 +29,7 @@ from tests.test_operational_paper_session_activations_migration import (
 )
 
 MIGRATION_PATH = (
-    Path(__file__).parents[3]
-    / "supabase/migrations/"
+    Path(__file__).parents[3] / "supabase/migrations/"
     "20260907000000_phase_7_11_operational_paper_session_run_epochs.sql"
 )
 
@@ -79,11 +78,7 @@ def _check_body(text: str, constraint: str) -> str:
     next_constraint = tail.find("\n    constraint ", 1)
     table_end = tail.find("\n);")
 
-    candidates = [
-        value
-        for value in (next_constraint, table_end)
-        if value >= 0
-    ]
+    candidates = [value for value in (next_constraint, table_end) if value >= 0]
 
     end = min(candidates)
     return tail[:end]
@@ -205,14 +200,8 @@ def test_foreign_keys_and_unique_contracts_are_present() -> None:
 
     assert required <= names
 
-    assert (
-        "foreign key (epoch_id, epoch_checksum)"
-        in text
-    )
-    assert (
-        "unique (start_requested_by, start_idempotency_key)"
-        in text
-    )
+    assert "foreign key (epoch_id, epoch_checksum)" in text
+    assert "unique (start_requested_by, start_idempotency_key)" in text
     assert "unique (actor_id, idempotency_key)" in text
     assert "unique (epoch_id, resulting_record_version)" in text
 
@@ -237,10 +226,7 @@ def test_index_contract_is_exact() -> None:
         "op_ps_run_command_list_idx",
     }
 
-    assert (
-        "where observed_state not in ('STOPPED', 'FAILED');"
-        in text
-    )
+    assert "where observed_state not in ('STOPPED', 'FAILED');" in text
 
 
 def test_backend_only_rls_contract_is_closed() -> None:
@@ -251,10 +237,7 @@ def test_backend_only_rls_contract_is_closed() -> None:
     assert "create policy" not in lower
     assert "grant " not in lower
 
-    assert (
-        "from public, anon, authenticated, service_role;"
-        in lower
-    )
+    assert "from public, anon, authenticated, service_role;" in lower
 
 
 def test_function_and_trigger_surface_is_exact() -> None:
@@ -455,21 +438,10 @@ def test_command_history_is_append_only_and_transactionally_applied() -> None:
     assert "command_delete_forbidden" in protect
     assert "command_update_forbidden" in protect
 
-    assert (
-        "create constraint trigger "
-        "op_ps_run_epoch_start_command_required"
-        in text
-    )
-    assert (
-        "create constraint trigger "
-        "op_ps_run_command_applied"
-        in text
-    )
+    assert "create constraint trigger op_ps_run_epoch_start_command_required" in text
+    assert "create constraint trigger op_ps_run_command_applied" in text
 
-    assert (
-        "operational_paper_session_run_epoch_start_command_required"
-        in text
-    )
+    assert "operational_paper_session_run_epoch_start_command_required" in text
     assert "operational_paper_session_run_command_not_applied" in text
 
 
