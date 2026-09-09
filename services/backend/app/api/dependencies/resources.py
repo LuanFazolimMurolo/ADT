@@ -37,6 +37,9 @@ from app.repositories import (
     SimulationRepository,
 )
 from app.repositories.operational_mandates import PostgresOperationalMandateRepository
+from app.repositories.operational_market_data_collectors import (
+    PostgresOperationalMarketDataCollectorRepository,
+)
 from app.repositories.operational_paper_capital_authorizations import (
     PostgresOperationalPaperCapitalAuthorizationRepository,
 )
@@ -65,6 +68,9 @@ from app.services import (
     SettingsService,
     SimulationService,
     WorkerRuntimeObservabilityService,
+)
+from app.services.operational_market_data_collectors import (
+    OperationalMarketDataCollectorService,
 )
 from app.services.operational_paper_session_runs import (
     OperationalPaperSessionRunService,
@@ -290,6 +296,16 @@ def get_worker_runtime_observability_service(
     return WorkerRuntimeObservabilityService(
         repository=PostgresWorkerRuntimeObservabilityRepository(database),
         clock=lambda: datetime.now(UTC),
+    )
+
+
+def get_operational_market_data_collector_service(
+    database: Database = Depends(get_database),
+) -> OperationalMarketDataCollectorService:
+    """Build the operational market-data collector control service."""
+
+    return OperationalMarketDataCollectorService(
+        repository=PostgresOperationalMarketDataCollectorRepository(database),
     )
 
 
