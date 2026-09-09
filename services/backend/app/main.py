@@ -24,6 +24,7 @@ from app.api.routes import (
     admin_operational_paper_session_activations,
     admin_operational_paper_session_materializations,
     admin_operational_paper_session_profiles,
+    admin_operational_paper_session_runs,
     admin_paper_chart_annotations,
     admin_paper_dashboard,
     admin_paper_journal,
@@ -180,6 +181,9 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
                 stale_after_seconds=app_settings.market_job_stale_after,
                 clock=market_operation_clock,
             )
+            application.state.market_operation_store = market_operation_store
+            application.state.market_operation_catalog = market_operation_catalog
+            application.state.market_operation_lock_manager = market_operation_lock_manager
             raw_dataset_read_service = LocalRawDatasetReadService(
                 market_operation_catalog,
                 lock_timeout_seconds=app_settings.market_job_lock_timeout,
@@ -352,6 +356,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(admin_operational_mandates.router)
     application.include_router(admin_operational_paper_capital_authorizations.router)
     application.include_router(admin_operational_paper_session_activations.router)
+    application.include_router(admin_operational_paper_session_runs.router)
     application.include_router(admin_operational_paper_session_materializations.router)
     application.include_router(admin_operational_paper_session_profiles.router)
     application.include_router(admin_worker_observability.router)

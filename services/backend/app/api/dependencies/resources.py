@@ -9,10 +9,13 @@ from app.auth import SupabaseJWTVerifier
 from app.database import Database
 from app.market_data.asset_catalog import AssetMarketService
 from app.market_data.candle_query import LocalMarketCandleReadService
+from app.market_data.catalog import JsonMarketDataCatalog
 from app.market_data.continuous import ContinuousCollectionStateStore
+from app.market_data.locks import DatasetLockManager
 from app.market_data.raw_dataset_query import LocalRawDatasetReadService
 from app.market_data.raw_gap_query import LocalRawGapReadService
 from app.market_data.raw_quality_query import LocalRawQualityReadService
+from app.market_data.storage import ParquetCandleStore
 from app.paper_trading.chart_annotations import PaperChartAnnotationReadService
 from app.paper_trading.continuous import PaperRunnerStateStore
 from app.paper_trading.dashboard import PaperDashboardReadService
@@ -46,6 +49,9 @@ from app.repositories.operational_paper_session_materializations import (
 from app.repositories.operational_paper_session_profiles import (
     PostgresOperationalPaperSessionProfileRepository,
 )
+from app.repositories.operational_paper_session_runs import (
+    PostgresOperationalPaperSessionRunRepository,
+)
 from app.services import (
     AdminService,
     CapitalMovementService,
@@ -59,6 +65,9 @@ from app.services import (
     SettingsService,
     SimulationService,
     WorkerRuntimeObservabilityService,
+)
+from app.services.operational_paper_session_runs import (
+    OperationalPaperSessionRunService,
 )
 from app.strategies import StrategyDefinitionService, builtin_indicator_capabilities
 from app.strategies.registry import StrategyPluginRegistry
@@ -79,6 +88,36 @@ def get_market_candle_read_service(request: Request) -> LocalMarketCandleReadSer
     return cast(
         LocalMarketCandleReadService,
         request.app.state.market_candle_read_service,
+    )
+
+
+def get_market_operation_catalog(
+    request: Request,
+) -> JsonMarketDataCatalog:
+    """Return the application-owned canonical RAW catalog."""
+    return cast(
+        JsonMarketDataCatalog,
+        request.app.state.market_operation_catalog,
+    )
+
+
+def get_market_operation_store(
+    request: Request,
+) -> ParquetCandleStore:
+    """Return the application-owned canonical RAW candle store."""
+    return cast(
+        ParquetCandleStore,
+        request.app.state.market_operation_store,
+    )
+
+
+def get_market_operation_lock_manager(
+    request: Request,
+) -> DatasetLockManager:
+    """Return the application-owned canonical RAW dataset lock manager."""
+    return cast(
+        DatasetLockManager,
+        request.app.state.market_operation_lock_manager,
     )
 
 
@@ -305,6 +344,34 @@ def get_operational_paper_session_materialization_service(
         authorization_repository=PostgresOperationalPaperCapitalAuthorizationRepository(database),
         profile_repository=PostgresOperationalPaperSessionProfileRepository(database),
         paper_repository=paper_repository,
+        clock=lambda: datetime.now(UTC),
+    )
+
+
+def get_operational_paper_session_run_service(
+    database: Database = Depends(get_database),
+    paper_repository: PaperTradingRepository = Depends(get_paper_trading_repository),
+    raw_catalog: JsonMarketDataCatalog = Depends(get_market_operation_catalog),
+    raw_store: ParquetCandleStore = Depends(get_market_operation_store),
+    raw_locks: DatasetLockManager = Depends(get_market_operation_lock_manager),
+) -> OperationalPaperSessionRunService:
+    """Build the operational paper-session run-control service."""
+
+    return OperationalPaperSessionRunService(
+        repository=PostgresOperationalPaperSessionRunRepository(database),
+        activation_repository=(PostgresOperationalPaperSessionActivationRepository(database)),
+        materialization_repository=(
+            PostgresOperationalPaperSessionMaterializationRepository(database)
+        ),
+        authorization_repository=(PostgresOperationalPaperCapitalAuthorizationRepository(database)),
+        profile_repository=(PostgresOperationalPaperSessionProfileRepository(database)),
+        mandate_repository=PostgresOperationalMandateRepository(database),
+        simulation_repository=SimulationRepository(database),
+        paper_repository=paper_repository,
+        registry=StrategyPluginRegistry.builtins(),
+        raw_catalog=raw_catalog,
+        raw_store=raw_store,
+        raw_locks=raw_locks,
         clock=lambda: datetime.now(UTC),
     )
 
