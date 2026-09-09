@@ -231,6 +231,17 @@ class OperationalMarketDataCollectorWorker:
                 # cycle, normally because the persisted local cadence is not due.
                 # Return to the supervisor instead of busy-spinning.
                 if not executed:
+                    epoch = await self._renew_once(
+                        epoch_id,
+                        fence,
+                    )
+
+                    if epoch.desired_state is not _Desired.RUNNING:
+                        epoch = await self._settle_control_boundary(
+                            epoch,
+                            fence,
+                        )
+
                     return OperationalMarketDataCollectorWorkerResult(
                         epoch,
                         cycles_completed,

@@ -516,7 +516,7 @@ async def test_local_collector_busy_fails_owned_epoch_with_closed_code(
 
 
 @pytest.mark.asyncio
-async def test_not_due_executor_returns_without_busy_spin(
+async def test_not_due_executor_returns_without_busy_spin_and_renews_lease(
     repository: PostgresOperationalMarketDataCollectorRepository,
     auth_user_id: UUID,
 ) -> None:
@@ -530,10 +530,17 @@ async def test_not_due_executor_returns_without_busy_spin(
         executed=False,
     )
 
+    tick = 0
+
+    def clock() -> datetime:
+        nonlocal tick
+        tick += 1
+        return NOW + timedelta(milliseconds=tick)
+
     result = await OperationalMarketDataCollectorWorker(
         repository,
         executor,
-        clock=lambda: NOW + timedelta(seconds=1),
+        clock=clock,
     ).run_epoch(epoch.epoch_id)
 
     assert result.cycles_completed == 0
@@ -546,6 +553,8 @@ async def test_not_due_executor_returns_without_busy_spin(
         result.epoch.observed_state
         is collectors.OperationalMarketDataCollectorObservedState.RUNNING
     )
+    assert result.epoch.worker_claim is not None
+    assert result.epoch.worker_claim.heartbeat_at > result.epoch.worker_claim.claimed_at
 
 
 @pytest.mark.asyncio
@@ -803,3 +812,62 @@ async def test_fence_loss_inside_startup_hook_prevents_physical_start(
     assert latest.worker_claim is not None
     assert latest.worker_claim.worker_id == foreign_worker_id
     assert latest.worker_claim.fencing_token == executor.recovered_fence
+
+
+@pytest.mark.asyncio
+async def test_repeated_not_due_polls_renew_same_claim_without_new_fence(
+    repository: PostgresOperationalMarketDataCollectorRepository,
+    auth_user_id: UUID,
+) -> None:
+    epoch = await _start(
+        repository,
+        auth_user_id,
+        key="worker:not-due-repeat",
+    )
+
+    executor = _ImmediateExecutor(
+        executed=False,
+    )
+
+    tick = 0
+
+    def clock() -> datetime:
+        nonlocal tick
+        tick += 1
+        return NOW + timedelta(milliseconds=tick)
+
+    worker = OperationalMarketDataCollectorWorker(
+        repository,
+        executor,
+        clock=clock,
+    )
+
+    first = await worker.run_epoch(
+        epoch.epoch_id,
+        max_cycles=1,
+    )
+
+    assert first.epoch.worker_claim is not None
+
+    first_claim = first.epoch.worker_claim
+
+    second = await worker.run_epoch(
+        epoch.epoch_id,
+        max_cycles=1,
+    )
+
+    assert second.epoch.worker_claim is not None
+
+    second_claim = second.epoch.worker_claim
+
+    assert first.cycles_completed == 0
+    assert second.cycles_completed == 0
+    assert first.exit_code is None
+    assert second.exit_code is None
+
+    assert second_claim.worker_id == first_claim.worker_id
+    assert second_claim.fencing_token == first_claim.fencing_token
+    assert second_claim.heartbeat_at > first_claim.heartbeat_at
+    assert second_claim.lease_expires_at > first_claim.lease_expires_at
+
+    assert executor.calls == 2
