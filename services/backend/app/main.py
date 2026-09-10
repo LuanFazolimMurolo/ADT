@@ -20,6 +20,7 @@ from app.api.routes import (
     admin_market_datasets,
     admin_market_operations,
     admin_operational_mandates,
+    admin_operational_market_data_collectors,
     admin_operational_paper_capital_authorizations,
     admin_operational_paper_session_activations,
     admin_operational_paper_session_materializations,
@@ -354,6 +355,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(admin_market_datasets.router)
     application.include_router(admin_market_operations.router)
     application.include_router(admin_operational_mandates.router)
+    application.include_router(admin_operational_market_data_collectors.router)
     application.include_router(admin_operational_paper_capital_authorizations.router)
     application.include_router(admin_operational_paper_session_activations.router)
     application.include_router(admin_operational_paper_session_runs.router)
