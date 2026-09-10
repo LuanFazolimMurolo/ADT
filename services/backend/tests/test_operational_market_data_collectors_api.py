@@ -853,13 +853,14 @@ def test_openapi_declares_admin_error_contract_for_all_endpoints() -> None:
 def test_api_layer_contains_no_collector_execution_dependency() -> None:
     from pathlib import Path
 
-    route_source = Path(
-        "services/backend/app/api/routes/admin_operational_market_data_collectors.py"
+    route_source = (
+        Path(__file__).resolve().parents[1]
+        / "app/api/routes/admin_operational_market_data_collectors.py"
     ).read_text(encoding="utf-8")
 
-    resource_source = Path("services/backend/app/api/dependencies/resources.py").read_text(
-        encoding="utf-8"
-    )
+    resource_source = (
+        Path(__file__).resolve().parents[1] / "app/api/dependencies/resources.py"
+    ).read_text(encoding="utf-8")
 
     for forbidden in (
         "OperationalMarketDataCollectorWorker",

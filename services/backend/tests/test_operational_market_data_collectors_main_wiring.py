@@ -103,7 +103,7 @@ async def test_resource_getter_builds_real_postgres_control_service(
 def test_main_does_not_host_collector_execution_runtime() -> None:
     from pathlib import Path
 
-    source = Path("services/backend/app/main.py").read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[1] / "app/main.py").read_text(encoding="utf-8")
 
     assert "admin_operational_market_data_collectors" in source
 
@@ -163,7 +163,9 @@ def test_openapi_collector_operations_remain_administrator_contracts() -> None:
 
 
 def test_wiring_does_not_publish_execution_host_in_app_state() -> None:
-    source = __import__("pathlib").Path("services/backend/app/main.py").read_text(encoding="utf-8")
+    source = (__import__("pathlib").Path(__file__).resolve().parents[1] / "app/main.py").read_text(
+        encoding="utf-8"
+    )
 
     forbidden_state = (
         "application.state.operational_market_data_collector_worker",

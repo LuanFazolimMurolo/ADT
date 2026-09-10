@@ -397,7 +397,9 @@ async def test_get_and_list_commands_require_existing_epoch(
 
 
 def test_service_module_is_control_plane_only() -> None:
-    file_path = Path("services/backend/app/services/operational_market_data_collectors.py")
+    file_path = (
+        Path(__file__).resolve().parents[1] / "app/services/operational_market_data_collectors.py"
+    )
 
     source = file_path.read_text(encoding="utf-8")
 
