@@ -863,22 +863,17 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Tracks 7-01 through 7-11 are complete, closed and
-integrated into `main`. Track 7-11 — Operational Paper Runner Control
-Foundation — is **COMPLETE / CLOSED / INTEGRATED INTO `main`** at
-`01dace767a978d1deb2ea75fc300142def217e62`, tree
-`580116a5f78ca03e1bcb9bbcc8afebba19fbad8c`.
+**Status**: Active. Tracks 7-01 through 7-12 are complete, closed and
+integrated into `main`. Track 7-12 — Operational Market-Data Collector Control
+Foundation — is **COMPLETE / CLOSED / INTEGRATED INTO `main` / REMOTE SCHEMA
+DEPLOYED** at `59ace85e5884470de1be6992dcc2e4b266090152`, tree
+`5d38f075ea1ea25c90e07e53315ac853eb2a91d0`.
 
-The linked ADT Supabase migration history is now **APPLIED / SYNCHRONIZED
-THROUGH `20260907000000`**. Eight previously pending ordered Phase 7
-migrations, from `20260810000000` through `20260907000000`, were applied after
-a read-only remote-schema collision audit. Post-deploy `db push --dry-run`
-reported the remote database up to date and direct PostgreSQL validation
-confirmed the expected Phase 7 relations and timeframe constraint.
-
-Earlier track sections that say their migration was remotely unapplied are
-historical closure records for those earlier milestones, not the current
-database state.
+The linked ADT Supabase migration history is **APPLIED / SYNCHRONIZED THROUGH
+`20260909000000`**. The 7-12 collector-control migration was confirmed as the
+sole pending migration by `db push --dry-run`, applied successfully and then
+verified by exact local/remote migration-history parity and an empty
+post-deploy dry-run.
 
 Phase 7 remains active. The exact current handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
@@ -892,7 +887,7 @@ Phase 7 remains active. The exact current handoff is maintained in
       assumptions and risk policies inside explicit approved mandates
 - [ ] Add trading-horizon labels only after their own reviewed contract matures
 - [x] Submit and monitor bounded market-data synchronization operations
-- [ ] Start, pause, resume and stop durable collectors and paper runners
+- [x] Start, pause, resume and stop durable collectors and paper runners
 - [x] Reconcile abandoned work after restart
 - [x] Authorize and reserve administrative paper capital for exact approved
       operational paper-session profiles
@@ -909,6 +904,109 @@ Phase 7 remains active. The exact current handoff is maintained in
 **Dependencies**: Phase 6 complete
 **Estimated Duration**: 4 weeks
 **Blockers**: Reviewed PostgreSQL operational migrations and persistent worker host
+
+### 7-12 — Operational Market-Data Collector Control Foundation ✅
+
+**Status**: **COMPLETE / CLOSED — INTEGRATED INTO `main` — REMOTE SCHEMA
+DEPLOYED**.
+
+**Starting main baseline**:
+`de1bc3b5c0ed73d2cd963e25042d2430dcbdb837`.
+
+**Starting tree**:
+`13fd4d0521398280fe624efc46a95763b60d7d8e`.
+
+**Accepted architecture milestone**:
+`8480bda8c1aba32f764d2d4460edf56b22b04ba1`.
+
+**Integrated implementation milestone**:
+`59ace85e5884470de1be6992dcc2e4b266090152`.
+
+**Integrated implementation tree**:
+`5d38f075ea1ea25c90e07e53315ac853eb2a91d0`.
+
+**Goal**: Establish durable administrator-controlled market-data collector
+lifecycle authority without hosting long-running collection inside FastAPI and
+without weakening the existing deterministic local collector, state or locking
+contracts.
+
+**Delivered contract**:
+
+- durable PostgreSQL `OperationalMarketDataCollectorEpoch` aggregates;
+- immutable exact collector specification per epoch;
+- global `BINANCE_SPOT_RAW` operational collector scope;
+- at most one nonterminal collector epoch for the current global physical lock;
+- desired states `RUNNING`, `PAUSED`, `STOPPED`;
+- observed states `PENDING`, `STARTING`, `RUNNING`, `PAUSED`, `RECOVERING`,
+  `STOPPING`, `STOPPED`, `FAILED`;
+- desired-state-authoritative START, PAUSE, RESUME and STOP command handling,
+  including valid pre-convergence reversals;
+- worker UUID, lease, heartbeat and monotonic fencing-token ownership;
+- exact epoch/worker/fence/lease/version proof for worker mutations;
+- runtime bridging to the existing deterministic continuous collector under
+  the existing process-wide `flock`;
+- persisted specification and canonical local-state compatibility checks;
+- persistent PostgreSQL-driven supervisor discovery and convergence;
+- FastAPI restricted to protected administrative control-plane operations;
+- bounded immutable command-history reads;
+- generated OpenAPI synchronization for all six collector-control endpoints;
+  and
+- no exchange credentials, live orders or real-capital authority.
+
+**Verification**:
+
+- Gate 5A directed collector/integration stack: **461 tests PASS**;
+- affected post-fix collector control/API regression: **323 tests PASS**;
+- final post-commit collector regression: **46 tests PASS**;
+- full backend: **4,610 passed, 1 expected network smoke skip**;
+- global Ruff and Ruff format: **PASS**;
+- strict production MyPy: **PASS**;
+- compileall: **PASS**;
+- generated OpenAPI `check:api`: **PASS**;
+- frontend typecheck and E2E typecheck: **PASS**;
+- ESLint: **PASS**;
+- frontend Vitest: **32 files, 276 tests PASS**;
+- production build: **PASS**;
+- bundle budget: **PASS**; and
+- publication, remote migration deployment and pure-fast-forward main
+  integration audits: **PASS**.
+
+During full-suite closure, source-audit tests introduced by 7-12 were found to
+depend on repository-root cwd while an older backend test correctly depended
+on the backend test cwd. The new source audits were made cwd-independent using
+their own `__file__` location. Assertions were not weakened and production code
+was not changed by the correction.
+
+**Main integration**:
+
+Remote `main` advanced from
+`de1bc3b5c0ed73d2cd963e25042d2430dcbdb837` to
+`59ace85e5884470de1be6992dcc2e4b266090152` by pure fast-forward. No merge
+commit, rebase, squash or force push was used. Local `main`, remote `main` and
+the published feature were verified at exact implementation-SHA parity.
+
+**Remote migration deployment**:
+
+`20260909000000_phase_7_12_operational_market_data_collector_epochs.sql`
+was confirmed as the sole pending migration, applied to the linked ADT
+Supabase project and verified in remote migration history. A subsequent
+`db push --dry-run` reported the remote database up to date.
+
+**Current migration state**:
+**APPLIED / REMOTE SYNCHRONIZED THROUGH `20260909000000`**.
+
+**Runtime boundary**: PostgreSQL owns operational control authority, the local
+filesystem remains canonical evidence for collector state/data, and the
+separate supervisor/runtime owns physical convergence under the existing
+collector lock. FastAPI does not host the persistent collector worker.
+
+**Accepted architecture record**:
+[`docs/adr/0007-phase-7-12-operational-market-data-collector-control-authority.md`](./adr/0007-phase-7-12-operational-market-data-collector-control-authority.md)
+
+**Explicitly deferred / out of scope**: real-capital execution, exchange
+credentials, live orders/fills, unrelated remaining Phase 7 administration
+scope and any hand-written collector-control UI not justified by a future
+product requirement.
 
 ### 7-11 — Operational Paper Runner Control Foundation ✅
 

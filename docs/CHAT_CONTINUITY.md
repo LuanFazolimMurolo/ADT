@@ -1,6 +1,6 @@
 # ADT Current Development Handoff
 
-Last updated: 2026-09-08
+Last updated: 2026-09-10
 
 ## Current branch
 
@@ -18,124 +18,118 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Current delivery
 
-**7-11 — Operational Paper Runner Control Foundation —
+**7-12 — Operational Market-Data Collector Control Foundation —
 COMPLETE / CLOSED / INTEGRATED INTO `main` / REMOTE SCHEMA DEPLOYED**
 
 Starting main baseline:
-`f13a9616cff603ad0de387ed0a307b226bff7684`.
+`de1bc3b5c0ed73d2cd963e25042d2430dcbdb837`.
 
 Starting tree:
-`4259476acefc4726d40593d982424781ff247fd4`.
+`13fd4d0521398280fe624efc46a95763b60d7d8e`.
 
 Accepted architecture milestone:
-`925286d2bdccbae62c691a61633fe609c45a6a75`.
+`8480bda8c1aba32f764d2d4460edf56b22b04ba1`.
 
 Published and integrated implementation milestone:
-`01dace767a978d1deb2ea75fc300142def217e62`, tree
-`580116a5f78ca03e1bcb9bbcc8afebba19fbad8c`.
+`59ace85e5884470de1be6992dcc2e4b266090152`, tree
+`5d38f075ea1ea25c90e07e53315ac853eb2a91d0`.
 
-Remote `main`, local `main` and the published 7-11 feature were verified
+Remote `main`, local `main` and the published 7-12 feature were verified
 identical at the implementation milestone after pure fast-forward integration.
 No merge commit, rebase, squash or force push was used.
 
-Selection R0: **CLOSED / PASS**.
+Gate 1 — Collector-Control Authority Architecture: **CLOSED / PASS**.
 
-Gate 1 — Runner-Control Authority Architecture: **REMOTE PUBLISHED / CLOSED /
-PASS**.
+Gate 2A through Gate 2E — domain, persistence, repository, application,
+fenced worker, runtime and persistent supervisor: **CLOSED / PASS**.
 
-Gate 2A through Gate 3 — domain, persistence, repository, application,
-worker/supervisor and protected administrator API: **CLOSED / PASS**.
+Gate 3 — protected administrator API, application wiring and generated
+OpenAPI contract: **CLOSED / PASS**.
 
-Gate 4 — hand-written runner-control UI: **NOT REQUIRED / SKIPPED**.
+Gate 4 — hand-written collector administration UI:
+**NOT REQUIRED / SKIPPED BY DESIGN**.
 
-Gate 5A — generated OpenAPI/frontend contract synchronization:
+Gate 5A — integrated local collector-control validation:
 **CLOSED / PASS**.
 
-Gate 5B — backend/global integration verification: **CLOSED / PASS**.
-
-Gate 5C — final local closure and publication verification:
+Gate 5B — full backend/frontend and quality closure:
 **CLOSED / PASS**.
+
+Gate 5C — final readiness, publication, schema deployment and main
+integration: **CLOSED / PASS**.
 
 Main integration: **PURE FAST-FORWARD / REMOTE INTEGRATED / CLOSED / PASS**.
 
-Implemented 7-11 layers include:
+Implemented 7-12 layers include:
 
-- durable PostgreSQL `OperationalPaperSessionRunEpoch` authority;
+- durable PostgreSQL `OperationalMarketDataCollectorEpoch` authority;
+- immutable exact collector specification per epoch;
+- scope `BINANCE_SPOT_RAW` with at most one nonterminal epoch;
 - START, PAUSE, RESUME and STOP desired-state control;
+- desired-state-authoritative pre-convergence command reversals;
 - explicit desired/observed lifecycle separation;
-- worker claim, lease, heartbeat and monotonic fencing-token authority;
-- same-epoch recovery after worker loss;
-- fresh execution-eligibility validation before start/resume/every cycle;
-- separate persistent supervisor ownership of physical runner convergence;
-- protected administrator-only HTTP control-plane endpoints;
-- bounded immutable command history;
+- worker UUID, lease, heartbeat and monotonic fencing-token authority;
+- exact epoch/worker/fence/lease/version validation for worker mutations;
+- fenced runtime execution through the existing continuous collector;
+- canonical local-state compatibility and process-wide `flock` preservation;
+- persistent PostgreSQL-driven supervisor discovery and convergence;
+- FastAPI restricted to protected control-plane persistence/read operations;
+- six administrator-only collector-control HTTP endpoints;
+- bounded immutable command-history reads;
 - API redaction of worker identity and replay internals; and
 - synchronized generated OpenAPI contracts.
 
-The final 7-11 implementation stack passed 401 targeted/integrated tests. The
-full backend passed 4,181 tests with one expected skip. Global Ruff, Ruff
-format, strict production MyPy, compileall, generated API consistency,
-frontend typecheck, lint, Vitest, production build and bundle budget all
-passed.
+Gate 5A passed 461 directed collector/integration tests.
 
-The remote Supabase schema was subsequently reconciled after 7-11 integration.
-The remote migration history had intentionally remained at
-`20260801000000`, so eight ordered Phase 7 migrations were pending. A
-read-only collision audit proved the remote schema was still at the expected
-baseline with no Phase 7 relation/function collisions. The migrations
+The final full backend suite passed **4,610 tests with one expected network
+smoke skip**. Global Ruff and Ruff format passed. Strict production MyPy,
+compileall, generated API consistency, frontend typecheck, frontend E2E
+typecheck, ESLint, all **32 Vitest files / 276 tests**, production build and
+bundle budget all passed.
 
-- `20260810000000`,
-- `20260819000000`,
-- `20260821000000`,
-- `20260823000000`,
-- `20260827000000`,
-- `20260831000000`,
-- `20260903000000`, and
-- `20260907000000`
+Full-suite closure exposed cwd-sensitive source-audit paths introduced by
+7-12. They were corrected in test code only at
+`59ace85e5884470de1be6992dcc2e4b266090152`; assertions were not weakened and
+no production code changed.
 
-were then applied in chronological order to the linked ADT Supabase project.
-
-Post-deploy verification proved exact local/remote migration-history parity
-through `20260907000000`, an empty `db push --dry-run`, the expanded canonical
-market-operation timeframe constraint, and presence of the Phase 7 operational
-mandate, profile, capital authorization, materialization, activation and
-runner-control relations.
+The 7-12 migration
+`20260909000000_phase_7_12_operational_market_data_collector_epochs.sql`
+was dry-run as the sole pending remote migration, applied to the linked ADT
+Supabase project, recorded at exact local/remote migration-history parity and
+followed by an empty `db push --dry-run`.
 
 **Current remote migration state**:
-**APPLIED / SYNCHRONIZED THROUGH `20260907000000`**.
+**APPLIED / SYNCHRONIZED THROUGH `20260909000000`**.
 
-Earlier delivery sections that state a migration was
-`VERSIONED / REMOTELY UNAPPLIED` are intentionally retained as historical
-closure evidence describing the state at that earlier delivery milestone; they
-do not describe the current remote database state.
-
-Runner-control authority is still paper-only. FastAPI persists and reads
-control-plane intent; a separate supervisor owns physical runner execution.
-`AUTHORIZED` activation does not mean `RUNNING`, and this delivery does not
-introduce exchange credentials, live orders or real-capital execution.
+Collector execution remains paper/market-data infrastructure only. FastAPI
+owns administrative control intent, PostgreSQL owns operational lifecycle
+authority, and the separate supervisor/runtime owns physical collection.
+This delivery introduces no exchange credentials, live orders, fills or
+real-capital authority.
 
 Accepted architecture record:
-[`docs/adr/0006-phase-7-11-operational-paper-runner-control-authority.md`](./adr/0006-phase-7-11-operational-paper-runner-control-authority.md)
+[`docs/adr/0007-phase-7-12-operational-market-data-collector-control-authority.md`](./adr/0007-phase-7-12-operational-market-data-collector-control-authority.md)
 
 ## Last completed track
 
-**7-11 — Operational Paper Runner Control Foundation —
+**7-12 — Operational Market-Data Collector Control Foundation —
 COMPLETE / CLOSED / INTEGRATED INTO `main` / REMOTE SCHEMA DEPLOYED**
 
 The integrated implementation milestone is
-`01dace767a978d1deb2ea75fc300142def217e62`, tree
-`580116a5f78ca03e1bcb9bbcc8afebba19fbad8c`.
+`59ace85e5884470de1be6992dcc2e4b266090152`, tree
+`5d38f075ea1ea25c90e07e53315ac853eb2a91d0`.
 
 The track was integrated into `main` by verified pure fast-forward. Local
-`main`, remote `main` and the published feature were verified identical.
+`main`, remote `main` and the published feature were verified identical at the
+implementation milestone.
 
 The linked ADT Supabase migration history is now **APPLIED / SYNCHRONIZED**
-through `20260907000000`. The ordered remote deployment included the eight
-previously pending Phase 7 migrations from `20260810000000` through
-`20260907000000`; post-deploy dry-run reported the remote database up to date.
+through `20260909000000`. Post-deploy `db push --dry-run` reported the remote
+database up to date.
 
 Previously closed Phase 7 deliveries remain closed:
 
+- **7-11 — Operational Paper Runner Control Foundation — COMPLETE / CLOSED**
 - **7-10 — Operational Paper Session Activation Authority Foundation — COMPLETE / CLOSED**
 - **7-09 — Operational Paper Session Materialization Foundation — COMPLETE / CLOSED**
 - **7-08 — Operational Paper Capital Authorization Foundation — CLOSED**
