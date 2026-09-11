@@ -160,14 +160,16 @@ Telegram, machine learning and real-capital trading.
 
 ---
 
-## Phase 2: Market Data Collection 🚧 PHASE 2D CONTINUES IN PHASE 7
+## Phase 2: Market Data Collection ✅ COMPLETE
 
 **Goal**: Fetch and store historical candlestick data.
 
-**Status**: Phases 2A–2C are implemented and operationally validated. The
-approved Phase 2D operational-administration scope now continues as part of the
-active Phase 7 Operational Control Plane. See
-[`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md) for the exact current delivery.
+**Status**: **COMPLETE / CLOSED**. Phases 2A–2C remain implemented and
+operationally validated. The approved Phase 2D operational-administration
+contract was completed across the Phase 7 control-plane deliveries and formally
+closed by 7-13 after all fourteen historical completion criteria were reconciled
+as satisfied. The evidence record is
+[`PHASE2D_OPERATIONAL_ADMINISTRATION_COMPLETION_EVIDENCE.md`](./PHASE2D_OPERATIONAL_ADMINISTRATION_COMPLETION_EVIDENCE.md).
 
 ### Phase 2A: local historical-data foundation 🟡 IMPLEMENTED LOCALLY
 
@@ -236,7 +238,7 @@ lazy read-only interface for a future backtest engine.
 **Deferred**: the backtest engine itself, strategies, indicators, schedulers,
 distributed locks, non-crypto calendars and remote object-storage snapshots.
 
-### Phase 2D: market-data operational administration 🔵 APPROVED
+### Phase 2D: market-data operational administration ✅ COMPLETE / CLOSED
 
 **Goal**: Allow authenticated administrators to plan, submit and monitor
 asynchronous RAW market-data synchronization while preserving the local
@@ -305,32 +307,33 @@ durability and dataset contracts established in Phases 2A–2C.
 
 **Completion criteria**:
 
-- [ ] A reviewed migration creates the operational catalog with RLS enabled and
+- [x] A reviewed migration creates the operational catalog with RLS enabled and
   no Data API access
-- [ ] Same idempotency key and payload return the same operation; divergent
+- [x] Same idempotency key and payload return the same operation; divergent
   payload returns a conflict
-- [ ] HTTP requests never execute long-running market-data work
-- [ ] API and worker have separate process lifecycles
-- [ ] No PostgreSQL transaction remains open during network, `flock`, Parquet or
+- [x] HTTP requests never execute long-running market-data work
+- [x] API and worker have separate process lifecycles
+- [x] No PostgreSQL transaction remains open during network, `flock`, Parquet or
   `fsync`
-- [ ] Only one operation per dataset and one operation per worker execute at a
+- [x] Only one operation per dataset and one operation per worker execute at a
   time
-- [ ] Pause and cancellation are observed only at documented safe boundaries
-- [ ] Crash recovery preserves committed chunks and never refetches a confirmed
+- [x] Pause and cancellation are observed only at documented safe boundaries
+- [x] Crash recovery preserves committed chunks and never refetches a confirmed
   receipt
-- [ ] A durable local commit is required before PostgreSQL reports `COMPLETED`
-- [ ] `COMMITTED` journal state remains successful across cleanup failure
-- [ ] CLI local workflows remain available without Supabase configuration
-- [ ] RAW, DERIVED and snapshot formats remain compatible
-- [ ] Administrative API, PostgreSQL, worker, frontend and recovery tests pass
-- [ ] Operational validation covers restart, reconciliation and clean shutdown
+- [x] A durable local commit is required before PostgreSQL reports `COMPLETED`
+- [x] `COMMITTED` journal state remains successful across cleanup failure
+- [x] CLI local workflows remain available without Supabase configuration
+- [x] RAW, DERIVED and snapshot formats remain compatible
+- [x] Administrative API, PostgreSQL, worker, frontend and recovery tests pass
+- [x] Operational validation covers restart, reconciliation and clean shutdown
 
 **Architecture decision**:
 [`docs/adr/0001-phase-2d-operational-market-data-control-plane.md`](./adr/0001-phase-2d-operational-market-data-control-plane.md)
 
-**Status**: Scope and architecture approved. Implementation is active within
-the Phase 7 control-plane track; this historical section remains the contract
-for the market-data operational boundary rather than a claim of Phase 2 closure.
+**Status**: **COMPLETE / CLOSED**. Track 7-13 reconciled this historical
+contract against the delivered market-data and Phase 7 implementation and
+recorded all fourteen completion criteria as satisfied. Evidence:
+[`PHASE2D_OPERATIONAL_ADMINISTRATION_COMPLETION_EVIDENCE.md`](./PHASE2D_OPERATIONAL_ADMINISTRATION_COMPLETION_EVIDENCE.md).
 
 **Deliverables**:
 - [x] Market data adapter interface
@@ -863,19 +866,23 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Tracks 7-01 through 7-12 are complete, closed and
-integrated into `main`. Track 7-12 — Operational Market-Data Collector Control
-Foundation — is **COMPLETE / CLOSED / INTEGRATED INTO `main` / REMOTE SCHEMA
-DEPLOYED** at `59ace85e5884470de1be6992dcc2e4b266090152`, tree
-`5d38f075ea1ea25c90e07e53315ac853eb2a91d0`.
+**Status**: Active. Tracks 7-01 through 7-13 are complete, closed and
+integrated into `main`. Track 7-13 — Phase 2D Operational Administration
+Closure & Contract Reconciliation — formally closed the previously approved
+Phase 2D operational-administration boundary with all fourteen historical
+completion criteria satisfied. Its evidence milestone is
+`23e220eec0004b15dd4ccc44571f6fc16e8cf0bb`, tree
+`67e7cf2ea01401015468fac9f0961d2907511b67`.
 
-The linked ADT Supabase migration history is **APPLIED / SYNCHRONIZED THROUGH
-`20260909000000`**. The 7-12 collector-control migration was confirmed as the
-sole pending migration by `db push --dry-run`, applied successfully and then
-verified by exact local/remote migration-history parity and an empty
-post-deploy dry-run.
+The linked ADT Supabase migration history remains **APPLIED / SYNCHRONIZED
+THROUGH `20260909000000`**. Track 7-13 introduced no migration. Exact
+local/remote migration-history parity and `db push --dry-run` confirmed that
+the remote database remained up to date after the closure evidence was
+integrated.
 
-Phase 7 remains active. The exact current handoff is maintained in
+Phase 7 remains active with two open roadmap deliverables: reviewed
+trading-horizon labels and the ledger/session foundations required by a future
+ADT Official Portfolio. The exact current handoff is maintained in
 [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
@@ -899,11 +906,64 @@ Phase 7 remains active. The exact current handoff is maintained in
 - [x] Show worker health, leases, progress, errors and audit events
 - [x] Preserve CLI workflows and explicit operator confirmation
 - [x] Preserve auditable start, pause, resume, cancel and recovery transitions
-- [ ] Complete the previously approved Phase 2D operational administration scope
+- [x] Complete the previously approved Phase 2D operational administration scope
 
 **Dependencies**: Phase 6 complete
 **Estimated Duration**: 4 weeks
 **Blockers**: Reviewed PostgreSQL operational migrations and persistent worker host
+
+### 7-13 — Phase 2D Operational Administration Closure & Contract Reconciliation ✅
+
+**Status**: **COMPLETE / CLOSED — INTEGRATED INTO `main` — NO SCHEMA CHANGE**.
+
+**Starting main baseline**:
+`1fdb703fca66f9a25080d31c0d42ec0154685bf3`.
+
+**Integrated evidence milestone**:
+`23e220eec0004b15dd4ccc44571f6fc16e8cf0bb`.
+
+**Integrated evidence tree**:
+`67e7cf2ea01401015468fac9f0961d2907511b67`.
+
+**Goal**: Reconcile the historical Phase 2D market-data operational
+administration completion contract against the implementation already delivered
+across Phases 2A–2C and the Phase 7 control-plane tracks, without creating
+redundant production functionality.
+
+**Closure result**:
+
+- all fourteen historical Phase 2D completion criteria are **SATISFIED**;
+- functional gaps identified: **0**;
+- no additional backend implementation was required;
+- no additional frontend implementation was required;
+- no PostgreSQL migration or market-data format change was required;
+- the administrator HTTP boundary remains control-plane only;
+- durable execution remains worker-owned and separate from FastAPI;
+- local Parquet/catalog/job/receipt/journal durability contracts remain
+  authoritative for market-data contents and committed execution evidence;
+- the dedicated completion evidence record is
+  [`PHASE2D_OPERATIONAL_ADMINISTRATION_COMPLETION_EVIDENCE.md`](./PHASE2D_OPERATIONAL_ADMINISTRATION_COMPLETION_EVIDENCE.md).
+
+**Verification**:
+
+- Gate 1 completion-evidence audit: **CLOSED / PASS**;
+- completion matrix: **14 / 14 SATISFIED**;
+- targeted Phase 2D backend proof: **PASS**;
+- frontend regression: **32 files / 276 tests PASS**;
+- AST HTTP/process-boundary audit: **PASS**;
+- RAW/DERIVED/snapshot compatibility surface: **PASS**;
+- evidence artifact scope: exactly one documentation file;
+- evidence publication and `main` integration: **PURE FAST-FORWARD / PASS**;
+- local/remote migration history: exact parity through `20260909000000`;
+- final `db push --dry-run`: **Remote database is up to date**;
+- production code changed by 7-13: **NO**;
+- test code changed by 7-13: **NO**;
+- migration changed by 7-13: **NO**.
+
+The remote schema sentinel was temporarily blocked by an external Supabase
+connection timeout. No repository rollback or schema mutation was performed.
+After the database returned healthy, migration-history parity and the empty
+`db push --dry-run` both passed.
 
 ### 7-12 — Operational Market-Data Collector Control Foundation ✅
 

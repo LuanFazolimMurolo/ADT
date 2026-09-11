@@ -18,117 +18,80 @@ Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
 
 ## Current delivery
 
-**7-12 — Operational Market-Data Collector Control Foundation —
-COMPLETE / CLOSED / INTEGRATED INTO `main` / REMOTE SCHEMA DEPLOYED**
+**7-13 — Phase 2D Operational Administration Closure & Contract
+Reconciliation — COMPLETE / CLOSED / INTEGRATED INTO `main`**
 
 Starting main baseline:
-`de1bc3b5c0ed73d2cd963e25042d2430dcbdb837`.
+`1fdb703fca66f9a25080d31c0d42ec0154685bf3`.
 
-Starting tree:
-`13fd4d0521398280fe624efc46a95763b60d7d8e`.
+Integrated evidence milestone:
+`23e220eec0004b15dd4ccc44571f6fc16e8cf0bb`, tree
+`67e7cf2ea01401015468fac9f0961d2907511b67`.
 
-Accepted architecture milestone:
-`8480bda8c1aba32f764d2d4460edf56b22b04ba1`.
-
-Published and integrated implementation milestone:
-`59ace85e5884470de1be6992dcc2e4b266090152`, tree
-`5d38f075ea1ea25c90e07e53315ac853eb2a91d0`.
-
-Remote `main`, local `main` and the published 7-12 feature were verified
-identical at the implementation milestone after pure fast-forward integration.
-No merge commit, rebase, squash or force push was used.
-
-Gate 1 — Collector-Control Authority Architecture: **CLOSED / PASS**.
-
-Gate 2A through Gate 2E — domain, persistence, repository, application,
-fenced worker, runtime and persistent supervisor: **CLOSED / PASS**.
-
-Gate 3 — protected administrator API, application wiring and generated
-OpenAPI contract: **CLOSED / PASS**.
-
-Gate 4 — hand-written collector administration UI:
-**NOT REQUIRED / SKIPPED BY DESIGN**.
-
-Gate 5A — integrated local collector-control validation:
+Gate 1 — historical Phase 2D completion-evidence audit:
 **CLOSED / PASS**.
 
-Gate 5B — full backend/frontend and quality closure:
+Gate 2A — dedicated completion-evidence artifact:
 **CLOSED / PASS**.
 
-Gate 5C — final readiness, publication, schema deployment and main
-integration: **CLOSED / PASS**.
+Gate 2B — evidence publication, pure-fast-forward `main` integration and remote
+schema sentinel:
+**CLOSED / PASS**.
 
-Main integration: **PURE FAST-FORWARD / REMOTE INTEGRATED / CLOSED / PASS**.
+The historical Phase 2D contract now has all **14 / 14 completion criteria
+SATISFIED**, with **0 functional gaps** identified.
 
-Implemented 7-12 layers include:
+The immutable completion evidence is recorded in
+[`PHASE2D_OPERATIONAL_ADMINISTRATION_COMPLETION_EVIDENCE.md`](./PHASE2D_OPERATIONAL_ADMINISTRATION_COMPLETION_EVIDENCE.md).
 
-- durable PostgreSQL `OperationalMarketDataCollectorEpoch` authority;
-- immutable exact collector specification per epoch;
-- scope `BINANCE_SPOT_RAW` with at most one nonterminal epoch;
-- START, PAUSE, RESUME and STOP desired-state control;
-- desired-state-authoritative pre-convergence command reversals;
-- explicit desired/observed lifecycle separation;
-- worker UUID, lease, heartbeat and monotonic fencing-token authority;
-- exact epoch/worker/fence/lease/version validation for worker mutations;
-- fenced runtime execution through the existing continuous collector;
-- canonical local-state compatibility and process-wide `flock` preservation;
-- persistent PostgreSQL-driven supervisor discovery and convergence;
-- FastAPI restricted to protected control-plane persistence/read operations;
-- six administrator-only collector-control HTTP endpoints;
-- bounded immutable command-history reads;
-- API redaction of worker identity and replay internals; and
-- synchronized generated OpenAPI contracts.
+Track 7-13 introduced no production-code, test-code or migration changes.
+The linked ADT Supabase migration history was verified at exact local/remote
+parity through `20260909000000`, and `db push --dry-run` reported:
 
-Gate 5A passed 461 directed collector/integration tests.
+`Remote database is up to date.`
 
-The final full backend suite passed **4,610 tests with one expected network
-smoke skip**. Global Ruff and Ruff format passed. Strict production MyPy,
-compileall, generated API consistency, frontend typecheck, frontend E2E
-typecheck, ESLint, all **32 Vitest files / 276 tests**, production build and
-bundle budget all passed.
-
-Full-suite closure exposed cwd-sensitive source-audit paths introduced by
-7-12. They were corrected in test code only at
-`59ace85e5884470de1be6992dcc2e4b266090152`; assertions were not weakened and
-no production code changed.
-
-The 7-12 migration
-`20260909000000_phase_7_12_operational_market_data_collector_epochs.sql`
-was dry-run as the sole pending remote migration, applied to the linked ADT
-Supabase project, recorded at exact local/remote migration-history parity and
-followed by an empty `db push --dry-run`.
+During Gate 2B, the schema sentinel was temporarily blocked by an external
+Supabase connection timeout while the project reported unhealthy resource
+state. No repository rollback, migration application or schema mutation was
+performed. After the database returned healthy, the read-only migration list
+and dry-run both passed.
 
 **Current remote migration state**:
 **APPLIED / SYNCHRONIZED THROUGH `20260909000000`**.
 
-Collector execution remains paper/market-data infrastructure only. FastAPI
-owns administrative control intent, PostgreSQL owns operational lifecycle
-authority, and the separate supervisor/runtime owns physical collection.
-This delivery introduces no exchange credentials, live orders, fills or
-real-capital authority.
+Phase 7 remains **ACTIVE**. Exactly two roadmap deliverables remain open:
 
-Accepted architecture record:
-[`docs/adr/0007-phase-7-12-operational-market-data-collector-control-authority.md`](./adr/0007-phase-7-12-operational-market-data-collector-control-authority.md)
+- reviewed trading-horizon labels after their own contract matures; and
+- ledger/session foundations required by a future ADT Official Portfolio and
+  official paper capital, without claiming that portfolio is already
+  implemented.
+
+No exchange credentials, live orders, fills or real-capital authority were
+introduced by 7-13.
 
 ## Last completed track
 
-**7-12 — Operational Market-Data Collector Control Foundation —
-COMPLETE / CLOSED / INTEGRATED INTO `main` / REMOTE SCHEMA DEPLOYED**
+**7-13 — Phase 2D Operational Administration Closure & Contract
+Reconciliation — COMPLETE / CLOSED / INTEGRATED INTO `main`**
 
-The integrated implementation milestone is
-`59ace85e5884470de1be6992dcc2e4b266090152`, tree
-`5d38f075ea1ea25c90e07e53315ac853eb2a91d0`.
+The integrated evidence milestone is
+`23e220eec0004b15dd4ccc44571f6fc16e8cf0bb`, tree
+`67e7cf2ea01401015468fac9f0961d2907511b67`.
 
-The track was integrated into `main` by verified pure fast-forward. Local
-`main`, remote `main` and the published feature were verified identical at the
-implementation milestone.
+The track reconciled all fourteen historical Phase 2D completion criteria as
+satisfied, identified zero functional gaps and required no new production code,
+test code or PostgreSQL migration.
 
-The linked ADT Supabase migration history is now **APPLIED / SYNCHRONIZED**
-through `20260909000000`. Post-deploy `db push --dry-run` reported the remote
-database up to date.
+Evidence:
+[`PHASE2D_OPERATIONAL_ADMINISTRATION_COMPLETION_EVIDENCE.md`](./PHASE2D_OPERATIONAL_ADMINISTRATION_COMPLETION_EVIDENCE.md).
+
+The linked ADT Supabase migration history remains synchronized through
+`20260909000000`, and the final read-only `db push --dry-run` reported the
+remote database up to date.
 
 Previously closed Phase 7 deliveries remain closed:
 
+- **7-12 — Operational Market-Data Collector Control Foundation — COMPLETE / CLOSED**
 - **7-11 — Operational Paper Runner Control Foundation — COMPLETE / CLOSED**
 - **7-10 — Operational Paper Session Activation Authority Foundation — COMPLETE / CLOSED**
 - **7-09 — Operational Paper Session Materialization Foundation — COMPLETE / CLOSED**
