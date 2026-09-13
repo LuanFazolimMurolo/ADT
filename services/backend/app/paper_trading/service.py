@@ -32,6 +32,10 @@ from app.paper_trading.errors import (
     PaperSessionCorruptError,
     PaperSessionVerificationError,
 )
+from app.paper_trading.persisted_state import (
+    PaperPersistedStateBinding,
+    PaperPersistedStateVerifier,
+)
 from app.paper_trading.portfolio_timeline import build_paper_portfolio_timeline
 from app.paper_trading.portfolio_timeline_artifacts import (
     PaperPortfolioTimelineArtifactStore,
@@ -150,6 +154,40 @@ class PaperTradingService:
                 "O artefato da timeline de portfólio diverge do replay verificado."
             )
         return persisted
+
+    def verify_settlement_evidence(
+        self,
+        session_id: str,
+    ) -> tuple[
+        PaperSessionConfig,
+        PaperSessionState,
+        PaperPersistedStateBinding,
+    ]:
+        """Return one stable, replay-verified state and its persisted timeline binding."""
+
+        config_before = self._repository.load_config(session_id)
+        if paper_session_id(config_before) != session_id:
+            raise PaperSessionVerificationError()
+
+        state = self.verify(session_id)
+
+        config_after = self._repository.load_config(session_id)
+        latest_state = self._repository.load_state(session_id)
+
+        if (
+            config_after != config_before
+            or paper_session_id(config_after) != session_id
+            or latest_state != state
+        ):
+            raise PaperSessionVerificationError(
+                "A evidência local da sessão mudou durante a verificação."
+            )
+
+        binding = PaperPersistedStateVerifier(self._timeline_store).verify(
+            config_after,
+            state,
+        )
+        return config_after, state, binding
 
     def _publish_timeline(
         self,
