@@ -880,10 +880,10 @@ local/remote migration-history parity and `db push --dry-run` confirmed that
 the remote database remained up to date after the closure evidence was
 integrated.
 
-Phase 7 remains active with two open roadmap deliverables: reviewed
-trading-horizon labels and the ledger/session foundations required by a future
-ADT Official Portfolio. The exact current handoff is maintained in
-[`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
+Phase 7 remains active with one open roadmap deliverable: reviewed
+trading-horizon labels. The ledger/session foundation required before a future
+ADT Official Portfolio was completed by Phase 7-14. The exact current handoff
+is maintained in [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
 - [x] Define administrator-approved operational mandates for assets, markets
@@ -911,6 +911,24 @@ ADT Official Portfolio. The exact current handoff is maintained in
 **Dependencies**: Phase 6 complete
 **Estimated Duration**: 4 weeks
 **Blockers**: Reviewed PostgreSQL operational migrations and persistent worker host
+
+### 7-15 — Reviewed Trading-Horizon Labels 🚧
+
+**Status**: CONTRACT REVIEW / GATE 1.
+
+**Goal**: Add durable administrator-reviewed `DAY_TRADE` and `SWING_TRADE`
+classification to operational paper-session identity without deriving a label
+from timeframe and without introducing forced holding-period behavior.
+
+The accepted contract must preserve legacy profile/session identities, keep the
+label inside approved profile authority, carry it into new immutable
+`PaperSessionConfig` identity, and introduce no real-capital or automatic
+strategy authority.
+
+**Architecture decision**:
+[`docs/adr/0009-phase-7-15-reviewed-trading-horizon-labels.md`](./adr/0009-phase-7-15-reviewed-trading-horizon-labels.md)
+
+---
 
 ### 7-14 — Official Paper Capital Era & Session Settlement Foundation ✅
 
