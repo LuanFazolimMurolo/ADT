@@ -60,6 +60,7 @@ from app.operational_paper_session_profiles import (
     OperationalPaperSessionProfileRevisionConflictError,
     OperationalPaperSessionProfileState,
     OperationalPaperSessionProfileStateTransitionConflictError,
+    TradingHorizon,
 )
 from app.repositories.operational_mandates import PostgresOperationalMandateRepository
 from app.repositories.operational_paper_session_profiles import (
@@ -687,6 +688,177 @@ async def test_create_and_point_reads_round_trip_complete_jsonb(
     assert await repository.get(aggregate.profile_id) == aggregate
     assert await repository.get_revision(aggregate.profile_id, 1) == revision
     assert await repository.get_current(aggregate.profile_id) == (aggregate, revision)
+
+
+async def test_trading_horizon_v1_and_v2_round_trip_exactly(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    intent, _ = await _sources(database, admin_user_id)
+    repository = PostgresOperationalPaperSessionProfileRepository(database)
+
+    legacy_aggregate, legacy_revision = await _create(
+        repository,
+        intent,
+        admin_user_id,
+        key="profile-legacy-v1",
+    )
+    horizon_aggregate, horizon_revision = await _create(
+        repository,
+        replace(
+            intent,
+            name="Reviewed day-trade profile",
+            trading_horizon=TradingHorizon.DAY_TRADE,
+        ),
+        admin_user_id,
+        key="profile-horizon-v2",
+        now=BASE_TIME + timedelta(seconds=3),
+    )
+
+    assert legacy_revision.specification.schema_version == 1
+    assert legacy_revision.specification.trading_horizon is None
+
+    assert horizon_revision.specification.schema_version == 2
+    assert horizon_revision.specification.trading_horizon is TradingHorizon.DAY_TRADE
+
+    assert (
+        await repository.get_revision(
+            legacy_aggregate.profile_id,
+            1,
+        )
+        == legacy_revision
+    )
+    assert (
+        await repository.get_revision(
+            horizon_aggregate.profile_id,
+            1,
+        )
+        == horizon_revision
+    )
+
+    async with database.transaction() as connection:
+        cursor = await connection.execute(
+            """
+            select profile_id, schema_version, trading_horizon
+            from public.operational_paper_session_profile_revisions
+            where profile_id = any(%s::uuid[])
+            order by profile_id
+            """,
+            (
+                [
+                    legacy_aggregate.profile_id,
+                    horizon_aggregate.profile_id,
+                ],
+            ),
+        )
+        rows = await cursor.fetchall()
+
+    persisted = {
+        row["profile_id"]: (
+            row["schema_version"],
+            row["trading_horizon"],
+        )
+        for row in rows
+    }
+
+    assert persisted[legacy_aggregate.profile_id] == (1, None)
+    assert persisted[horizon_aggregate.profile_id] == (
+        2,
+        "DAY_TRADE",
+    )
+
+
+async def test_horizon_only_replace_promotes_legacy_draft_to_v2(
+    database: Database,
+    admin_user_id: UUID,
+) -> None:
+    intent, _ = await _sources(database, admin_user_id)
+    repository = PostgresOperationalPaperSessionProfileRepository(database)
+
+    aggregate, legacy_revision = await _create(
+        repository,
+        intent,
+        admin_user_id,
+        key="profile-horizon-replace",
+    )
+
+    assert legacy_revision.specification.schema_version == 1
+    assert legacy_revision.specification.trading_horizon is None
+
+    updated, revision = await repository.replace_draft(
+        aggregate.profile_id,
+        replace(
+            intent,
+            trading_horizon=TradingHorizon.SWING_TRADE,
+        ),
+        expected_revision=1,
+        expected_record_version=1,
+        actor_id=admin_user_id,
+        now=BASE_TIME + timedelta(seconds=3),
+        strategy_resolver=_resolver,
+    )
+
+    assert updated.current_revision == 2
+    assert updated.record_version == 2
+    assert revision.revision == 2
+    assert revision.specification.schema_version == 2
+    assert revision.specification.trading_horizon is TradingHorizon.SWING_TRADE
+
+    history, total = await repository.list_revisions(
+        aggregate.profile_id,
+        limit=10,
+        offset=0,
+    )
+
+    assert total == 2
+    assert [item.revision for item in history] == [2, 1]
+    assert history[0].specification.trading_horizon is TradingHorizon.SWING_TRADE
+    assert history[1].specification.trading_horizon is None
+
+
+@pytest.mark.parametrize(
+    ("schema_version", "trading_horizon"),
+    [
+        (2, None),
+        (1, "DAY_TRADE"),
+        (2, "INTRADAY"),
+    ],
+)
+async def test_revision_hydration_rejects_corrupt_trading_horizon_shape(
+    database: Database,
+    admin_user_id: UUID,
+    schema_version: int,
+    trading_horizon: str | None,
+) -> None:
+    intent, _ = await _sources(database, admin_user_id)
+    repository = PostgresOperationalPaperSessionProfileRepository(database)
+
+    await _create(
+        repository,
+        replace(
+            intent,
+            trading_horizon=TradingHorizon.DAY_TRADE,
+        ),
+        admin_user_id,
+        key=f"profile-horizon-corruption-{schema_version}-{trading_horizon}",
+    )
+
+    def corrupt(rows: list[Any]) -> list[Any]:
+        assert len(rows) == 1
+        row = dict(rows[0])
+        row["schema_version"] = schema_version
+        row["trading_horizon"] = trading_horizon
+        return [row]
+
+    tampering_database = _BatchRowsDatabase(database, corrupt)
+    tampering_repository = PostgresOperationalPaperSessionProfileRepository(
+        cast(Database, tampering_database)
+    )
+
+    with pytest.raises(PersistenceError):
+        await tampering_repository.list_current(limit=10, offset=0)
+
+    assert tampering_database.batch_query_count == 1
 
 
 async def test_base_execution_assumptions_variant_round_trips(

@@ -47,6 +47,8 @@ from app.operational_mandates.errors import (
     OperationalMandateStateTransitionConflictError,
 )
 from app.operational_paper_session_profiles import (
+    OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION,
+    OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSION,
     OperationalPaperSessionProfile,
     OperationalPaperSessionProfileCreateIntent,
     OperationalPaperSessionProfileMandateBinding,
@@ -54,6 +56,7 @@ from app.operational_paper_session_profiles import (
     OperationalPaperSessionProfileSpecification,
     OperationalPaperSessionProfileState,
     OperationalPaperSessionProfileStrategySnapshot,
+    TradingHorizon,
     build_operational_paper_session_profile_strategy_snapshot,
     operational_paper_session_profile_create_intent_fingerprint,
     operational_paper_session_profile_specification_checksum,
@@ -149,7 +152,8 @@ _REVISION_COLUMNS = """
     market_regime_policy,
     market_regime_policy is null as market_regime_policy_is_sql_null,
     created_by,
-    created_at
+    created_at,
+    trading_horizon
 """
 
 _MANDATE_COLUMNS = """
@@ -234,6 +238,14 @@ def _optional_text(row: Mapping[str, object], key: str) -> str | None:
     if value is not None and not isinstance(value, str):
         raise TypeError("persisted value must be optional text")
     return value
+
+
+def _optional_trading_horizon(
+    row: Mapping[str, object],
+    key: str,
+) -> TradingHorizon | None:
+    value = _optional_text(row, key)
+    return None if value is None else TradingHorizon(value)
 
 
 def _integer(row: Mapping[str, object], key: str) -> int:
@@ -371,6 +383,10 @@ def operational_paper_session_profile_revision_from_row(
             max_events=_integer(row, "max_events"),
             engine_version=_text(row, "engine_version"),
             market_regime_policy=policy,
+            trading_horizon=_optional_trading_horizon(
+                row,
+                "trading_horizon",
+            ),
         )
         return OperationalPaperSessionProfileRevision(
             profile_id=_uuid(row, "profile_id"),
@@ -614,6 +630,7 @@ def _canonical_intent(
         max_events=value.max_events,
         engine_version=value.engine_version,
         market_regime_policy=value.market_regime_policy,
+        trading_horizon=value.trading_horizon,
     )
 
 
@@ -995,8 +1012,13 @@ def _specification(
     intent: OperationalPaperSessionProfileCreateIntent,
     snapshot: OperationalPaperSessionProfileStrategySnapshot,
 ) -> OperationalPaperSessionProfileSpecification:
+    schema_version = (
+        OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSION
+        if intent.trading_horizon is None
+        else OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION
+    )
     return OperationalPaperSessionProfileSpecification(
-        schema_version=1,
+        schema_version=schema_version,
         name=intent.name,
         description=intent.description,
         mandate_binding=intent.mandate_binding,
@@ -1014,6 +1036,7 @@ def _specification(
         max_events=intent.max_events,
         engine_version=intent.engine_version,
         market_regime_policy=intent.market_regime_policy,
+        trading_horizon=intent.trading_horizon,
     )
 
 
@@ -1038,6 +1061,7 @@ def _intent_matches(
         and intent.max_events == specification.max_events
         and intent.engine_version == specification.engine_version
         and intent.market_regime_policy == specification.market_regime_policy
+        and intent.trading_horizon == specification.trading_horizon
         and intent.strategy_definition_id == specification.strategy_snapshot.strategy_definition_id
         and intent.expected_strategy_definition_revision
         == specification.strategy_snapshot.source_revision
@@ -1071,12 +1095,12 @@ async def _insert_revision(
             strategy_snapshot_checksum, strategy_snapshot_schema_version,
             execution, instrument_constraints, risk_limits, history_window,
             max_candles, max_orders, max_events, engine_version,
-            market_regime_policy, created_by, created_at
+            market_regime_policy, created_by, created_at, trading_horizon
         )
         values (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         """,
         (
@@ -1121,6 +1145,11 @@ async def _insert_revision(
             else Jsonb(canonical_value(specification.market_regime_policy)),
             actor_id,
             now,
+            (
+                None
+                if specification.trading_horizon is None
+                else specification.trading_horizon.value
+            ),
         ),
     )
 
