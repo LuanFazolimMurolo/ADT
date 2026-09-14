@@ -419,6 +419,27 @@ class PostgresOperationalPaperSessionSettlementRepository:
                 ):
                     raise settlements.OperationalPaperSessionSettlementEligibilityConflictError()
 
+                # Settlement makes the entire session_id financially terminal.
+                # Under the already-held simulation mutex, fail closed if a
+                # different epoch exists at or after this target epoch's START
+                # time. Equal timestamps are deliberately treated as ambiguous
+                # rather than ordered by the random UUID identity.
+                later_epoch_cursor = await connection.execute(
+                    "select epoch_id "
+                    "from public.operational_paper_session_run_epochs "
+                    "where session_id = %s "
+                    "and epoch_id <> %s "
+                    "and start_requested_at >= %s "
+                    "limit 1",
+                    (
+                        epoch.session_id,
+                        epoch.epoch_id,
+                        epoch.start_requested_at,
+                    ),
+                )
+                if await later_epoch_cursor.fetchone() is not None:
+                    raise settlements.OperationalPaperSessionSettlementEligibilityConflictError()
+
                 existing_cursor = await connection.execute(
                     "select settlement_id "
                     "from public.operational_paper_session_settlements "

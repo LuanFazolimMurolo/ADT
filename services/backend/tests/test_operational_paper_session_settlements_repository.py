@@ -856,3 +856,135 @@ async def test_get_missing_contract(
 
     assert await repository.get(uuid4()) is None
     assert await repository.get_by_session("0" * 64) is None
+
+
+@pytest.mark.asyncio
+async def test_settlement_rejects_stale_epoch_after_later_start_without_side_effects(
+    database_url: str,
+    database: Database,
+    auth_user_id: UUID,
+) -> None:
+    """A later START wins the mutex ordering and makes an older epoch un-settleable."""
+
+    from dataclasses import fields
+
+    import app.operational_paper_session_runs as runs
+    from app.backtesting.domain import PortfolioSnapshot
+    from app.operational_paper_session_settlements import (
+        OperationalPaperSessionSettlementEligibilityConflictError,
+        OperationalPaperSessionSettlementIntent,
+    )
+    from app.paper_trading.persisted_state import PaperPersistedStateBinding
+    from app.repositories.operational_paper_capital_authorizations import (
+        PostgresOperationalPaperCapitalAuthorizationRepository,
+    )
+    from app.repositories.operational_paper_session_runs import (
+        PostgresOperationalPaperSessionRunRepository,
+    )
+
+    context = await _context(
+        database_url,
+        database,
+        auth_user_id,
+    )
+    epoch = context.epoch
+
+    assert epoch.terminal_at is not None
+    assert epoch.observed_state is runs.OperationalPaperSessionRunObservedState.STOPPED
+
+    frozen_specification = runs.OperationalPaperSessionRunEpochSpecification(
+        **{
+            field.name: getattr(epoch, field.name)
+            for field in fields(runs.OperationalPaperSessionRunEpochSpecification)
+        }
+    )
+
+    run_repository = PostgresOperationalPaperSessionRunRepository(database)
+
+    later = await run_repository.start(
+        frozen_specification,
+        actor_id=auth_user_id,
+        idempotency_key=f"stale-settlement-later-start:{uuid4().hex}",
+        now=epoch.start_requested_at + timedelta(seconds=1),
+    )
+
+    assert later.epoch_id != epoch.epoch_id
+    assert later.session_id == epoch.session_id
+    assert later.simulation_id == epoch.simulation_id
+    assert later.start_requested_at > epoch.start_requested_at
+    assert later.observed_state is runs.OperationalPaperSessionRunObservedState.PENDING
+
+    binding = PaperPersistedStateBinding(
+        session_id=epoch.session_id,
+        config_checksum=epoch.config_checksum,
+        state_id="1" * 64,
+        state_checksum="2" * 64,
+        dataset_version="3" * 64,
+        source_checksum="4" * 64,
+        timeline_id="5" * 64,
+        timeline_content_checksum="6" * 64,
+    )
+
+    capital = context.authorization.authorized_capital
+
+    portfolio = PortfolioSnapshot(
+        quote_cash=capital,
+        base_quantity=Decimal("0"),
+        average_entry_price=Decimal("0"),
+        realized_pnl=Decimal("0"),
+        unrealized_pnl=Decimal("0"),
+        total_fees=Decimal("0"),
+        total_slippage_cost=Decimal("0"),
+        equity=capital,
+        peak_equity=capital,
+        drawdown=Decimal("0"),
+        cost_basis=Decimal("0"),
+        drawdown_pct=Decimal("0"),
+    )
+
+    settlement_repository = PostgresOperationalPaperSessionSettlementRepository(database)
+
+    with pytest.raises(OperationalPaperSessionSettlementEligibilityConflictError):
+        await settlement_repository.settle(
+            OperationalPaperSessionSettlementIntent(
+                epoch.epoch_id,
+                epoch.epoch_checksum,
+            ),
+            persisted_state_binding=binding,
+            initial_capital=capital,
+            portfolio=portfolio,
+            actor_id=auth_user_id,
+            idempotency_key=f"stale-settlement:{uuid4().hex}",
+            now=epoch.terminal_at + timedelta(seconds=2),
+        )
+
+    # Rejection must happen before reservation consumption.
+    authorization_after = await (
+        PostgresOperationalPaperCapitalAuthorizationRepository(database)
+    ).get(context.authorization.authorization_id)
+
+    assert authorization_after is not None
+    assert authorization_after.state is OperationalPaperCapitalAuthorizationState.AUTHORIZED
+    assert authorization_after.record_version == context.authorization.record_version
+
+    # No terminal settlement evidence may have been persisted.
+    assert await settlement_repository.get_by_session(epoch.session_id) is None
+
+    # No settlement PnL movement may have been appended.
+    with psycopg.connect(database_url) as connection:
+        movements = connection.execute(
+            """
+            select type, amount
+            from public.capital_movements
+            where simulation_id = %s
+            """,
+            (epoch.simulation_id,),
+        ).fetchall()
+
+    assert movements == [
+        ("INITIAL_CAPITAL", Decimal("100.00000000")),
+    ]
+
+    # The later epoch itself remains intact: settlement rollback must not
+    # rewrite or remove run history.
+    assert await run_repository.get(later.epoch_id) == later
