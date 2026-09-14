@@ -425,6 +425,7 @@ def test_schema_has_exact_tables_columns_keys_indexes_and_triggers(
             "max_events",
             "engine_version",
             "market_regime_policy",
+            "trading_horizon",
             "created_by",
             "created_at",
         },
@@ -563,6 +564,8 @@ def test_schema_has_exact_tables_columns_keys_indexes_and_triggers(
             "operational_paper_session_profiles_chronology_check",
             "operational_paper_session_profile_revisions_timeframe_check",
             "operational_paper_session_profile_revisions_capability_check",
+            "op_ps_profile_revisions_schema_version_check",
+            "op_ps_profile_revisions_trading_horizon_shape_check",
             "op_ps_profile_revisions_strategy_parameters_check",
             "op_ps_profile_revisions_window_relationship_check",
         } <= check_constraints

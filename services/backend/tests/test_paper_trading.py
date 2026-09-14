@@ -53,6 +53,9 @@ from app.paper_trading.domain import (
     PaperRunResult,
     PaperSessionConfig,
     PaperSessionState,
+    PaperTradingHorizon,
+    paper_config_checksum,
+    paper_config_payload,
     paper_session_id,
     paper_state_id_from_payload,
     validate_paper_state_against_config,
@@ -249,6 +252,59 @@ def test_config_and_state_strict_round_trip(tmp_path: Path) -> None:
     service.create(config)
     state = service.run_once(paper_session_id(config)).state
     assert decode_paper_state(encode_paper_state(state)) == state
+
+
+def test_config_schema_three_requires_exact_trading_horizon() -> None:
+    config = replace(
+        _config(),
+        schema_version=3,
+        trading_horizon=PaperTradingHorizon.DAY_TRADE,
+    )
+
+    assert config.schema_version == 3
+    assert config.trading_horizon is PaperTradingHorizon.DAY_TRADE
+    assert config.market_regime_policy is None
+
+    with pytest.raises(InvalidPaperSessionError):
+        replace(_config(), schema_version=3)
+
+    with pytest.raises(InvalidPaperSessionError):
+        replace(
+            _config(),
+            trading_horizon=PaperTradingHorizon.DAY_TRADE,
+        )
+
+    with pytest.raises(InvalidPaperSessionError):
+        replace(
+            _config(),
+            schema_version=3,
+            trading_horizon="DAY_TRADE",  # type: ignore[arg-type]
+        )
+
+
+def test_config_schema_three_horizon_is_identity_bearing_and_round_trips() -> None:
+    day_trade = replace(
+        _config(),
+        schema_version=3,
+        trading_horizon=PaperTradingHorizon.DAY_TRADE,
+    )
+    swing_trade = replace(
+        _config(),
+        schema_version=3,
+        trading_horizon=PaperTradingHorizon.SWING_TRADE,
+    )
+
+    day_payload = paper_config_payload(day_trade)
+    swing_payload = paper_config_payload(swing_trade)
+
+    assert day_payload["trading_horizon"] == "DAY_TRADE"
+    assert swing_payload["trading_horizon"] == "SWING_TRADE"
+
+    assert paper_config_checksum(day_trade) != paper_config_checksum(swing_trade)
+    assert paper_session_id(day_trade) != paper_session_id(swing_trade)
+
+    assert decode_paper_config(encode_paper_config(day_trade)) == day_trade
+    assert decode_paper_config(encode_paper_config(swing_trade)) == swing_trade
 
 
 def test_document_rejects_extra_field() -> None:

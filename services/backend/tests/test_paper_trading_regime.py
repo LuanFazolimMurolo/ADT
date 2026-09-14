@@ -30,6 +30,7 @@ from app.paper_trading.documents import (
 )
 from app.paper_trading.domain import (
     PaperSessionConfig,
+    PaperTradingHorizon,
     paper_session_id,
     validate_paper_session_state,
 )
@@ -72,6 +73,19 @@ def test_regime_config_round_trip_and_identity_are_policy_bound() -> None:
     configured_payload = json.loads(encode_paper_config(configured))["config"]
     assert "market_regime_policy" not in legacy_payload
     assert configured_payload["market_regime_policy"] == canonical_value(_policy())
+
+
+def test_schema_three_supports_reviewed_horizon_with_market_regime() -> None:
+    config = replace(
+        _regime_config(),
+        schema_version=3,
+        trading_horizon=PaperTradingHorizon.SWING_TRADE,
+    )
+
+    assert config.schema_version == 3
+    assert config.market_regime_policy == _policy()
+    assert config.trading_horizon is PaperTradingHorizon.SWING_TRADE
+    assert decode_paper_config(encode_paper_config(config)) == config
 
 
 def test_config_schema_requires_policy_only_in_version_two() -> None:

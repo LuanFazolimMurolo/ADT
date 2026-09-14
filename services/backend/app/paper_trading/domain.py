@@ -39,7 +39,7 @@ from app.paper_trading.errors import (
 )
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_SUPPORTED_CONFIG_SCHEMA_VERSIONS = frozenset({1, 2})
+_SUPPORTED_CONFIG_SCHEMA_VERSIONS = frozenset({1, 2, 3})
 _SUPPORTED_STATE_SCHEMA_VERSIONS = frozenset({1, 2})
 MAX_PAPER_DOCUMENT_BYTES = 16 * 1024 * 1024
 
@@ -47,6 +47,13 @@ MAX_PAPER_DOCUMENT_BYTES = 16 * 1024 * 1024
 class PaperRunAction(StrEnum):
     UPDATED = "UPDATED"
     NOOP = "NOOP"
+
+
+class PaperTradingHorizon(StrEnum):
+    """Exact executable trading-horizon identity carried by config schema 3."""
+
+    DAY_TRADE = "DAY_TRADE"
+    SWING_TRADE = "SWING_TRADE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +76,7 @@ class PaperSessionConfig:
     max_events: int
     engine_version: str
     market_regime_policy: MarketRegimePolicy | None = None
+    trading_horizon: PaperTradingHorizon | None = None
     schema_version: int = 1
 
     def __post_init__(self) -> None:
@@ -102,8 +110,16 @@ class PaperSessionConfig:
             if self.schema_version == 1:
                 if self.market_regime_policy is not None:
                     raise ValueError("paper session schema 1 does not support market regime")
-            else:
+                if self.trading_horizon is not None:
+                    raise ValueError("paper session schema 1 does not support trading horizon")
+            elif self.schema_version == 2:
+                if self.trading_horizon is not None:
+                    raise ValueError("paper session schema 2 does not support trading horizon")
                 _revalidate_market_regime_policy(self.market_regime_policy)
+            else:
+                _revalidate_trading_horizon(self.trading_horizon)
+                if self.market_regime_policy is not None:
+                    _revalidate_market_regime_policy(self.market_regime_policy)
             context_start = start_at - self.warmup_candles * self.timeframe.duration
             context_end = start_at + self.timeframe.duration
             if self.market_regime_policy is None:
@@ -357,6 +373,8 @@ def paper_config_payload(config: PaperSessionConfig) -> dict[str, object]:
     }
     if config.market_regime_policy is not None:
         payload["market_regime_policy"] = canonical_value(config.market_regime_policy)
+    if config.trading_horizon is not None:
+        payload["trading_horizon"] = config.trading_horizon.value
     return payload
 
 
@@ -691,6 +709,13 @@ def _utc(value: object, field_name: str) -> datetime:
         raise PaperSessionCorruptError() from None
 
 
+def _revalidate_trading_horizon(value: object) -> None:
+    if not isinstance(value, PaperTradingHorizon):
+        raise InvalidPaperSessionError("O horizonte de trading da sessão é inválido.")
+    if PaperTradingHorizon(value.value) is not value:
+        raise InvalidPaperSessionError("O horizonte de trading da sessão não é canônico.")
+
+
 def _revalidate_market_regime_policy(value: object) -> None:
     if not isinstance(value, MarketRegimePolicy):
         raise InvalidPaperSessionError("A política de regime da sessão é inválida.")
@@ -736,6 +761,7 @@ def _revalidate_config(config: PaperSessionConfig) -> None:
             max_events=config.max_events,
             engine_version=config.engine_version,
             market_regime_policy=config.market_regime_policy,
+            trading_horizon=config.trading_horizon,
             schema_version=config.schema_version,
         )
         context_end = config.start_at + config.timeframe.duration

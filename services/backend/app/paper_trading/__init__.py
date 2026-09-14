@@ -18,6 +18,7 @@ from app.paper_trading.domain import (
     PaperRunResult,
     PaperSessionConfig,
     PaperSessionState,
+    PaperTradingHorizon,
     paper_session_id,
 )
 from app.paper_trading.journal import (
@@ -54,6 +55,7 @@ __all__ = [
     "PaperRunResult",
     "PaperSessionConfig",
     "PaperSessionState",
+    "PaperTradingHorizon",
     "PaperTradingContinuousRunner",
     "PaperTradingContinuousService",
     "build_paper_trade_journal",

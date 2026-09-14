@@ -52,15 +52,21 @@ from app.operational_paper_session_materializations import (
     require_operational_paper_session_materialization_transition,
 )
 from app.operational_paper_session_profiles import (
+    OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION,
     OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSION,
     OperationalPaperSessionProfileMandateBinding,
     OperationalPaperSessionProfileRevision,
     OperationalPaperSessionProfileSpecification,
     OperationalPaperSessionProfileStrategySnapshot,
+    TradingHorizon,
     build_operational_paper_session_profile_strategy_snapshot,
     operational_paper_session_profile_specification_checksum,
 )
-from app.paper_trading.domain import paper_config_checksum, paper_session_id
+from app.paper_trading.domain import (
+    PaperTradingHorizon,
+    paper_config_checksum,
+    paper_session_id,
+)
 
 PROFILE_ID = UUID("10000000-0000-4000-8000-000000000001")
 MANDATE_ID = UUID("20000000-0000-4000-8000-000000000002")
@@ -259,6 +265,48 @@ def test_market_regime_profile_materializes_as_paper_config_schema_two() -> None
     assert plan.config.market_regime_policy == MarketRegimePolicy()
     assert plan.specification.config_checksum == paper_config_checksum(plan.config)
     assert plan.specification.session_id == paper_session_id(plan.config)
+
+
+def test_reviewed_horizon_profile_materializes_as_config_schema_three() -> None:
+    plan = _plan(
+        schema_version=(OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION),
+        trading_horizon=TradingHorizon.DAY_TRADE,
+    )
+
+    assert plan.config.schema_version == 3
+    assert plan.config.market_regime_policy is None
+    assert plan.config.trading_horizon is PaperTradingHorizon.DAY_TRADE
+    assert plan.specification.config_checksum == paper_config_checksum(plan.config)
+    assert plan.specification.session_id == paper_session_id(plan.config)
+
+
+def test_reviewed_horizon_profile_with_regime_stays_config_schema_three() -> None:
+    plan = _plan(
+        schema_version=(OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION),
+        trading_horizon=TradingHorizon.SWING_TRADE,
+        market_regime_policy=MarketRegimePolicy(),
+    )
+
+    assert plan.config.schema_version == 3
+    assert plan.config.market_regime_policy == MarketRegimePolicy()
+    assert plan.config.trading_horizon is PaperTradingHorizon.SWING_TRADE
+
+
+def test_reviewed_horizon_changes_materialized_executable_identity() -> None:
+    day_trade = _plan(
+        schema_version=(OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION),
+        trading_horizon=TradingHorizon.DAY_TRADE,
+    )
+    swing_trade = _plan(
+        schema_version=(OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION),
+        trading_horizon=TradingHorizon.SWING_TRADE,
+    )
+
+    assert day_trade.config.trading_horizon is PaperTradingHorizon.DAY_TRADE
+    assert swing_trade.config.trading_horizon is PaperTradingHorizon.SWING_TRADE
+
+    assert day_trade.specification.config_checksum != swing_trade.specification.config_checksum
+    assert day_trade.specification.session_id != swing_trade.specification.session_id
 
 
 def test_authorization_binding_rejects_invalid_evidence() -> None:

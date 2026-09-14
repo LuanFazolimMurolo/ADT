@@ -48,6 +48,7 @@ from app.paper_trading.domain import (
     PaperSessionConfig,
     PaperSessionState,
     PaperSessionStateSummary,
+    PaperTradingHorizon,
     paper_config_checksum,
     paper_config_payload,
     paper_session_id,
@@ -303,21 +304,40 @@ def _config_from_payload(payload: dict[str, object]) -> PaperSessionConfig:
         "engine_version",
         "schema_version",
     }
-    keys = frozenset(payload)
-    if keys not in {frozenset(legacy), frozenset(legacy | {"market_regime_policy"})}:
+    schema_version = _int(payload.get("schema_version"))
+
+    if schema_version == 1:
+        expected = legacy
+    elif schema_version == 2:
+        expected = legacy | {"market_regime_policy"}
+    elif schema_version == 3:
+        expected = legacy | {"trading_horizon"}
+        if "market_regime_policy" in payload:
+            expected |= {"market_regime_policy"}
+    else:
         raise InvalidPaperSessionError()
-    schema_version = _int(payload["schema_version"])
-    if (schema_version == 1) != ("market_regime_policy" not in payload):
+
+    if set(payload) != expected:
         raise InvalidPaperSessionError()
+
     pair_payload = _object(payload["pair"])
     _require_keys(pair_payload, _PAIR_KEYS)
+
     policy = (
         None
         if "market_regime_policy" not in payload
         else _market_regime_policy(_object(payload["market_regime_policy"]))
     )
+
+    trading_horizon = (
+        None if schema_version != 3 else PaperTradingHorizon(_string(payload["trading_horizon"]))
+    )
+
     return PaperSessionConfig(
-        pair=TradingPair(_string(pair_payload["base"]), _string(pair_payload["quote"])),
+        pair=TradingPair(
+            _string(pair_payload["base"]),
+            _string(pair_payload["quote"]),
+        ),
         timeframe=get_timeframe(_string(payload["timeframe"])),
         start_at=_datetime(payload["start_at"]),
         warmup_candles=_int(payload["warmup_candles"]),
@@ -333,6 +353,7 @@ def _config_from_payload(payload: dict[str, object]) -> PaperSessionConfig:
         max_events=_int(payload["max_events"]),
         engine_version=_string(payload["engine_version"]),
         market_regime_policy=policy,
+        trading_horizon=trading_horizon,
         schema_version=schema_version,
     )
 

@@ -27,11 +27,13 @@ from app.operational_paper_session_materializations.errors import (
     OperationalPaperSessionMaterializationStateTransitionConflictError,
 )
 from app.operational_paper_session_profiles import (
+    OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION,
     OperationalPaperSessionProfileChecksumMismatchError,
     OperationalPaperSessionProfileRevision,
 )
 from app.paper_trading.domain import (
     PaperSessionConfig,
+    PaperTradingHorizon,
     paper_config_checksum,
     paper_session_id,
 )
@@ -388,7 +390,21 @@ def build_operational_paper_session_materialization_plan(
             snapshot.plugin_version,
             snapshot.parameters,
         )
-        config_schema_version = 2 if profile_specification.market_regime_policy is not None else 1
+        if (
+            profile_specification.schema_version
+            == OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION
+        ):
+            profile_horizon = profile_specification.trading_horizon
+            if profile_horizon is None:
+                raise ValueError
+            config_schema_version = 3
+            config_trading_horizon = PaperTradingHorizon(profile_horizon.value)
+        else:
+            config_schema_version = (
+                2 if profile_specification.market_regime_policy is not None else 1
+            )
+            config_trading_horizon = None
+
         config = PaperSessionConfig(
             pair=selected_instrument.pair,
             timeframe=profile_specification.timeframe,
@@ -406,6 +422,7 @@ def build_operational_paper_session_materialization_plan(
             max_events=profile_specification.max_events,
             engine_version=profile_specification.engine_version,
             market_regime_policy=profile_specification.market_regime_policy,
+            trading_horizon=config_trading_horizon,
             schema_version=config_schema_version,
         )
     except Exception:
