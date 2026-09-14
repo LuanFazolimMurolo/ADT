@@ -9,6 +9,7 @@ from app.domain.errors import (
     InsufficientBalanceError,
     InvalidFinancialAmountError,
     LedgerImmutableError,
+    OfficialPaperSimulationFinalityConflictError,
     PersistenceError,
     PersistenceUnavailableError,
     SimulationNotFoundError,
@@ -44,6 +45,14 @@ _RESERVATION_CONFLICT_MESSAGES = frozenset(
 )
 
 
+_OFFICIAL_PAPER_FINALITY_CONFLICT_MESSAGES = frozenset(
+    {
+        "official_paper_simulation_terminalization_blocked_by_nonterminal_run",
+        "official_paper_simulation_terminalization_blocked_by_unsettled_session",
+    }
+)
+
+
 def raise_domain_error(error: Error) -> NoReturn:
     """Raise a safe domain error for a known PostgreSQL failure."""
     constraint_name = error.diag.constraint_name
@@ -51,6 +60,9 @@ def raise_domain_error(error: Error) -> NoReturn:
 
     if primary_message in _RESERVATION_CONFLICT_MESSAGES:
         raise OperationalPaperCapitalReservationConflictError() from error
+
+    if primary_message in _OFFICIAL_PAPER_FINALITY_CONFLICT_MESSAGES:
+        raise OfficialPaperSimulationFinalityConflictError() from error
 
     if isinstance(error, (OperationalError, InterfaceError)):
         raise PersistenceUnavailableError() from error

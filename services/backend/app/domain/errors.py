@@ -88,6 +88,15 @@ class SimulationTerminalError(DomainConflictError):
     default_message = "A simulação já está encerrada."
 
 
+class OfficialPaperSimulationFinalityConflictError(DomainConflictError):
+    """Official paper history is not financially final enough to end."""
+
+    code = "official_paper_simulation_finality_conflict"
+    default_message = (
+        "A simulação oficial possui operações paper pendentes de finalização financeira."
+    )
+
+
 class LedgerImmutableError(DomainConflictError):
     """Existing ledger or audit rows cannot be mutated."""
 
