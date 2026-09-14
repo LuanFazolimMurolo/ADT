@@ -1128,6 +1128,7 @@ describe("ApiClient", () => {
         quote_asset: "USDT",
       },
       timeframe: "1h",
+      trading_horizon: "DAY_TRADE" as const,
       start_at: "2026-08-25T12:00:00Z",
       warmup_candles: 120,
       strategy_definition_id: "22222222-2222-4222-8222-222222222222",

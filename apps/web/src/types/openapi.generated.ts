@@ -3921,6 +3921,7 @@ export interface components {
             strategy_definition_id: string;
             /** Timeframe */
             timeframe: string;
+            trading_horizon: components["schemas"]["TradingHorizon"];
             /** Warmup Candles */
             warmup_candles: number;
         };
@@ -4166,6 +4167,7 @@ export interface components {
             strategy_snapshot: components["schemas"]["OperationalPaperSessionProfileStrategySnapshotResponse"];
             /** Timeframe */
             timeframe: string;
+            trading_horizon: components["schemas"]["TradingHorizon"] | null;
             /** Warmup Candles */
             warmup_candles: number;
         };
@@ -6118,6 +6120,12 @@ export interface components {
          * @enum {string}
          */
         TimeInForce: "GTC" | "IOC" | "DAY";
+        /**
+         * TradingHorizon
+         * @description Administrator-reviewed operational trading-horizon classification.
+         * @enum {string}
+         */
+        TradingHorizon: "DAY_TRADE" | "SWING_TRADE";
         /**
          * TrendDirection
          * @description Directional evidence emitted only for the trend regime.

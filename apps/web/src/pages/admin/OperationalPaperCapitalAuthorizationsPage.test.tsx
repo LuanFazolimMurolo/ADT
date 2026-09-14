@@ -127,6 +127,7 @@ function makeProfile(
           quote_asset: "USDT",
         },
         timeframe: "1h",
+        trading_horizon: null,
         start_at: "2026-08-25T12:00:00Z",
         warmup_candles: 120,
         strategy_snapshot: {

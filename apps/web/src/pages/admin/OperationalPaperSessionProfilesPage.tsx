@@ -48,6 +48,8 @@ type ProfileInstrument =
 type PositionSizingKind = NonNullable<
   OperationalPaperSessionProfileIntentRequest["execution"]["position_sizing"]
 >["kind"];
+type TradingHorizon =
+  OperationalPaperSessionProfileIntentRequest["trading_horizon"];
 
 type TriStateKey =
   "force_close_at_end" | "stop_on_max_drawdown" | "allow_all_in";
@@ -66,6 +68,7 @@ interface IntentDraft {
   base_asset: string;
   quote_asset: string;
   timeframe: string;
+  trading_horizon: "" | TradingHorizon;
   start_at: string;
   warmup_candles: string;
   strategy_definition_id: string;
@@ -148,6 +151,7 @@ const emptyDraft = (): IntentDraft => ({
   base_asset: "",
   quote_asset: "",
   timeframe: "",
+  trading_horizon: "",
   start_at: "",
   warmup_candles: "",
   strategy_definition_id: "",
@@ -227,6 +231,8 @@ function toIntent(
     throw new Error("Selecione e revise um mandato aprovado.");
   if (!draft.strategy_definition_id || !draft.strategy_checksum)
     throw new Error("Selecione e revise uma estratégia ativa.");
+  if (!draft.trading_horizon)
+    throw new Error("Horizonte revisado deve ser escolhido explicitamente.");
 
   return {
     name: draft.name.trim(),
@@ -247,6 +253,7 @@ function toIntent(
       quote_asset: draft.quote_asset,
     },
     timeframe: draft.timeframe.trim(),
+    trading_horizon: draft.trading_horizon,
     start_at: draft.start_at,
     warmup_candles: strictInteger(draft.warmup_candles, "Warmup", 0),
     strategy_definition_id: draft.strategy_definition_id,
@@ -388,6 +395,7 @@ function fromCurrent(
     base_asset: s.selected_instrument.base_asset,
     quote_asset: s.selected_instrument.quote_asset,
     timeframe: s.timeframe,
+    trading_horizon: s.trading_horizon ?? "",
     start_at: s.start_at,
     warmup_candles: String(s.warmup_candles),
     strategy_definition_id: snapshot.strategy_definition_id,
@@ -586,6 +594,27 @@ function IntentFields({
             ["warmup_candles", "Warmup candles", true, true],
             ["engine_version", "Engine version", true],
           ])}
+          <label>
+            Horizonte revisado
+            <select
+              required
+              value={draft.trading_horizon}
+              onChange={(event) =>
+                update(
+                  "trading_horizon",
+                  event.currentTarget.value as IntentDraft["trading_horizon"],
+                )
+              }
+            >
+              <option value="">Escolha explicitamente</option>
+              <option value="DAY_TRADE">Day trade (DAY_TRADE)</option>
+              <option value="SWING_TRADE">Swing trade (SWING_TRADE)</option>
+            </select>
+          </label>
+          <small>
+            Classificação operacional revisada; não impõe duração máxima nem
+            fechamento automático.
+          </small>
         </div>
       </fieldset>
 
@@ -795,6 +824,12 @@ function RevisionDetails({
           {checksumSummary(revision.specification_checksum)}
         </code>
       </div>
+      <p className="operation-notice">
+        Horizonte revisado:{" "}
+        <strong>
+          {specification.trading_horizon ?? "Não classificado (legado)"}
+        </strong>
+      </p>
       <pre className="mandate-code">{JSON.stringify(revision, null, 2)}</pre>
     </section>
   );
@@ -1225,7 +1260,7 @@ export function OperationalPaperSessionProfilesPage() {
               <p className="eyebrow">Intento</p>
               <h2 id="profile-create-title">Criar perfil DRAFT</h2>
             </div>
-            <span>19 campos congelados</span>
+            <span>20 campos congelados</span>
           </div>
           <form onSubmit={prepareCreate}>
             <IntentFields

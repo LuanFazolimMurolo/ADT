@@ -51,6 +51,7 @@ function makeCurrent(
   state: "DRAFT" | "APPROVED" | "ARCHIVED" = "DRAFT",
   revision = 13,
   recordVersion = 29,
+  tradingHorizon: "DAY_TRADE" | "SWING_TRADE" | null = null,
 ): OperationalPaperSessionProfileCurrent {
   return {
     profile: {
@@ -74,7 +75,7 @@ function makeCurrent(
       created_by: ids.actor,
       created_at: "2026-08-25T10:00:00Z",
       specification: {
-        schema_version: 1,
+        schema_version: tradingHorizon === null ? 1 : 2,
         name,
         description: "Configuração congelada",
         mandate_binding: {
@@ -89,6 +90,7 @@ function makeCurrent(
           quote_asset: "USDT",
         },
         timeframe: "1h",
+        trading_horizon: tradingHorizon,
         start_at: "2026-08-25T12:00:00Z",
         warmup_candles: 120,
         strategy_snapshot: {
@@ -153,7 +155,14 @@ function makeCurrent(
 }
 
 const currentA = makeCurrent();
-const currentB = makeCurrent(ids.profileB, "Perfil B", "APPROVED", 23, 41);
+const currentB = makeCurrent(
+  ids.profileB,
+  "Perfil B",
+  "APPROVED",
+  23,
+  41,
+  "SWING_TRADE",
+);
 const mandateCatalog = {
   items: [
     {
@@ -282,6 +291,10 @@ async function fillRichCreate(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText("Nome do perfil"), "Perfil completo");
   await user.type(screen.getByLabelText("Descrição"), "Intento auditável");
   await user.type(screen.getByLabelText("Timeframe canônico"), "1h");
+  await user.selectOptions(
+    screen.getByLabelText("Horizonte revisado"),
+    "DAY_TRADE",
+  );
   await user.type(
     screen.getByLabelText("Início UTC (ISO 8601)"),
     "2026-08-25T12:00:00Z",
@@ -414,6 +427,27 @@ describe("perfis administrativos de sessão paper", () => {
     );
   });
 
+  it("exibe horizonte persistido e não infere classificação para revisão legada", async () => {
+    const user = userEvent.setup();
+
+    await renderLoaded();
+
+    expect(screen.getByText("Não classificado (legado)")).toBeDefined();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Inspecionar perfil Perfil B",
+      }),
+    );
+
+    await screen.findByRole("heading", {
+      name: "Perfil B",
+      level: 2,
+    });
+
+    expect(screen.getByText("SWING_TRADE")).toBeDefined();
+  });
+
   it("consulta histórico bounded e revisão histórica exata sem controles próprios", async () => {
     mocks.listOperationalPaperSessionProfileRevisions.mockResolvedValue({
       items: [currentA.revision],
@@ -513,6 +547,7 @@ describe("perfis administrativos de sessão paper", () => {
         expected_strategy_parameters_checksum: checksums.strategy,
         start_at: "2026-08-25T12:00:00Z",
         timeframe: "1h",
+        trading_horizon: "DAY_TRADE",
         history_window: 500,
         max_candles: 1000,
         max_orders: 100,
@@ -553,6 +588,11 @@ describe("perfis administrativos de sessão paper", () => {
     await user.click(
       screen.getByRole("button", { name: "Substituir rascunho" }),
     );
+
+    const horizon = screen.getByLabelText("Horizonte revisado");
+    expect((horizon as HTMLSelectElement).value).toBe("");
+    await user.selectOptions(horizon, "SWING_TRADE");
+
     await user.click(
       screen.getByRole("button", { name: "Revisar substituição" }),
     );
@@ -573,6 +613,7 @@ describe("perfis administrativos de sessão paper", () => {
             strategy_definition_id: ids.strategy,
             expected_strategy_definition_revision: 17,
             expected_strategy_parameters_checksum: checksums.strategy,
+            trading_horizon: "SWING_TRADE",
           }),
         }),
       ),
