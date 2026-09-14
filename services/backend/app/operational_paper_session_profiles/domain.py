@@ -46,7 +46,21 @@ from app.operational_paper_session_profiles.errors import (
 )
 
 OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSION: Final = 1
+OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION: Final = 2
+SUPPORTED_OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSIONS: Final = frozenset(
+    {
+        OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSION,
+        OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION,
+    }
+)
 OPERATIONAL_PAPER_SESSION_PROFILE_CREATE_CONTRACT_VERSION: Final = 1
+OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_CREATE_CONTRACT_VERSION: Final = 2
+SUPPORTED_OPERATIONAL_PAPER_SESSION_PROFILE_CREATE_CONTRACT_VERSIONS: Final = frozenset(
+    {
+        OPERATIONAL_PAPER_SESSION_PROFILE_CREATE_CONTRACT_VERSION,
+        OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_CREATE_CONTRACT_VERSION,
+    }
+)
 STRATEGY_SNAPSHOT_SCHEMA_VERSION: Final = 1
 MAX_OPERATIONAL_PAPER_SESSION_PROFILE_NAME_LENGTH: Final = 120
 MAX_OPERATIONAL_PAPER_SESSION_PROFILE_DESCRIPTION_LENGTH: Final = 1_000
@@ -61,6 +75,13 @@ _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _POSTGRESQL_INTEGER_MAX: Final = (1 << 31) - 1
 _POSTGRESQL_BIGINT_MAX: Final = (1 << 63) - 1
+
+
+class TradingHorizon(StrEnum):
+    """Administrator-reviewed operational trading-horizon classification."""
+
+    DAY_TRADE = "DAY_TRADE"
+    SWING_TRADE = "SWING_TRADE"
 
 
 class OperationalPaperSessionProfileState(StrEnum):
@@ -231,14 +252,22 @@ class OperationalPaperSessionProfileSpecification:
     max_events: int
     engine_version: str
     market_regime_policy: MarketRegimePolicy | None = None
+    trading_horizon: TradingHorizon | None = None
 
     def __post_init__(self) -> None:
         try:
             if (
                 type(self.schema_version) is not int
-                or self.schema_version != OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSION
+                or self.schema_version
+                not in SUPPORTED_OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSIONS
             ):
                 raise ValueError
+            if self.schema_version == OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSION:
+                if self.trading_horizon is not None:
+                    raise ValueError
+                trading_horizon = None
+            else:
+                trading_horizon = _require_trading_horizon(self.trading_horizon)
             values = _validate_profile_inputs(self)
             strategy = _revalidate_strategy_snapshot(self.strategy_snapshot)
             warmup = _bounded_nonnegative_int(
@@ -254,17 +283,21 @@ class OperationalPaperSessionProfileSpecification:
         for name, value in values.items():
             object.__setattr__(self, name, value)
         object.__setattr__(self, "strategy_snapshot", strategy)
+        object.__setattr__(self, "trading_horizon", trading_horizon)
 
 
 def operational_paper_session_profile_specification_payload(
     specification: OperationalPaperSessionProfileSpecification,
 ) -> dict[str, object]:
     canonical = _revalidate_specification(specification)
-    return _profile_inputs_payload(canonical) | {
+    payload = _profile_inputs_payload(canonical) | {
         "schema_version": canonical.schema_version,
         "strategy_snapshot": _strategy_snapshot_payload_unchecked(canonical.strategy_snapshot)
         | {"snapshot_checksum": canonical.strategy_snapshot.snapshot_checksum},
     }
+    if canonical.trading_horizon is not None:
+        payload["trading_horizon"] = canonical.trading_horizon.value
+    return payload
 
 
 def operational_paper_session_profile_specification_bytes(
@@ -331,6 +364,7 @@ class OperationalPaperSessionProfileCreateIntent:
     max_events: int
     engine_version: str
     market_regime_policy: MarketRegimePolicy | None = None
+    trading_horizon: TradingHorizon | None = None
 
     def __post_init__(self) -> None:
         try:
@@ -338,6 +372,7 @@ class OperationalPaperSessionProfileCreateIntent:
             strategy_id = _require_uuid(self.strategy_definition_id)
             revision = _require_positive_bigint(self.expected_strategy_definition_revision)
             checksum = _require_sha256(self.expected_strategy_parameters_checksum)
+            trading_horizon = _optional_trading_horizon(self.trading_horizon)
         except OperationalPaperSessionProfileBoundsExceededError:
             raise
         except Exception:
@@ -347,18 +382,26 @@ class OperationalPaperSessionProfileCreateIntent:
         object.__setattr__(self, "strategy_definition_id", strategy_id)
         object.__setattr__(self, "expected_strategy_definition_revision", revision)
         object.__setattr__(self, "expected_strategy_parameters_checksum", checksum)
+        object.__setattr__(self, "trading_horizon", trading_horizon)
 
 
 def operational_paper_session_profile_create_intent_fingerprint(
     intent: OperationalPaperSessionProfileCreateIntent,
 ) -> str:
     canonical = _revalidate_create_intent(intent)
+    contract_version = (
+        OPERATIONAL_PAPER_SESSION_PROFILE_CREATE_CONTRACT_VERSION
+        if canonical.trading_horizon is None
+        else OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_CREATE_CONTRACT_VERSION
+    )
     payload = _profile_inputs_payload(canonical) | {
-        "contract_version": OPERATIONAL_PAPER_SESSION_PROFILE_CREATE_CONTRACT_VERSION,
+        "contract_version": contract_version,
         "strategy_definition_id": str(canonical.strategy_definition_id),
         "expected_strategy_definition_revision": (canonical.expected_strategy_definition_revision),
         "expected_strategy_parameters_checksum": (canonical.expected_strategy_parameters_checksum),
     }
+    if canonical.trading_horizon is not None:
+        payload["trading_horizon"] = canonical.trading_horizon.value
     return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
 
 
@@ -699,6 +742,7 @@ def _revalidate_specification(
         max_events=value.max_events,
         engine_version=value.engine_version,
         market_regime_policy=value.market_regime_policy,
+        trading_horizon=value.trading_horizon,
     )
 
 
@@ -727,6 +771,7 @@ def _revalidate_create_intent(
         max_events=value.max_events,
         engine_version=value.engine_version,
         market_regime_policy=value.market_regime_policy,
+        trading_horizon=value.trading_horizon,
     )
 
 
@@ -740,6 +785,18 @@ def _revalidate_mandate_binding(
         value.approved_revision,
         value.specification_checksum,
     )
+
+
+def _require_trading_horizon(value: object) -> TradingHorizon:
+    if type(value) is not TradingHorizon:
+        raise ValueError
+    return value
+
+
+def _optional_trading_horizon(value: object) -> TradingHorizon | None:
+    if value is None:
+        return None
+    return _require_trading_horizon(value)
 
 
 def _canonical_timeframe(value: object) -> Timeframe:

@@ -34,7 +34,12 @@ from app.operational_paper_session_profiles import (
     MAX_OPERATIONAL_PAPER_SESSION_PROFILE_HISTORY_WINDOW,
     MAX_OPERATIONAL_PAPER_SESSION_PROFILE_ORDERS,
     MAX_OPERATIONAL_PAPER_SESSION_PROFILE_WARMUP_CANDLES,
+    OPERATIONAL_PAPER_SESSION_PROFILE_CREATE_CONTRACT_VERSION,
+    OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_CREATE_CONTRACT_VERSION,
+    OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION,
     OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSION,
+    SUPPORTED_OPERATIONAL_PAPER_SESSION_PROFILE_CREATE_CONTRACT_VERSIONS,
+    SUPPORTED_OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSIONS,
     InvalidOperationalPaperSessionProfileSpecificationError,
     InvalidOperationalPaperSessionProfileStrategySnapshotError,
     OperationalPaperSessionProfile,
@@ -46,6 +51,7 @@ from app.operational_paper_session_profiles import (
     OperationalPaperSessionProfileSpecification,
     OperationalPaperSessionProfileState,
     OperationalPaperSessionProfileStateTransitionConflictError,
+    TradingHorizon,
     build_operational_paper_session_profile_strategy_snapshot,
     is_operational_paper_session_profile_transition_allowed,
     operational_paper_session_profile_create_intent_fingerprint,
@@ -256,6 +262,99 @@ def test_instrument_and_timeframe_are_canonical() -> None:
         _spec(selected_instrument=_instrument(market_type=MarketType.FUTURES))
     with pytest.raises(InvalidOperationalPaperSessionProfileSpecificationError):
         _spec(timeframe=Timeframe("2h", timedelta(hours=2)))
+
+
+def test_trading_horizon_contract_is_exact_versioned_and_public() -> None:
+    assert tuple(TradingHorizon) == (
+        TradingHorizon.DAY_TRADE,
+        TradingHorizon.SWING_TRADE,
+    )
+    assert TradingHorizon.DAY_TRADE.value == "DAY_TRADE"
+    assert TradingHorizon.SWING_TRADE.value == "SWING_TRADE"
+
+    assert OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSION == 1
+    assert OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION == 2
+
+    assert OPERATIONAL_PAPER_SESSION_PROFILE_CREATE_CONTRACT_VERSION == 1
+    assert OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_CREATE_CONTRACT_VERSION == 2
+
+    assert SUPPORTED_OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSIONS == (frozenset({1, 2}))
+    assert SUPPORTED_OPERATIONAL_PAPER_SESSION_PROFILE_CREATE_CONTRACT_VERSIONS == frozenset({1, 2})
+
+    public_names = set(public_contract.__all__)
+
+    assert "TradingHorizon" in public_names
+    assert "OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION" in public_names
+    assert "OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_CREATE_CONTRACT_VERSION" in public_names
+
+
+def test_profile_schema_v1_remains_unlabeled_and_v2_requires_exact_horizon() -> None:
+    legacy = _spec()
+
+    assert legacy.schema_version == 1
+    assert legacy.trading_horizon is None
+
+    legacy_payload = operational_paper_session_profile_specification_payload(legacy)
+    assert "trading_horizon" not in legacy_payload
+
+    day_trade = _spec(
+        schema_version=(OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION),
+        trading_horizon=TradingHorizon.DAY_TRADE,
+    )
+
+    swing_trade = _spec(
+        schema_version=(OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION),
+        trading_horizon=TradingHorizon.SWING_TRADE,
+    )
+
+    assert day_trade.schema_version == 2
+    assert swing_trade.schema_version == 2
+    assert day_trade.trading_horizon is TradingHorizon.DAY_TRADE
+    assert swing_trade.trading_horizon is TradingHorizon.SWING_TRADE
+
+    day_payload = operational_paper_session_profile_specification_payload(day_trade)
+    swing_payload = operational_paper_session_profile_specification_payload(swing_trade)
+
+    assert day_payload["trading_horizon"] == "DAY_TRADE"
+    assert swing_payload["trading_horizon"] == "SWING_TRADE"
+
+    assert operational_paper_session_profile_specification_checksum(
+        day_trade
+    ) != operational_paper_session_profile_specification_checksum(swing_trade)
+
+    with pytest.raises(InvalidOperationalPaperSessionProfileSpecificationError):
+        _spec(schema_version=(OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION))
+
+    with pytest.raises(InvalidOperationalPaperSessionProfileSpecificationError):
+        _spec(
+            schema_version=(OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSION),
+            trading_horizon=TradingHorizon.DAY_TRADE,
+        )
+
+    with pytest.raises(InvalidOperationalPaperSessionProfileSpecificationError):
+        _spec(
+            schema_version=(OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION),
+            trading_horizon="DAY_TRADE",
+        )
+
+    with pytest.raises(InvalidOperationalPaperSessionProfileSpecificationError):
+        _spec(schema_version=3)
+
+
+def test_create_intent_horizon_is_identity_bearing_without_changing_legacy_identity() -> None:
+    legacy = _intent()
+    day_trade = _intent(trading_horizon=TradingHorizon.DAY_TRADE)
+    swing_trade = _intent(trading_horizon=TradingHorizon.SWING_TRADE)
+
+    legacy_fingerprint = operational_paper_session_profile_create_intent_fingerprint(legacy)
+    day_fingerprint = operational_paper_session_profile_create_intent_fingerprint(day_trade)
+    swing_fingerprint = operational_paper_session_profile_create_intent_fingerprint(swing_trade)
+
+    assert legacy.trading_horizon is None
+    assert len({legacy_fingerprint, day_fingerprint, swing_fingerprint}) == 3
+
+    with pytest.raises(InvalidOperationalPaperSessionProfileSpecificationError):
+        _intent(trading_horizon="DAY_TRADE")
 
 
 def test_strategy_snapshot_is_order_independent_and_typed() -> None:
