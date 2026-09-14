@@ -22,10 +22,12 @@ from app.api.routes import (
     admin_operational_mandates,
     admin_operational_market_data_collectors,
     admin_operational_paper_capital_authorizations,
+    admin_operational_paper_capital_eras,
     admin_operational_paper_session_activations,
     admin_operational_paper_session_materializations,
     admin_operational_paper_session_profiles,
     admin_operational_paper_session_runs,
+    admin_operational_paper_session_settlements,
     admin_paper_chart_annotations,
     admin_paper_dashboard,
     admin_paper_journal,
@@ -357,8 +359,10 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(admin_operational_mandates.router)
     application.include_router(admin_operational_market_data_collectors.router)
     application.include_router(admin_operational_paper_capital_authorizations.router)
+    application.include_router(admin_operational_paper_capital_eras.router)
     application.include_router(admin_operational_paper_session_activations.router)
     application.include_router(admin_operational_paper_session_runs.router)
+    application.include_router(admin_operational_paper_session_settlements.router)
     application.include_router(admin_operational_paper_session_materializations.router)
     application.include_router(admin_operational_paper_session_profiles.router)
     application.include_router(admin_worker_observability.router)

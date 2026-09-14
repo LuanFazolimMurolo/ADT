@@ -6,6 +6,7 @@ from typing import cast
 from fastapi import Depends, Request
 
 from app.auth import SupabaseJWTVerifier
+from app.core.config import Settings
 from app.database import Database
 from app.market_data.asset_catalog import AssetMarketService
 from app.market_data.candle_query import LocalMarketCandleReadService
@@ -27,6 +28,7 @@ from app.paper_trading.portfolio_timeline_query import (
 )
 from app.paper_trading.query import PaperTradingReadService
 from app.paper_trading.repository import PaperTradingRepository
+from app.paper_trading.service import PaperTradingService
 from app.repositories import (
     AdminRepository,
     CapitalMovementRepository,
@@ -43,6 +45,9 @@ from app.repositories.operational_market_data_collectors import (
 from app.repositories.operational_paper_capital_authorizations import (
     PostgresOperationalPaperCapitalAuthorizationRepository,
 )
+from app.repositories.operational_paper_capital_eras import (
+    PostgresOperationalPaperCapitalEraRepository,
+)
 from app.repositories.operational_paper_session_activations import (
     PostgresOperationalPaperSessionActivationRepository,
 )
@@ -54,6 +59,9 @@ from app.repositories.operational_paper_session_profiles import (
 )
 from app.repositories.operational_paper_session_runs import (
     PostgresOperationalPaperSessionRunRepository,
+)
+from app.repositories.operational_paper_session_settlements import (
+    PostgresOperationalPaperSessionSettlementRepository,
 )
 from app.services import (
     AdminService,
@@ -72,8 +80,14 @@ from app.services import (
 from app.services.operational_market_data_collectors import (
     OperationalMarketDataCollectorService,
 )
+from app.services.operational_paper_capital_eras import (
+    OperationalPaperCapitalEraService,
+)
 from app.services.operational_paper_session_runs import (
     OperationalPaperSessionRunService,
+)
+from app.services.operational_paper_session_settlements import (
+    OperationalPaperSessionSettlementService,
 )
 from app.strategies import StrategyDefinitionService, builtin_indicator_capabilities
 from app.strategies.registry import StrategyPluginRegistry
@@ -400,5 +414,39 @@ def get_operational_paper_session_profile_service(
     return OperationalPaperSessionProfileService(
         repository=PostgresOperationalPaperSessionProfileRepository(database),
         registry=StrategyPluginRegistry.builtins(),
+        clock=lambda: datetime.now(UTC),
+    )
+
+
+def get_operational_paper_capital_era_service(
+    database: Database = Depends(get_database),
+) -> OperationalPaperCapitalEraService:
+    """Build the official operational paper-capital era application service."""
+
+    return OperationalPaperCapitalEraService(
+        repository=PostgresOperationalPaperCapitalEraRepository(database),
+        clock=lambda: datetime.now(UTC),
+    )
+
+
+def get_operational_paper_session_settlement_service(
+    request: Request,
+    database: Database = Depends(get_database),
+    paper_repository: PaperTradingRepository = Depends(get_paper_trading_repository),
+) -> OperationalPaperSessionSettlementService:
+    """Build the verified operational paper-session settlement service."""
+
+    settings = cast(Settings, request.app.state.settings)
+    paper_service = PaperTradingService(
+        settings.data_dir,
+        repository=paper_repository,
+        lock_timeout_seconds=settings.market_job_lock_timeout,
+        lock_stale_after_seconds=settings.market_job_stale_after,
+    )
+
+    return OperationalPaperSessionSettlementService(
+        repository=PostgresOperationalPaperSessionSettlementRepository(database),
+        run_repository=PostgresOperationalPaperSessionRunRepository(database),
+        paper_service=paper_service,
         clock=lambda: datetime.now(UTC),
     )
