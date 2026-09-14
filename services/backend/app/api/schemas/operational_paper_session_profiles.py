@@ -52,6 +52,7 @@ from app.operational_paper_session_profiles import (
     OperationalPaperSessionProfileSpecification,
     OperationalPaperSessionProfileState,
     OperationalPaperSessionProfileStrategySnapshot,
+    TradingHorizon,
 )
 from app.operational_paper_session_profiles.errors import (
     InvalidOperationalPaperSessionProfileSpecificationError,
@@ -268,6 +269,7 @@ class OperationalPaperSessionProfileIntentRequest(ApiSchema):
     mandate_binding: OperationalPaperSessionProfileMandateBindingRequest
     selected_instrument: OperationalPaperSessionProfileInstrumentRequest
     timeframe: str = Field(strict=True)
+    trading_horizon: TradingHorizon
     start_at: datetime
     warmup_candles: int = Field(
         strict=True,
@@ -330,6 +332,7 @@ class OperationalPaperSessionProfileIntentRequest(ApiSchema):
                 mandate_binding=self.mandate_binding.to_domain(),
                 selected_instrument=self.selected_instrument.to_domain(),
                 timeframe=TIMEFRAMES[self.timeframe],
+                trading_horizon=self.trading_horizon,
                 start_at=self.start_at,
                 warmup_candles=self.warmup_candles,
                 strategy_definition_id=self.strategy_definition_id,
@@ -619,6 +622,7 @@ class OperationalPaperSessionProfileSpecificationResponse(ApiSchema):
     mandate_binding: OperationalPaperSessionProfileMandateBindingResponse
     selected_instrument: OperationalPaperSessionProfileInstrumentResponse
     timeframe: str
+    trading_horizon: TradingHorizon | None
     start_at: datetime
     warmup_candles: int
     strategy_snapshot: OperationalPaperSessionProfileStrategySnapshotResponse
@@ -647,6 +651,7 @@ class OperationalPaperSessionProfileSpecificationResponse(ApiSchema):
                 specification.selected_instrument
             ),
             timeframe=specification.timeframe.code,
+            trading_horizon=specification.trading_horizon,
             start_at=specification.start_at,
             warmup_candles=specification.warmup_candles,
             strategy_snapshot=(

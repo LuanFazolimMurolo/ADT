@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Final, cast
@@ -18,6 +19,9 @@ from app.api.dependencies.resources import (
     get_operational_paper_session_profile_service,
 )
 from app.api.routes import admin_operational_paper_session_profiles
+from app.api.schemas.operational_paper_session_profiles import (
+    OperationalPaperSessionProfileSpecificationResponse,
+)
 from app.backtesting.domain import (
     FeeModel,
     InstrumentConstraints,
@@ -44,6 +48,7 @@ from app.operational_mandates.errors import (
 from app.operational_paper_session_profiles import (
     MAX_OPERATIONAL_PAPER_SESSION_PROFILE_DESCRIPTION_LENGTH,
     MAX_OPERATIONAL_PAPER_SESSION_PROFILE_NAME_LENGTH,
+    OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION,
     OPERATIONAL_PAPER_SESSION_PROFILE_SPEC_SCHEMA_VERSION,
     OperationalPaperSessionProfile,
     OperationalPaperSessionProfileCreateIntent,
@@ -52,6 +57,7 @@ from app.operational_paper_session_profiles import (
     OperationalPaperSessionProfileSpecification,
     OperationalPaperSessionProfileState,
     OperationalPaperSessionProfileStrategySnapshot,
+    TradingHorizon,
     build_operational_paper_session_profile_strategy_snapshot,
     operational_paper_session_profile_specification_checksum,
 )
@@ -168,6 +174,7 @@ def _intent() -> OperationalPaperSessionProfileCreateIntent:
         mandate_binding=_binding(),
         selected_instrument=_instrument(),
         timeframe=TIMEFRAMES["1h"],
+        trading_horizon=TradingHorizon.DAY_TRADE,
         start_at=NOW,
         warmup_candles=20,
         strategy_definition_id=STRATEGY_ID,
@@ -298,6 +305,7 @@ def _intent_payload() -> dict[str, object]:
             "quote_asset": "usdt",
         },
         "timeframe": "1h",
+        "trading_horizon": "DAY_TRADE",
         "start_at": NOW.isoformat(),
         "warmup_candles": 20,
         "strategy_definition_id": str(STRATEGY_ID),
@@ -366,6 +374,7 @@ def _expected_specification_json() -> dict[str, object]:
             "quote_asset": "USDT",
         },
         "timeframe": "1h",
+        "trading_horizon": None,
         "start_at": NOW.isoformat().replace("+00:00", "Z"),
         "warmup_candles": 20,
         "strategy_snapshot": {
@@ -749,6 +758,78 @@ async def test_create_replay_uses_same_endpoint_and_deterministic_response(
     assert first.status_code == second.status_code == 201
     assert first.json() == second.json()
     assert api[1].create_call == (_intent(), ADMIN_ID, IDEMPOTENCY_KEY)
+
+
+@pytest.mark.asyncio
+async def test_create_requires_and_forwards_exact_reviewed_trading_horizon(
+    client: AsyncClient,
+    api: tuple[FastAPI, FakeProfileService, FakeJWTVerifier, FakeAdminService],
+) -> None:
+    missing_intent = _intent_payload()
+    missing_intent.pop("trading_horizon")
+
+    missing = await client.post(
+        PREFIX,
+        headers=AUTH_HEADERS,
+        json={
+            "intent": missing_intent,
+            "idempotency_key": IDEMPOTENCY_KEY,
+        },
+    )
+
+    assert missing.status_code == 422
+    assert api[1].create_call is None
+
+    invalid_intent = _intent_payload()
+    invalid_intent["trading_horizon"] = "INTRADAY"
+
+    invalid = await client.post(
+        PREFIX,
+        headers=AUTH_HEADERS,
+        json={
+            "intent": invalid_intent,
+            "idempotency_key": IDEMPOTENCY_KEY,
+        },
+    )
+
+    assert invalid.status_code == 422
+    assert api[1].create_call is None
+
+    swing_intent = _intent_payload()
+    swing_intent["trading_horizon"] = "SWING_TRADE"
+
+    accepted = await client.post(
+        PREFIX,
+        headers=AUTH_HEADERS,
+        json={
+            "intent": swing_intent,
+            "idempotency_key": IDEMPOTENCY_KEY,
+        },
+    )
+
+    assert accepted.status_code == 201
+    assert api[1].create_call is not None
+    assert api[1].create_call[0].trading_horizon is TradingHorizon.SWING_TRADE
+
+
+def test_specification_response_preserves_legacy_null_and_reviewed_horizon() -> None:
+    legacy = OperationalPaperSessionProfileSpecificationResponse.from_domain(_specification())
+
+    assert legacy.trading_horizon is None
+    assert legacy.model_dump(mode="json")["trading_horizon"] is None
+
+    horizon_specification = replace(
+        _specification(),
+        schema_version=(OPERATIONAL_PAPER_SESSION_PROFILE_HORIZON_SPEC_SCHEMA_VERSION),
+        trading_horizon=TradingHorizon.SWING_TRADE,
+    )
+
+    reviewed = OperationalPaperSessionProfileSpecificationResponse.from_domain(
+        horizon_specification
+    )
+
+    assert reviewed.trading_horizon is TradingHorizon.SWING_TRADE
+    assert reviewed.model_dump(mode="json")["trading_horizon"] == "SWING_TRADE"
 
 
 @pytest.mark.asyncio
@@ -1220,6 +1301,55 @@ async def test_archive_surfaces_not_found_and_conflicts(
 
     assert response.status_code in {404, 409}
     assert response.json()["error"]["code"] == error.code
+
+
+def test_openapi_exposes_reviewed_trading_horizon_contract(
+    api: tuple[FastAPI, FakeProfileService, FakeJWTVerifier, FakeAdminService],
+) -> None:
+    schema = api[0].openapi()
+
+    components = cast(
+        dict[str, object],
+        schema["components"],
+    )
+    schemas = cast(
+        dict[str, dict[str, object]],
+        components["schemas"],
+    )
+
+    intent_schema = schemas["OperationalPaperSessionProfileIntentRequest"]
+    intent_properties = cast(
+        dict[str, object],
+        intent_schema["properties"],
+    )
+    intent_required = cast(
+        list[str],
+        intent_schema["required"],
+    )
+
+    assert "trading_horizon" in intent_properties
+    assert "trading_horizon" in intent_required
+
+    response_schema = schemas["OperationalPaperSessionProfileSpecificationResponse"]
+    response_properties = cast(
+        dict[str, object],
+        response_schema["properties"],
+    )
+    response_required = cast(
+        list[str],
+        response_schema["required"],
+    )
+
+    assert "trading_horizon" in response_properties
+    assert "trading_horizon" in response_required
+
+    horizon_schema = schemas["TradingHorizon"]
+
+    assert horizon_schema["type"] == "string"
+    assert horizon_schema["enum"] == [
+        "DAY_TRADE",
+        "SWING_TRADE",
+    ]
 
 
 def test_router_and_openapi_expose_exactly_eight_protected_operations(
