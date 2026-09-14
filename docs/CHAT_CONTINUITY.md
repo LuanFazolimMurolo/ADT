@@ -57,19 +57,57 @@ performed. After the database returned healthy, the read-only migration list
 and dry-run both passed.
 
 **Current remote migration state**:
-**APPLIED / SYNCHRONIZED THROUGH `20260909000000`**.
+**APPLIED / SYNCHRONIZED THROUGH `20260913000000`**.
 
-Phase 7 remains **ACTIVE**. Exactly two roadmap deliverables remain open:
+Phase 7-14 published the reviewed migrations
+`20260912000000_phase_7_14_official_paper_capital_eras_session_settlements.sql`
+and
+`20260913000000_phase_7_14_official_paper_settlement_finality_guards.sql`.
+Post-publication `migration list --linked` showed both Local = Remote, and the
+final `db push --linked --dry-run` reported `Remote database is up to date.`
 
-- reviewed trading-horizon labels after their own contract matures; and
-- ledger/session foundations required by a future ADT Official Portfolio and
-  official paper capital, without claiming that portfolio is already
-  implemented.
+Phase 7 remains **ACTIVE**. Exactly one roadmap deliverable remains open:
+
+- reviewed trading-horizon labels after their own contract matures.
+
+The ledger/session foundation required before a future ADT Official Portfolio
+is now delivered by Phase 7-14. This does **not** mean that the ADT Official
+Portfolio itself, its public aggregate projections, positions, unified equity
+curve or portfolio-level history are implemented.
 
 No exchange credentials, live orders, fills or real-capital authority were
-introduced by 7-13.
+introduced by 7-14.
 
 ## Last completed track
+
+**7-14 — Official Paper Capital Era & Session Settlement Foundation —
+COMPLETE / CLOSED**
+
+Validated implementation baseline before documentation closure:
+
+`2d75d406bb6afc6210eda6b7a692899321380a5c`
+
+Phase 7-14 now provides immutable official paper capital eras, exact
+session/epoch/capital provenance, terminal replay-verified settlement, atomic
+PnL posting and authorization consumption, session financial finality,
+stale-epoch settlement rejection, official-simulation finality guards and
+bounded administrator settlement transport.
+
+The final technical validation passed `4930` backend tests with one expected
+skip at `88%` coverage, `276/276` Vitest tests, `56/56` Playwright tests,
+OpenAPI contract verification, lint, TypeScript checks, build and bundle
+budget. Migrations `20260912000000` and `20260913000000` are applied remotely
+and synchronized.
+
+The ADT Official Portfolio remains future scope.
+
+Completion evidence:
+[`PHASE7_14_OFFICIAL_PAPER_CAPITAL_ERA_SESSION_SETTLEMENT_COMPLETION_EVIDENCE.md`](./PHASE7_14_OFFICIAL_PAPER_CAPITAL_ERA_SESSION_SETTLEMENT_COMPLETION_EVIDENCE.md)
+
+Architecture record:
+[`adr/0008-phase-7-14-official-paper-capital-era-session-settlement-foundation.md`](./adr/0008-phase-7-14-official-paper-capital-era-session-settlement-foundation.md)
+
+## Previous completed track
 
 **7-13 — Phase 2D Operational Administration Closure & Contract
 Reconciliation — COMPLETE / CLOSED / INTEGRATED INTO `main`**
@@ -85,9 +123,11 @@ test code or PostgreSQL migration.
 Evidence:
 [`PHASE2D_OPERATIONAL_ADMINISTRATION_COMPLETION_EVIDENCE.md`](./PHASE2D_OPERATIONAL_ADMINISTRATION_COMPLETION_EVIDENCE.md).
 
-The linked ADT Supabase migration history remains synchronized through
-`20260909000000`, and the final read-only `db push --dry-run` reported the
-remote database up to date.
+At the 7-13 closure, the linked ADT Supabase migration history was
+synchronized through `20260909000000`, and its final read-only
+`db push --dry-run` reported the remote database up to date. The current
+repository-wide remote state is recorded above and now extends through
+`20260913000000` after 7-14.
 
 Previously closed Phase 7 deliveries remain closed:
 
@@ -109,7 +149,7 @@ Previously closed Phase 7 deliveries remain closed:
 
 ## Last validated implementation milestone
 
-`47b89fd6fcb1702b6df093c7a10c1ff1122d4fc9`
+`2d75d406bb6afc6210eda6b7a692899321380a5c`
 
 ## Validated 7-09 technical candidate tree
 

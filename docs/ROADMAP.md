@@ -900,7 +900,7 @@ ADT Official Portfolio. The exact current handoff is maintained in
       operational paper-session profiles
 - [x] Materialize an approved profile plus authoritative capital into the
       existing immutable local `PaperSessionConfig`
-- [ ] Establish the ledger and session foundations required by a future ADT
+- [x] Establish the ledger and session foundations required by a future ADT
       Official Portfolio and official paper capital without claiming that
       portfolio is already implemented
 - [x] Show worker health, leases, progress, errors and audit events
@@ -911,6 +911,77 @@ ADT Official Portfolio. The exact current handoff is maintained in
 **Dependencies**: Phase 6 complete
 **Estimated Duration**: 4 weeks
 **Blockers**: Reviewed PostgreSQL operational migrations and persistent worker host
+
+### 7-14 — Official Paper Capital Era & Session Settlement Foundation ✅
+
+**Status**: **COMPLETE / CLOSED**. Phase 7-14 establishes the reviewed
+financial/session foundation required before a future ADT Official Portfolio can
+be implemented, without claiming that the public or aggregate Official
+Portfolio itself exists.
+
+Delivered authority and invariants include:
+
+- immutable/versioned official paper capital eras tied to the existing
+  simulation and capital-ledger authority;
+- exact session-to-era provenance through simulation, run epoch, capital
+  authorization, `session_id`, `config_checksum` and persisted paper-state
+  evidence;
+- terminal, immutable and exactly-once session settlement evidence;
+- settlement only from replay-verified, terminal-flat paper-session state;
+- positive settlement delta posted exactly once as `TRADE_PROFIT`, negative
+  delta as negative `TRADE_LOSS`, and zero delta with no PnL movement;
+- fees remaining inside realized PnL and slippage remaining audit evidence, so
+  settlement does not double-post either economic effect;
+- atomic `AUTHORIZED -> REVOKED` consumption of the exact operational paper
+  capital authorization in the same settlement transaction;
+- session financial finality: a settled `session_id` cannot be started again;
+- stale-epoch protection: an older STOPPED epoch cannot be settled after a
+  later START already exists for the same `session_id`;
+- official-simulation terminalization protection while authorized capital,
+  non-terminal runs or run history lacking exact settlement remain;
+- bounded administrator HTTP operations for capital-era designation,
+  settlement eligibility inspection and explicit settlement, with no
+  browser-provided financial or artifact authority;
+- backend-only PostgreSQL authority with RLS/Data API denial and immutable
+  settlement evidence.
+
+Reviewed migrations:
+
+- `supabase/migrations/20260912000000_phase_7_14_official_paper_capital_eras_session_settlements.sql`;
+- `supabase/migrations/20260913000000_phase_7_14_official_paper_settlement_finality_guards.sql`.
+
+Both migrations are applied remotely and local/remote migration history is in
+parity through `20260913000000`. The final linked
+`supabase db push --dry-run` reported `Remote database is up to date.`
+
+Integrated closure validation passed:
+
+- backend full suite: `4930 passed, 1 skipped, 3 warnings`, `88%` coverage;
+- frontend Vitest: `32/32` files and `276/276` tests;
+- Playwright: `56/56`;
+- OpenAPI generated-contract check;
+- frontend lint and both TypeScript checks;
+- production frontend build;
+- bundle-budget validation.
+
+The validated implementation baseline immediately before this documentation
+closure is:
+
+`2d75d406bb6afc6210eda6b7a692899321380a5c`
+
+The ADT Official Portfolio remains a separate future product contract. Phase
+7-14 does **not** implement public portfolio aggregation, public positions,
+portfolio-level equity/drawdown history, Confidence Score, Telegram,
+subscriptions/billing, exchange credentials, live orders or real-capital
+execution.
+
+**Architecture decision**:
+[`docs/adr/0008-phase-7-14-official-paper-capital-era-session-settlement-foundation.md`](./adr/0008-phase-7-14-official-paper-capital-era-session-settlement-foundation.md)
+
+**Completion evidence**:
+[`docs/PHASE7_14_OFFICIAL_PAPER_CAPITAL_ERA_SESSION_SETTLEMENT_COMPLETION_EVIDENCE.md`](./PHASE7_14_OFFICIAL_PAPER_CAPITAL_ERA_SESSION_SETTLEMENT_COMPLETION_EVIDENCE.md)
+
+---
 
 ### 7-13 — Phase 2D Operational Administration Closure & Contract Reconciliation ✅
 

@@ -99,9 +99,15 @@ For example, Era 1 may begin at `10,000` and end at `18,700`, while Era 2 begins
 at `1,000,000`. Both eras remain independently inspectable, with explicit
 boundaries and preserved history.
 
-The Official Portfolio and capital-era model are future product contracts. They
-must not be described as implemented until their technical delivery and gates
-are complete.
+Phase 7-14 implements the immutable capital-era and terminal
+session-settlement **foundation** required by this direction. That foundation
+does not implement the ADT Official Portfolio itself.
+
+The aggregate/public Official Portfolio, including authoritative portfolio-wide
+positions, cash/equity projections, cumulative performance, drawdown, unified
+equity curve and public portfolio history, remains a future product contract
+and must not be described as implemented until its own technical delivery and
+gates are complete.
 
 ## ADT Confidence Score
 
