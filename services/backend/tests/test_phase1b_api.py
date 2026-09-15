@@ -614,18 +614,19 @@ async def test_administrator_can_create_simulation_with_decimal_capital(
         json={
             "name": "  Simulação nova  ",
             "initial_capital": "2500.12500000",
-            "currency": "BRL",
+            "currency": "USDT",
         },
     )
 
     assert response.status_code == 201
+    assert response.json()["currency"] == "USDT"
     assert response.json()["initial_capital"] == "2500.12500000"
     assert response.json()["current_balance"] == "2500.12500000"
     assert api_harness.simulation_service.create_calls == [
         SimulationCreateCall(
             name="Simulação nova",
             initial_capital=Decimal("2500.12500000"),
-            currency="BRL",
+            currency="USDT",
             created_by=ADMIN_ID,
         )
     ]

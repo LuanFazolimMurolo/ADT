@@ -38,6 +38,33 @@ def test_simulation_create_strips_text_and_preserves_decimal_in_json() -> None:
     assert json.loads(request.model_dump_json())["initial_capital"] == "100000.12345678"
 
 
+def test_simulation_create_accepts_canonical_asset_currency() -> None:
+    request = SimulationCreateRequest.model_validate(
+        {
+            "name": "Paper USDT",
+            "initial_capital": "10000.00",
+            "currency": "USDT",
+        },
+    )
+
+    assert request.currency == "USDT"
+
+
+@pytest.mark.parametrize(
+    "currency",
+    ["", "usd", "BTC/USDT", "US DT", "_USDT", "A" * 33],
+)
+def test_simulation_create_rejects_invalid_asset_currency(currency: str) -> None:
+    with pytest.raises(ValidationError):
+        SimulationCreateRequest.model_validate(
+            {
+                "name": "Simulation",
+                "initial_capital": "1000",
+                "currency": currency,
+            },
+        )
+
+
 @pytest.mark.parametrize(
     "capital",
     ["0", "-1", "NaN", "Infinity", "-Infinity", "1.123456789", "1000000000000"],

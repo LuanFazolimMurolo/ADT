@@ -27,7 +27,12 @@ SimulationName = Annotated[
 ]
 CurrencyCode = Annotated[
     str,
-    StringConstraints(strip_whitespace=True, min_length=3, max_length=3, pattern=r"^[A-Z]{3}$"),
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=32,
+        pattern=r"^[A-Z0-9][A-Z0-9._-]{0,31}$",
+    ),
 ]
 
 
