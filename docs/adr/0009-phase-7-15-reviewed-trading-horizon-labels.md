@@ -279,6 +279,65 @@ Phase 7-15 does not add:
 - roadmap/handoff closure;
 - pure fast-forward publication.
 
+Gate 5 result: **PASS / CLOSED**.
+
+## Closure evidence
+
+Integrated implementation milestone:
+
+`17bfaec88be5aa5c5b3c116ed016c63603b4465d`
+
+Integrated tree:
+
+`4574eb7dad5b84c70478a093d655747aa184bf72`
+
+The feature branch and remote `main` were verified identical after publication.
+
+Migration:
+
+`20260914000000_phase_7_15_reviewed_trading_horizon_labels.sql`
+
+is remotely applied and synchronized. Final linked dry-run reported:
+
+`Remote database is up to date.`
+
+Direct remote schema inspection confirmed:
+
+- nullable `trading_horizon text` on
+  `public.operational_paper_session_profile_revisions`;
+- schema version `1` requires `trading_horizon IS NULL`;
+- schema version `2` requires `trading_horizon IS NOT NULL`;
+- schema version `2` accepts only `DAY_TRADE` or `SWING_TRADE`.
+
+Final technical validation:
+
+- full backend: `4947 passed`, `1 skipped`, `3 warnings`, `88%` coverage;
+- integrated horizon regression: `393 passed`;
+- Ruff check: PASS;
+- MyPy: PASS in `289` source files;
+- `pip check`: PASS;
+- full frontend Vitest: `277/277`;
+- Playwright: `56/56`;
+- generated OpenAPI, lint, TypeScript checks, production build and bundle
+  budget: PASS.
+
+Full-tree `ruff format --check` reported two unchanged pre-existing Phase 7-14
+files. Their blobs are identical to the starting `origin/main`, Phase 7-15 did
+not modify them, and all 15 Python files changed by Phase 7-15 pass both
+`ruff format --check` and `ruff check`.
+
+Completion evidence:
+
+`docs/PHASE7_15_REVIEWED_TRADING_HORIZON_LABELS_COMPLETION_EVIDENCE.md`
+
+Phase 7-15 is **COMPLETE / CLOSED / INTEGRATED INTO `main`**.
+
+Because reviewed trading-horizon labels were the sole remaining Phase 7 roadmap
+deliverable, Phase 7 — Operational Control Plane is **COMPLETE / CLOSED**.
+
+Phase 8 is roadmap-unblocked by the completed Phase 7 dependency, but it has not
+been started or selected for implementation by this closure.
+
 ## Consequences
 
 Trading-horizon labels become durable reviewed session identity rather than UI

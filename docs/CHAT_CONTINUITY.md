@@ -1,6 +1,6 @@
 # ADT Current Development Handoff
 
-Last updated: 2026-09-10
+Last updated: 2026-09-14
 
 ## Current branch
 
@@ -12,73 +12,122 @@ remains the evidence of the repository's actual state.
 
 ## Current phase
 
-**Phase 7 — Operational Control Plane — ACTIVE**
+**Phase 7 — Operational Control Plane — COMPLETE / CLOSED**
 
-Phase 6 is complete and versioned. Phase 7 remains active and is not complete.
+Phase 6 is complete and versioned. Phase 7 is now complete, closed and
+integrated into `main`.
+
+Phase 7-15 closed the sole remaining Phase 7 roadmap deliverable: reviewed
+trading-horizon labels.
+
+Phase 8 — Machine Learning and Recommendation is now roadmap-unblocked by its
+`Phase 7 complete` dependency, but Phase 8 has not been started or selected for
+implementation by this closure.
 
 ## Current delivery
 
-**7-13 — Phase 2D Operational Administration Closure & Contract
-Reconciliation — COMPLETE / CLOSED / INTEGRATED INTO `main`**
+**7-15 — Reviewed Trading-Horizon Labels — COMPLETE / CLOSED / INTEGRATED
+INTO `main`**
 
-Starting main baseline:
-`1fdb703fca66f9a25080d31c0d42ec0154685bf3`.
+Starting remote `main` baseline:
 
-Integrated evidence milestone:
-`23e220eec0004b15dd4ccc44571f6fc16e8cf0bb`, tree
-`67e7cf2ea01401015468fac9f0961d2907511b67`.
+`326bb9fa7056f320b58e37e2cded5382d71779d7`
 
-Gate 1 — historical Phase 2D completion-evidence audit:
-**CLOSED / PASS**.
+Integrated implementation milestone:
 
-Gate 2A — dedicated completion-evidence artifact:
-**CLOSED / PASS**.
+`17bfaec88be5aa5c5b3c116ed016c63603b4465d`
 
-Gate 2B — evidence publication, pure-fast-forward `main` integration and remote
-schema sentinel:
-**CLOSED / PASS**.
+Integrated tree:
 
-The historical Phase 2D contract now has all **14 / 14 completion criteria
-SATISFIED**, with **0 functional gaps** identified.
+`4574eb7dad5b84c70478a093d655747aa184bf72`
 
-The immutable completion evidence is recorded in
-[`PHASE2D_OPERATIONAL_ADMINISTRATION_COMPLETION_EVIDENCE.md`](./PHASE2D_OPERATIONAL_ADMINISTRATION_COMPLETION_EVIDENCE.md).
+Phase 7-15 delivers explicit administrator-reviewed `DAY_TRADE` and
+`SWING_TRADE` classification as operational paper-session profile authority and
+identity-bearing paper-session metadata.
 
-Track 7-13 introduced no production-code, test-code or migration changes.
-The linked ADT Supabase migration history was verified at exact local/remote
-parity through `20260909000000`, and `db push --dry-run` reported:
+The horizon is never inferred from timeframe and does not itself force
+liquidation, maximum holding duration or exchange-calendar behavior.
+
+Profile schema version `1` remains valid and unlabeled. New schema-version `2`
+profiles require a reviewed horizon. Materialized schema-v2 profiles produce
+`PaperSessionConfig` schema version `3`, where the horizon participates in the
+config checksum and paper-session identity.
+
+Historical profile/config/session identities remain compatible.
+
+Migration:
+
+`20260914000000_phase_7_15_reviewed_trading_horizon_labels.sql`
+
+is remotely applied and synchronized through `20260914000000`.
+
+Final linked dry-run reported:
 
 `Remote database is up to date.`
 
-During Gate 2B, the schema sentinel was temporarily blocked by an external
-Supabase connection timeout while the project reported unhealthy resource
-state. No repository rollback, migration application or schema mutation was
-performed. After the database returned healthy, the read-only migration list
-and dry-run both passed.
+Direct remote schema inspection confirmed the exact schema-v1/schema-v2
+trading-horizon constraint.
 
-**Current remote migration state**:
-**APPLIED / SYNCHRONIZED THROUGH `20260913000000`**.
+Final validation evidence:
 
-Phase 7-14 published the reviewed migrations
-`20260912000000_phase_7_14_official_paper_capital_eras_session_settlements.sql`
-and
-`20260913000000_phase_7_14_official_paper_settlement_finality_guards.sql`.
-Post-publication `migration list --linked` showed both Local = Remote, and the
-final `db push --linked --dry-run` reported `Remote database is up to date.`
+- full backend: `4947 passed`, `1 skipped`, `3 warnings`, `88%` coverage;
+- integrated horizon regression: `393 passed`;
+- Ruff check: PASS;
+- MyPy: PASS in `289` source files;
+- `pip check`: PASS;
+- full frontend Vitest: `277/277`;
+- Playwright: `56/56`;
+- generated OpenAPI, lint, TypeScript checks, production build and bundle
+  budget: PASS;
+- full-tree Ruff format exception: PRE-EXISTING in two unchanged Phase 7-14
+  files;
+- all 15 Python files changed by Phase 7-15 pass both Ruff format and Ruff
+  checks.
 
-Phase 7 remains **ACTIVE**. Exactly one roadmap deliverable remains open:
+The implementation feature branch was published and remote `main` was then
+advanced by verified pure fast-forward.
 
-- reviewed trading-horizon labels after their own contract matures.
+Remote `main` and
+`feat/phase-7-15-reviewed-trading-horizon-labels` were independently verified
+identical afterward.
 
-The ledger/session foundation required before a future ADT Official Portfolio
-is now delivered by Phase 7-14. This does **not** mean that the ADT Official
-Portfolio itself, its public aggregate projections, positions, unified equity
-curve or portfolio-level history are implemented.
+Completion evidence:
 
-No exchange credentials, live orders, fills or real-capital authority were
-introduced by 7-14.
+[`PHASE7_15_REVIEWED_TRADING_HORIZON_LABELS_COMPLETION_EVIDENCE.md`](./PHASE7_15_REVIEWED_TRADING_HORIZON_LABELS_COMPLETION_EVIDENCE.md)
+
+Architecture record:
+
+[`adr/0009-phase-7-15-reviewed-trading-horizon-labels.md`](./adr/0009-phase-7-15-reviewed-trading-horizon-labels.md)
+
+Phase 7-15 was the final open Phase 7 roadmap deliverable.
+
+**Phase 7 — Operational Control Plane is COMPLETE / CLOSED.**
+
+The ADT Official Portfolio, ADT Confidence Score, machine learning, Telegram
+distribution, subscriber/billing scope and automated real-capital execution
+remain future scope.
 
 ## Last completed track
+
+**7-15 — Reviewed Trading-Horizon Labels — COMPLETE / CLOSED / INTEGRATED
+INTO `main`**
+
+Integrated implementation milestone:
+
+`17bfaec88be5aa5c5b3c116ed016c63603b4465d`
+
+Integrated tree:
+
+`4574eb7dad5b84c70478a093d655747aa184bf72`
+
+Completion evidence:
+
+[`PHASE7_15_REVIEWED_TRADING_HORIZON_LABELS_COMPLETION_EVIDENCE.md`](./PHASE7_15_REVIEWED_TRADING_HORIZON_LABELS_COMPLETION_EVIDENCE.md)
+
+This track closed the final Phase 7 roadmap deliverable and therefore closed
+Phase 7 itself.
+
+## Previous completed track — 7-14
 
 **7-14 — Official Paper Capital Era & Session Settlement Foundation —
 COMPLETE / CLOSED**
@@ -149,7 +198,7 @@ Previously closed Phase 7 deliveries remain closed:
 
 ## Last validated implementation milestone
 
-`2d75d406bb6afc6210eda6b7a692899321380a5c`
+`17bfaec88be5aa5c5b3c116ed016c63603b4465d`
 
 ## Validated 7-09 technical candidate tree
 

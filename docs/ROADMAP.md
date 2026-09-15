@@ -866,24 +866,36 @@ service validation are not claimed by this local closure record.
 through an authenticated control plane without executing long-running work in
 HTTP requests.
 
-**Status**: Active. Tracks 7-01 through 7-13 are complete, closed and
-integrated into `main`. Track 7-13 — Phase 2D Operational Administration
-Closure & Contract Reconciliation — formally closed the previously approved
-Phase 2D operational-administration boundary with all fourteen historical
-completion criteria satisfied. Its evidence milestone is
-`23e220eec0004b15dd4ccc44571f6fc16e8cf0bb`, tree
-`67e7cf2ea01401015468fac9f0961d2907511b67`.
+**Status**: **COMPLETE / CLOSED**. Tracks 7-01 through 7-15 are complete,
+closed and integrated into `main`.
 
-The linked ADT Supabase migration history remains **APPLIED / SYNCHRONIZED
-THROUGH `20260909000000`**. Track 7-13 introduced no migration. Exact
-local/remote migration-history parity and `db push --dry-run` confirmed that
-the remote database remained up to date after the closure evidence was
-integrated.
+Phase 7-15 — Reviewed Trading-Horizon Labels — closed the final open Phase 7
+roadmap deliverable at integrated implementation milestone
+`17bfaec88be5aa5c5b3c116ed016c63603b4465d`, tree
+`4574eb7dad5b84c70478a093d655747aa184bf72`.
 
-Phase 7 remains active with one open roadmap deliverable: reviewed
-trading-horizon labels. The ledger/session foundation required before a future
-ADT Official Portfolio was completed by Phase 7-14. The exact current handoff
-is maintained in [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
+The linked ADT Supabase migration history is **APPLIED / SYNCHRONIZED THROUGH
+`20260914000000`**. Phase 7-15 published
+`20260914000000_phase_7_15_reviewed_trading_horizon_labels.sql`.
+
+Post-publication migration history showed exact Local = Remote parity and the
+final linked dry-run reported:
+
+`Remote database is up to date.`
+
+Direct remote schema inspection confirmed nullable `trading_horizon text` on
+`operational_paper_session_profile_revisions`, with schema-v1 rows remaining
+unlabeled and schema-v2 rows requiring exactly `DAY_TRADE` or `SWING_TRADE`.
+
+The ledger/session foundation required before a future ADT Official Portfolio
+remains delivered by Phase 7-14. The ADT Official Portfolio itself remains
+future scope.
+
+Phase 8 is now unblocked by its `Phase 7 complete` roadmap dependency, but
+Phase 8 has not been started or selected for implementation by this closure.
+
+The exact current handoff is maintained in
+[`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 ### Phase 7 remaining deliverables
 - [x] Define administrator-approved operational mandates for assets, markets
@@ -892,7 +904,7 @@ is maintained in [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
       profiles through the administrative frontend
 - [x] Select canonical timeframes, strategies, sizing, fees, execution
       assumptions and risk policies inside explicit approved mandates
-- [ ] Add trading-horizon labels only after their own reviewed contract matures
+- [x] Add trading-horizon labels only after their own reviewed contract matures
 - [x] Submit and monitor bounded market-data synchronization operations
 - [x] Start, pause, resume and stop durable collectors and paper runners
 - [x] Reconcile abandoned work after restart
@@ -910,11 +922,11 @@ is maintained in [`CHAT_CONTINUITY.md`](./CHAT_CONTINUITY.md).
 
 **Dependencies**: Phase 6 complete
 **Estimated Duration**: 4 weeks
-**Blockers**: Reviewed PostgreSQL operational migrations and persistent worker host
+**Blockers**: None for the completed Phase 7 boundary
 
-### 7-15 — Reviewed Trading-Horizon Labels 🚧
+### 7-15 — Reviewed Trading-Horizon Labels ✅
 
-**Status**: CONTRACT REVIEW / GATE 1.
+**Status**: **COMPLETE / CLOSED / INTEGRATED INTO `main`**.
 
 **Goal**: Add durable administrator-reviewed `DAY_TRADE` and `SWING_TRADE`
 classification to operational paper-session identity without deriving a label
@@ -927,6 +939,21 @@ strategy authority.
 
 **Architecture decision**:
 [`docs/adr/0009-phase-7-15-reviewed-trading-horizon-labels.md`](./adr/0009-phase-7-15-reviewed-trading-horizon-labels.md)
+
+**Completion evidence**:
+[`docs/PHASE7_15_REVIEWED_TRADING_HORIZON_LABELS_COMPLETION_EVIDENCE.md`](./PHASE7_15_REVIEWED_TRADING_HORIZON_LABELS_COMPLETION_EVIDENCE.md)
+
+Integrated implementation milestone:
+`17bfaec88be5aa5c5b3c116ed016c63603b4465d`.
+
+Integrated tree:
+`4574eb7dad5b84c70478a093d655747aa184bf72`.
+
+Gate 5 is **PASS / CLOSED**. Migration `20260914000000` is remotely applied
+and synchronized, full backend/frontend/E2E validation is complete, and the
+delivery was integrated into `main` by verified pure fast-forward.
+
+Phase 7 — Operational Control Plane is **COMPLETE / CLOSED**.
 
 ---
 
