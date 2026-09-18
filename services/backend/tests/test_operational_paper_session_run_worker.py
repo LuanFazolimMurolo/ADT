@@ -375,6 +375,25 @@ class _FailingControl(_PassingControl):
         return object()
 
 
+class _BlockingControl(_PassingControl):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def validate_execution_eligibility(
+        self,
+        _epoch_id: UUID,
+    ) -> object:
+        self.calls += 1
+
+        if self.calls == 1:
+            self.started.set()
+            await self.release.wait()
+
+        return object()
+
+
 class _CountingPaper:
     def __init__(self) -> None:
         self.calls = 0
@@ -555,6 +574,105 @@ async def test_expired_claim_recovers_same_epoch_with_higher_fence(
             now=now,
             lease_expires_at=now + timedelta(seconds=30),
         )
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_renews_real_postgres_lease_during_slow_eligibility(
+    pg_run_repository: PostgresOperationalPaperSessionRunRepository,
+    pg_pending_epoch: runs.OperationalPaperSessionRunEpoch,
+) -> None:
+    worker_id = uuid4()
+    clock = _StepClock(
+        START_AT + timedelta(seconds=1),
+        step=timedelta(milliseconds=50),
+    )
+    control = _BlockingControl()
+    paper = _CountingPaper()
+
+    worker = _functional_worker(
+        pg_run_repository,
+        control,
+        paper,
+        worker_id=worker_id,
+        clock=clock,
+        policy=OperationalPaperSessionRunWorkerPolicy(
+            lease_duration_seconds=5,
+            heartbeat_interval_seconds=0.01,
+        ),
+    )
+
+    task = asyncio.create_task(
+        worker.run_epoch(
+            pg_pending_epoch.epoch_id,
+            max_cycles=1,
+        )
+    )
+
+    try:
+        await asyncio.wait_for(
+            control.started.wait(),
+            timeout=3,
+        )
+
+        before = await pg_run_repository.get(
+            pg_pending_epoch.epoch_id
+        )
+        assert before is not None
+        assert before.worker_claim is not None
+        assert (
+            before.observed_state
+            is runs.OperationalPaperSessionRunObservedState.STARTING
+        )
+
+        before_heartbeat = before.worker_claim.heartbeat_at
+        before_version = before.record_version
+
+        await asyncio.sleep(0.06)
+
+        during = await pg_run_repository.get(
+            pg_pending_epoch.epoch_id
+        )
+        assert during is not None
+        assert during.worker_claim is not None
+
+        assert during.worker_claim.worker_id == worker_id
+        assert during.worker_claim.fencing_token == 1
+        assert during.worker_claim.heartbeat_at > before_heartbeat
+        assert during.record_version > before_version
+        assert (
+            during.observed_state
+            is runs.OperationalPaperSessionRunObservedState.STARTING
+        )
+        assert paper.calls == 0
+    finally:
+        control.release.set()
+
+    result = await asyncio.wait_for(
+        task,
+        timeout=3,
+    )
+
+    assert result.cycles_completed == 1
+    assert result.exit_code is None
+    assert control.calls == 2
+    assert paper.calls == 1
+    assert paper.session_ids == [pg_pending_epoch.session_id]
+
+    persisted = await pg_run_repository.get(
+        pg_pending_epoch.epoch_id
+    )
+    assert persisted is not None
+    assert (
+        persisted.observed_state
+        is runs.OperationalPaperSessionRunObservedState.RUNNING
+    )
+    assert (
+        persisted.desired_state
+        is runs.OperationalPaperSessionRunDesiredState.RUNNING
+    )
+    assert persisted.worker_claim is not None
+    assert persisted.worker_claim.worker_id == worker_id
+    assert persisted.worker_claim.fencing_token == 1
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,23 @@
+[Unit]
+Description=ADT Operational Market Data Supervisor
+Documentation=https://github.com/LuanFazolimMurolo/ADT
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/programaçao/ADT/services/backend
+EnvironmentFile=%h/programaçao/ADT/.env
+ExecStart=%h/programaçao/ADT/services/backend/.venv/bin/python -m app.runtime.market_data_supervisor
+
+Restart=always
+RestartSec=5s
+
+KillSignal=SIGTERM
+TimeoutStopSec=300s
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=adt-runtime.target

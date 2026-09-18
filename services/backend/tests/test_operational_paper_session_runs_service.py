@@ -354,6 +354,84 @@ async def test_new_start_and_execution_use_real_config_plugin_raw(context: _Cont
 
 
 @pytest.mark.asyncio
+async def test_execution_snapshot_allows_only_same_claim_heartbeat_churn(
+    context: _Context,
+) -> None:
+    epoch = await context.start()
+    worker_id = uuid4()
+
+    claimed = await context.repository.claim(
+        epoch.epoch_id,
+        expected_record_version=epoch.record_version,
+        worker_id=worker_id,
+        now=NOW + timedelta(seconds=1),
+        lease_expires_at=NOW + timedelta(seconds=31),
+    )
+
+    assert claimed.worker_claim is not None
+
+    renewed = await context.repository.renew(
+        epoch.epoch_id,
+        expected_record_version=claimed.record_version,
+        worker_id=worker_id,
+        fencing_token=claimed.worker_claim.fencing_token,
+        now=NOW + timedelta(seconds=2),
+        lease_expires_at=NOW + timedelta(seconds=32),
+    )
+
+    assert renewed.worker_claim is not None
+    assert renewed.record_version > claimed.record_version
+    assert (
+        renewed.worker_claim.heartbeat_at
+        > claimed.worker_claim.heartbeat_at
+    )
+    assert (
+        renewed.worker_claim.lease_expires_at
+        > claimed.worker_claim.lease_expires_at
+    )
+
+    assert context.service._same_execution_snapshot(
+        claimed,
+        renewed,
+    )
+
+
+@pytest.mark.asyncio
+async def test_execution_snapshot_rejects_admin_control_change(
+    context: _Context,
+) -> None:
+    epoch = await context.start()
+    worker_id = uuid4()
+
+    claimed = await context.repository.claim(
+        epoch.epoch_id,
+        expected_record_version=epoch.record_version,
+        worker_id=worker_id,
+        now=NOW + timedelta(seconds=1),
+        lease_expires_at=NOW + timedelta(seconds=31),
+    )
+
+    await context.service.pause(
+        _command(claimed, "PAUSE"),
+        actor_id=context.actor,
+        idempotency_key="snapshot:pause",
+        requested_at=NOW + timedelta(seconds=2),
+    )
+
+    paused = await context.repository.get(epoch.epoch_id)
+
+    assert paused is not None
+    assert (
+        paused.desired_state
+        is runs.OperationalPaperSessionRunDesiredState.PAUSED
+    )
+    assert not context.service._same_execution_snapshot(
+        claimed,
+        paused,
+    )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "target", ["activation", "authorization", "profile", "mandate", "simulation"]
 )
