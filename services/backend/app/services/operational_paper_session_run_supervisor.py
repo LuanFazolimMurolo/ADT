@@ -6,6 +6,7 @@ import asyncio
 import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from uuid import UUID
 
 from app.repositories.operational_paper_session_runs import (
     PostgresOperationalPaperSessionRunRepository,
@@ -96,21 +97,33 @@ class OperationalPaperSessionRunSupervisor:
         )
 
         discovered = len(epochs)
-        processed = 0
-        cycles_completed = 0
-        last_worker_result: OperationalPaperSessionRunWorkerResult | None = None
+        selected_epochs = []
 
         for epoch in epochs:
             if self._stop_requested.is_set():
                 break
+            selected_epochs.append(epoch)
 
-            result = await self._worker.run_epoch(
-                epoch.epoch_id,
-                max_cycles=1,
+        results = await asyncio.gather(
+            *(
+                self._worker.run_epoch(
+                    epoch.epoch_id,
+                    max_cycles=1,
+                )
+                for epoch in selected_epochs
             )
-            processed += 1
-            cycles_completed += result.cycles_completed
-            last_worker_result = result
+        )
+
+        processed = len(results)
+        cycles_completed = sum(
+            result.cycles_completed
+            for result in results
+        )
+        last_worker_result = (
+            results[-1]
+            if results
+            else None
+        )
 
         if discovered < self._policy.page_size:
             next_offset = 0
@@ -132,32 +145,122 @@ class OperationalPaperSessionRunSupervisor:
         *,
         max_polls: int | None = None,
     ) -> OperationalPaperSessionRunSupervisorLoopResult:
-        """Run persistent bounded polls until shutdown or an optional test bound."""
-        if max_polls is not None and (isinstance(max_polls, bool) or max_polls <= 0):
-            raise ValueError("O limite de polls do supervisor paper é inválido.")
+        """Run persistent polling with independent per-epoch cycle scheduling."""
+        if max_polls is not None and (
+            isinstance(max_polls, bool)
+            or max_polls <= 0
+        ):
+            raise ValueError(
+                "O limite de polls do supervisor paper é inválido."
+            )
 
         polls_completed = 0
         epochs_processed = 0
         cycles_completed = 0
         last_worker_result: OperationalPaperSessionRunWorkerResult | None = None
 
-        while not self._stop_requested.is_set():
-            poll = await self.poll_once()
+        active_tasks: dict[
+            UUID,
+            asyncio.Task[
+                OperationalPaperSessionRunWorkerResult
+            ],
+        ] = {}
 
-            polls_completed += 1
-            epochs_processed += poll.epochs_processed
-            cycles_completed += poll.cycles_completed
+        def collect_finished() -> None:
+            nonlocal epochs_processed
+            nonlocal cycles_completed
+            nonlocal last_worker_result
 
-            if poll.last_worker_result is not None:
-                last_worker_result = poll.last_worker_result
+            finished = [
+                epoch_id
+                for epoch_id, task in active_tasks.items()
+                if task.done()
+            ]
 
-            if max_polls is not None and polls_completed >= max_polls:
-                break
+            for epoch_id in finished:
+                task = active_tasks.pop(epoch_id)
+                result = task.result()
 
-            if self._stop_requested.is_set():
-                break
+                epochs_processed += 1
+                cycles_completed += result.cycles_completed
+                last_worker_result = result
 
-            await self._wait_until_next_poll()
+        async def drain_active() -> None:
+            if not active_tasks:
+                return
+
+            await asyncio.gather(
+                *active_tasks.values()
+            )
+            collect_finished()
+
+        try:
+            while not self._stop_requested.is_set():
+                # Reap completed epochs before discovery so a fast
+                # epoch can immediately receive its next bounded
+                # cycle even while a slower sibling is still active.
+                collect_finished()
+
+                epochs = await self._repository.list_nonterminal(
+                    limit=self._policy.page_size,
+                    offset=self._offset,
+                )
+
+                discovered = len(epochs)
+
+                if discovered < self._policy.page_size:
+                    next_offset = 0
+                else:
+                    next_offset = (
+                        self._offset + discovered
+                    )
+
+                self._offset = next_offset
+
+                for epoch in epochs:
+                    if self._stop_requested.is_set():
+                        break
+
+                    if epoch.epoch_id in active_tasks:
+                        continue
+
+                    active_tasks[epoch.epoch_id] = (
+                        asyncio.create_task(
+                            self._worker.run_epoch(
+                                epoch.epoch_id,
+                                max_cycles=1,
+                            )
+                        )
+                    )
+
+                polls_completed += 1
+
+                if (
+                    max_polls is not None
+                    and polls_completed >= max_polls
+                ):
+                    break
+
+                if self._stop_requested.is_set():
+                    break
+
+                await self._wait_until_next_poll()
+
+            await drain_active()
+
+        except asyncio.CancelledError:
+            # A process-level shutdown must stop scheduling new
+            # work and let already-running synchronous paper
+            # cycles reach their safe boundary.
+            self.request_stop()
+
+            if active_tasks:
+                await asyncio.gather(
+                    *active_tasks.values(),
+                    return_exceptions=True,
+                )
+
+            raise
 
         return OperationalPaperSessionRunSupervisorLoopResult(
             polls_completed=polls_completed,

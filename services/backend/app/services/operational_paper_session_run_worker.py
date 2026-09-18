@@ -142,7 +142,10 @@ class OperationalPaperSessionRunWorker:
                     )
 
                 # Fresh eligibility is mandatory before the first and every next cycle.
-                await self._control.validate_execution_eligibility(epoch_id)
+                await self._validate_execution_eligibility_with_heartbeat(
+                    epoch_id,
+                    fence,
+                )
 
                 epoch = await self._latest_owned(epoch_id, fence)
                 if epoch.desired_state is not _Desired.RUNNING:
@@ -301,7 +304,10 @@ class OperationalPaperSessionRunWorker:
             epoch = await self._mark_starting(epoch.epoch_id, fence)
 
         if epoch.observed_state is _Observed.STARTING:
-            await self._control.validate_execution_eligibility(epoch.epoch_id)
+            await self._validate_execution_eligibility_with_heartbeat(
+                epoch.epoch_id,
+                fence,
+            )
             latest = await self._latest_owned(epoch.epoch_id, fence)
             if latest.desired_state is not _Desired.RUNNING:
                 return await self._settle_control_boundary(latest, fence)
@@ -313,6 +319,54 @@ class OperationalPaperSessionRunWorker:
         raise runs.OperationalPaperSessionRunStateTransitionConflictError(
             details={"failure_code": _Code.LOCAL_STATE_INVALID.value}
         )
+
+    async def _validate_execution_eligibility_with_heartbeat(
+        self,
+        epoch_id: UUID,
+        fence: int,
+    ) -> None:
+        """Keep the worker capability alive during fresh eligibility checks."""
+        stop = asyncio.Event()
+        heartbeat = asyncio.create_task(
+            self._heartbeat_loop(epoch_id, fence, stop)
+        )
+
+        cancelled = False
+        validation_error: BaseException | None = None
+
+        try:
+            try:
+                await self._control.validate_execution_eligibility(epoch_id)
+            except asyncio.CancelledError:
+                cancelled = True
+            except BaseException as error:
+                validation_error = error
+        finally:
+            stop.set()
+
+        heartbeat_error: BaseException | None = None
+        if heartbeat.done():
+            try:
+                heartbeat.result()
+            except BaseException as error:
+                heartbeat_error = error
+        else:
+            heartbeat.cancel()
+            try:
+                await heartbeat
+            except asyncio.CancelledError:
+                pass
+            except BaseException as error:
+                heartbeat_error = error
+
+        if cancelled:
+            raise asyncio.CancelledError
+
+        if heartbeat_error is not None:
+            raise heartbeat_error
+
+        if validation_error is not None:
+            raise validation_error
 
     async def _run_cycle_with_heartbeat(
         self,

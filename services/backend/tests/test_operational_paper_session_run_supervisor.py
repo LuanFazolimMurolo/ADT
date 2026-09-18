@@ -89,6 +89,100 @@ class _Worker:
         self.stop_requested = True
 
 
+class _BlockingWorker(_Worker):
+    def __init__(
+        self,
+        *,
+        expected_starts: int,
+    ) -> None:
+        super().__init__()
+        self._expected_starts = expected_starts
+        self.started: list[UUID] = []
+        self.all_started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def run_epoch(
+        self,
+        epoch_id: UUID,
+        *,
+        max_cycles: int | None = None,
+    ) -> OperationalPaperSessionRunWorkerResult:
+        self.calls.append(
+            (
+                epoch_id,
+                max_cycles,
+            )
+        )
+        self.started.append(epoch_id)
+
+        if len(self.started) == self._expected_starts:
+            self.all_started.set()
+
+        await self.release.wait()
+
+        return OperationalPaperSessionRunWorkerResult(
+            cast(
+                runs.OperationalPaperSessionRunEpoch,
+                _WorkerEpoch(epoch_id),
+            ),
+            cycles_completed=1,
+        )
+
+
+class _UnevenWorker(_Worker):
+    def __init__(
+        self,
+        *,
+        fast_epoch_id: UUID,
+        slow_epoch_id: UUID,
+    ) -> None:
+        super().__init__()
+        self.fast_epoch_id = fast_epoch_id
+        self.slow_epoch_id = slow_epoch_id
+        self.fast_calls = 0
+        self.slow_calls = 0
+        self.slow_started = asyncio.Event()
+        self.fast_repeated = asyncio.Event()
+        self.release_slow = asyncio.Event()
+
+    async def run_epoch(
+        self,
+        epoch_id: UUID,
+        *,
+        max_cycles: int | None = None,
+    ) -> OperationalPaperSessionRunWorkerResult:
+        self.calls.append(
+            (
+                epoch_id,
+                max_cycles,
+            )
+        )
+
+        if epoch_id == self.slow_epoch_id:
+            self.slow_calls += 1
+            self.slow_started.set()
+            await self.release_slow.wait()
+
+        elif epoch_id == self.fast_epoch_id:
+            self.fast_calls += 1
+
+            if self.fast_calls >= 2:
+                self.fast_repeated.set()
+
+        else:
+            raise AssertionError(
+                "Epoch inesperado no worker de teste."
+            )
+
+        return OperationalPaperSessionRunWorkerResult(
+            cast(
+                runs.OperationalPaperSessionRunEpoch,
+                _WorkerEpoch(epoch_id),
+            ),
+            cycles_completed=1,
+        )
+
+
 def _supervisor(
     repository: _Repository,
     worker: _Worker,
@@ -138,6 +232,60 @@ async def test_poll_once_processes_each_epoch_with_one_cycle_bound() -> None:
         (first.epoch_id, 1),
         (second.epoch_id, 1),
     ]
+    assert result.epochs_discovered == 2
+    assert result.epochs_processed == 2
+    assert result.cycles_completed == 2
+    assert result.next_offset == 2
+
+
+@pytest.mark.asyncio
+async def test_poll_once_runs_discovered_epochs_concurrently() -> None:
+    first = _Epoch(uuid4())
+    second = _Epoch(uuid4())
+
+    repository = _Repository(
+        {
+            0: [
+                first,
+                second,
+            ],
+        }
+    )
+
+    worker = _BlockingWorker(
+        expected_starts=2,
+    )
+
+    supervisor = _supervisor(
+        repository,
+        worker,
+        page_size=2,
+    )
+
+    poll_task = asyncio.create_task(
+        supervisor.poll_once()
+    )
+
+    try:
+        await asyncio.wait_for(
+            worker.all_started.wait(),
+            timeout=1.0,
+        )
+
+        assert len(worker.started) == 2
+        assert set(worker.started) == {
+            first.epoch_id,
+            second.epoch_id,
+        }
+
+        assert set(worker.calls) == {
+            (first.epoch_id, 1),
+            (second.epoch_id, 1),
+        }
+    finally:
+        worker.release.set()
+        result = await poll_task
+
     assert result.epochs_discovered == 2
     assert result.epochs_processed == 2
     assert result.cycles_completed == 2
@@ -230,6 +378,71 @@ async def test_run_is_bounded_and_sleeps_between_polls() -> None:
     assert result.epochs_processed == 3
     assert result.cycles_completed == 3
     assert sleeps == [0.01, 0.01]
+
+
+@pytest.mark.asyncio
+async def test_run_reschedules_fast_epoch_while_slow_sibling_is_active() -> None:
+    fast = _Epoch(uuid4())
+    slow = _Epoch(uuid4())
+
+    repository = _Repository(
+        {
+            0: [
+                fast,
+                slow,
+            ],
+        }
+    )
+
+    worker = _UnevenWorker(
+        fast_epoch_id=fast.epoch_id,
+        slow_epoch_id=slow.epoch_id,
+    )
+
+    async def sleeper(
+        _delay: float,
+    ) -> None:
+        await asyncio.sleep(0)
+
+    supervisor = _supervisor(
+        repository,
+        worker,
+        page_size=100,
+        sleeper=sleeper,
+    )
+
+    run_task = asyncio.create_task(
+        supervisor.run(
+            max_polls=4,
+        )
+    )
+
+    try:
+        await asyncio.wait_for(
+            worker.slow_started.wait(),
+            timeout=1.0,
+        )
+
+        await asyncio.wait_for(
+            worker.fast_repeated.wait(),
+            timeout=1.0,
+        )
+
+        assert worker.fast_calls >= 2
+        assert worker.slow_calls == 1
+        assert not worker.release_slow.is_set()
+
+    finally:
+        worker.release_slow.set()
+
+    result = await asyncio.wait_for(
+        run_task,
+        timeout=1.0,
+    )
+
+    assert result.polls_completed == 4
+    assert result.epochs_processed >= 3
+    assert result.cycles_completed >= 3
 
 
 @pytest.mark.asyncio
