@@ -117,6 +117,7 @@ _ALLOWED_OBSERVED_TRANSITIONS: Final = {
     OperationalPaperSessionRunObservedState.PAUSED: frozenset(
         {
             OperationalPaperSessionRunObservedState.STARTING,
+            OperationalPaperSessionRunObservedState.STOPPING,
             OperationalPaperSessionRunObservedState.STOPPED,
             OperationalPaperSessionRunObservedState.FAILED,
         }
@@ -1307,6 +1308,55 @@ def claim_operational_paper_session_run_epoch(
     return replace(
         canonical,
         observed_state=OperationalPaperSessionRunObservedState.STARTING,
+        record_version=_next_record_version(canonical.record_version),
+        fencing_token=fencing_token,
+        worker_claim=claim,
+    )
+
+
+def claim_operational_paper_session_run_epoch_for_stopping(
+    epoch: OperationalPaperSessionRunEpoch,
+    *,
+    worker_id: UUID,
+    claimed_at: datetime,
+    lease_expires_at: datetime,
+) -> OperationalPaperSessionRunEpoch:
+    """Fence finalization of a paused session without granting execution authority."""
+    canonical = _revalidate_epoch(epoch)
+
+    if operational_paper_session_run_epoch_is_terminal(canonical):
+        raise OperationalPaperSessionRunCommandConflictError()
+
+    if (
+        canonical.desired_state is not OperationalPaperSessionRunDesiredState.STOPPED
+        or canonical.observed_state is not OperationalPaperSessionRunObservedState.PAUSED
+        or canonical.worker_claim is not None
+    ):
+        raise OperationalPaperSessionRunLeaseError()
+
+    worker_id = _require_uuid(worker_id)
+    claimed_at = _require_utc(claimed_at)
+    lease_expires_at = _require_utc(lease_expires_at)
+
+    if claimed_at < canonical.start_requested_at or lease_expires_at <= claimed_at:
+        raise OperationalPaperSessionRunLeaseError()
+
+    fencing_token = _next_fencing_token(canonical.fencing_token)
+    claim = OperationalPaperSessionRunWorkerClaim(
+        epoch_id=canonical.epoch_id,
+        worker_id=worker_id,
+        fencing_token=fencing_token,
+        claimed_at=claimed_at,
+        heartbeat_at=claimed_at,
+        lease_expires_at=lease_expires_at,
+    )
+    require_operational_paper_session_run_transition(
+        canonical.observed_state,
+        OperationalPaperSessionRunObservedState.STOPPING,
+    )
+    return replace(
+        canonical,
+        observed_state=OperationalPaperSessionRunObservedState.STOPPING,
         record_version=_next_record_version(canonical.record_version),
         fencing_token=fencing_token,
         worker_claim=claim,

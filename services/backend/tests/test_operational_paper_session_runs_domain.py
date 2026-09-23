@@ -164,7 +164,7 @@ def _started_epoch():
 
 
 def test_public_contract_contains_no_private_or_duplicate_exports() -> None:
-    assert len(public_contract.__all__) == 54
+    assert len(public_contract.__all__) == 55
     assert len(public_contract.__all__) == len(set(public_contract.__all__))
     assert all(not name.startswith("_") for name in public_contract.__all__)
 
@@ -448,6 +448,7 @@ def test_observed_state_transition_matrix_is_exact() -> None:
         },
         OperationalPaperSessionRunObservedState.PAUSED: {
             OperationalPaperSessionRunObservedState.STARTING,
+            OperationalPaperSessionRunObservedState.STOPPING,
             OperationalPaperSessionRunObservedState.STOPPED,
             OperationalPaperSessionRunObservedState.FAILED,
         },
@@ -1978,3 +1979,93 @@ def test_pure_domain_contracts_exclude_financial_process_and_secret_fields() -> 
 
         for field in contract_fields:
             assert "float" not in str(field.type).lower()
+
+
+def _paused_stop_requested() -> OperationalPaperSessionRunEpoch:
+    paused = _paused_epoch()
+    requested, _ = request_operational_paper_session_run_epoch_command(
+        paused,
+        command_id=COMMAND_ID,
+        intent=_command_intent(paused, OperationalPaperSessionRunCommandType.STOP),
+        actor_id=ACTOR_ID,
+        requested_at=NOW + timedelta(seconds=5),
+        idempotency_key="paused:stop",
+    )
+    return requested
+
+
+def test_paused_stop_claim_advances_fence_and_releases_only_after_settlement() -> None:
+    requested = _paused_stop_requested()
+    stopping = public_contract.claim_operational_paper_session_run_epoch_for_stopping(
+        requested,
+        worker_id=WORKER_2,
+        claimed_at=NOW + timedelta(seconds=6),
+        lease_expires_at=NOW + timedelta(seconds=66),
+    )
+    assert stopping.observed_state is OperationalPaperSessionRunObservedState.STOPPING
+    assert stopping.desired_state is OperationalPaperSessionRunDesiredState.STOPPED
+    assert stopping.fencing_token == requested.fencing_token + 1 == 2
+    assert stopping.record_version == requested.record_version + 1
+    assert stopping.worker_claim is not None
+    assert stopping.worker_claim.worker_id == WORKER_2
+    assert stopping.worker_claim.heartbeat_at == NOW + timedelta(seconds=6)
+    assert stopping.terminal_at is None
+    for worker, fence, seconds in [
+        (WORKER_1, 1, 7),
+        (WORKER_2, 1, 7),
+        (WORKER_1, 2, 7),
+        (WORKER_2, 2, 66),
+    ]:
+        with pytest.raises(OperationalPaperSessionRunLeaseError):
+            settle_operational_paper_session_run_epoch_stopped(
+                stopping,
+                worker_id=worker,
+                fencing_token=fence,
+                observed_at=NOW + timedelta(seconds=seconds),
+            )
+    stopped = settle_operational_paper_session_run_epoch_stopped(
+        stopping,
+        worker_id=WORKER_2,
+        fencing_token=2,
+        observed_at=NOW + timedelta(seconds=7),
+    )
+    assert stopped.observed_state is OperationalPaperSessionRunObservedState.STOPPED
+    assert stopped.worker_claim is None
+
+
+@pytest.mark.parametrize("claimed_seconds,expires_seconds", [(6, 6), (6, 5), (-1, 60)])
+def test_paused_stop_claim_rejects_invalid_lease(
+    claimed_seconds: int,
+    expires_seconds: int,
+) -> None:
+    with pytest.raises(OperationalPaperSessionRunLeaseError):
+        public_contract.claim_operational_paper_session_run_epoch_for_stopping(
+            _paused_stop_requested(),
+            worker_id=WORKER_2,
+            claimed_at=NOW + timedelta(seconds=claimed_seconds),
+            lease_expires_at=NOW + timedelta(seconds=expires_seconds),
+        )
+
+
+def test_stopping_claim_requires_exact_paused_stop_boundary() -> None:
+    for epoch in (_started_epoch()[0], _paused_epoch(), _running_epoch()):
+        with pytest.raises(OperationalPaperSessionRunLeaseError):
+            public_contract.claim_operational_paper_session_run_epoch_for_stopping(
+                epoch,
+                worker_id=WORKER_2,
+                claimed_at=NOW + timedelta(seconds=6),
+                lease_expires_at=NOW + timedelta(seconds=66),
+            )
+    stopping = public_contract.claim_operational_paper_session_run_epoch_for_stopping(
+        _paused_stop_requested(),
+        worker_id=WORKER_2,
+        claimed_at=NOW + timedelta(seconds=6),
+        lease_expires_at=NOW + timedelta(seconds=66),
+    )
+    with pytest.raises(OperationalPaperSessionRunLeaseError):
+        public_contract.claim_operational_paper_session_run_epoch_for_stopping(
+            stopping,
+            worker_id=WORKER_1,
+            claimed_at=NOW + timedelta(seconds=7),
+            lease_expires_at=NOW + timedelta(seconds=67),
+        )

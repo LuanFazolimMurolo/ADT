@@ -755,6 +755,29 @@ class PostgresOperationalPaperSessionRunRepository:
             ),
         )
 
+    async def claim_for_stopping(
+        self,
+        epoch_id: UUID,
+        *,
+        expected_record_version: int,
+        worker_id: UUID,
+        lease_expires_at: datetime,
+        now: datetime,
+    ) -> runs.OperationalPaperSessionRunEpoch:
+        """Acquire a fresh fence for PAUSED -> STOPPING under exact version guards."""
+        return await self._mutate(
+            epoch_id,
+            expected_record_version=expected_record_version,
+            now=now,
+            mode="claim",
+            transform=lambda epoch: runs.claim_operational_paper_session_run_epoch_for_stopping(
+                epoch,
+                claimed_at=now,
+                worker_id=worker_id,
+                lease_expires_at=_now(lease_expires_at),
+            ),
+        )
+
     async def recover(
         self,
         epoch_id: UUID,

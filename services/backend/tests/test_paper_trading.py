@@ -904,3 +904,21 @@ def test_paper_config_decoder_rejects_redundant_disabled_stop_loss() -> None:
 
     with pytest.raises(InvalidPaperSessionError):
         decode_paper_config(json.dumps(raw).encode())
+
+
+def test_persisted_state_query_is_read_only_and_propagates_corruption(tmp_path: Path) -> None:
+    service = _service(tmp_path, FakeSource((_candle(0), _candle(1))))
+    config = _config()
+    session_id = paper_session_id(config)
+    service.create(config)
+    assert service.has_persisted_state(session_id) is False
+    state = service.run_once(session_id).state
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    assert service.has_persisted_state(session_id) is True
+    assert service.status(session_id) == state
+    assert {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()} == before
+    state_path = tmp_path / "market" / "paper-trading" / session_id / "state.json"
+    state_path.write_text("invalid state")
+    with pytest.raises(PaperSessionCorruptError):
+        service.has_persisted_state(session_id)
+    assert state_path.read_text() == "invalid state"

@@ -95,6 +95,10 @@ class PaperTradingService:
             validate_paper_state_against_config(state, config)
         return state
 
+    def has_persisted_state(self, session_id: str) -> bool:
+        """Distinguish absent state from persisted state, propagating corrupt documents."""
+        return self._repository.load_state(session_id) is not None
+
     def run_once(self, session_id: str) -> PaperRunResult:
         with self._repository.lock(session_id) as lease:
             config = self._repository.load_config(session_id)
