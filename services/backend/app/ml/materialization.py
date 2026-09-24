@@ -22,7 +22,7 @@ from app.ml.domain import (
     candle_available_at,
     target_maturity,
 )
-from app.ml.features import compute_feature
+from app.ml.feature_engineering import compute_feature_value
 from app.ml.targets import compute_target
 from app.optimization.temporal_domain import TemporalSegmentRole
 
@@ -66,7 +66,7 @@ class MLDatasetMaterializationService:
             dependencies: list[MLCandleDependency] = []
             warmup = False
             for feature in specification.feature_set.features:
-                value, dependency = compute_feature(
+                value, dependency = compute_feature_value(
                     feature,
                     context_candles,
                     observation,
