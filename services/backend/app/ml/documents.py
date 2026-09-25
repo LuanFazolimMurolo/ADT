@@ -39,6 +39,7 @@ from app.ml.predictions import (
     MLPredictionSpecification,
     MLRegressionPrediction,
 )
+from app.ml.temporal_safety import MLFitScope
 from app.optimization.canonical import (
     canonical_json_bytes,
     decimal_text,
@@ -70,6 +71,7 @@ _VALUE_TYPES: tuple[type[Any], ...] = (
     MLModelReference,
     MLPredictionSpecification,
     MLRegressionPrediction,
+    MLFitScope,
 )
 _TYPES = {kind.__name__: kind for kind in _VALUE_TYPES}
 _ENUM_TYPES = (
