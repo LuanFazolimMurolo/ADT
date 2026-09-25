@@ -33,6 +33,12 @@ from app.ml.domain import (
     validate_contract,
 )
 from app.ml.errors import MLCorruptDocumentError, MLUnsupportedSchemaError
+from app.ml.predictions import (
+    MLModelReference,
+    MLPredictionProblemType,
+    MLPredictionSpecification,
+    MLRegressionPrediction,
+)
 from app.optimization.canonical import (
     canonical_json_bytes,
     decimal_text,
@@ -61,6 +67,9 @@ _VALUE_TYPES: tuple[type[Any], ...] = (
     TemporalCoverage,
     TemporalSnapshotReference,
     StoredStrategyParameter,
+    MLModelReference,
+    MLPredictionSpecification,
+    MLRegressionPrediction,
 )
 _TYPES = {kind.__name__: kind for kind in _VALUE_TYPES}
 _ENUM_TYPES = (
@@ -78,6 +87,7 @@ _ENUM_TYPES = (
     MLPreprocessing,
     MLBoundaryPolicy,
     MLExclusionReason,
+    MLPredictionProblemType,
 )
 _ENUMS = {kind.__name__: kind for kind in _ENUM_TYPES}
 _ENVELOPE_FIELDS = {
@@ -167,6 +177,16 @@ def validate_document_tree(value: MLContract) -> None:
 
 def logical_payload(value: MLContract) -> object:
     validate_contract(value)
+    if type(value) is MLRegressionPrediction:
+        return {
+            "schema_version": value.schema_version,
+            "namespace": value.namespace,
+            "prediction_specification": logical_payload(value.prediction_specification),
+            "model_reference": logical_payload(value.model_reference),
+            "observation": logical_payload(value.observation),
+            "feature_vector": logical_payload(value.feature_vector),
+            "prediction_time": value.prediction_time.isoformat(),
+        }
     return _encode(value, logical=True)
 
 
@@ -250,9 +270,10 @@ def from_document(envelope: dict[str, object]) -> MLContract:
         if document_checksum(unsigned) != envelope["document_checksum"]:
             _fail()
         decoded = _decode(envelope["payload"])
-        if type(decoded) not in CONTRACT_TYPES:
+        if type(decoded) not in _VALUE_TYPES:
             _fail()
-        assert isinstance(decoded, MLContract)
+        if not isinstance(decoded, MLContract):
+            _fail()
         if to_document(decoded) != envelope:
             _fail()
         return decoded

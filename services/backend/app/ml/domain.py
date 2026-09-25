@@ -728,10 +728,28 @@ def _nested(value: MLContract, expected: type[MLContract]) -> None:
     _require(candidate == value, "noncanonical or mutated nested contract")
 
 
+def _is_supported_contract_type(value: MLContract) -> bool:
+    value_type = type(value)
+    if value_type in CONTRACT_TYPES:
+        return True
+
+    from app.ml.predictions import (
+        MLModelReference,
+        MLPredictionSpecification,
+        MLRegressionPrediction,
+    )
+
+    return value_type in (
+        MLModelReference,
+        MLPredictionSpecification,
+        MLRegressionPrediction,
+    )
+
+
 def validate_contract(value: MLContract) -> None:
     """Revalidate before encoding/consumption, including derived metadata."""
     try:
-        _require(type(value) in CONTRACT_TYPES)
+        _require(_is_supported_contract_type(value))
         _nested(value, type(value))
         # Also bound every leaf, including reused external immutable contracts.
         from app.ml.documents import validate_document_tree
