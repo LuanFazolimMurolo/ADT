@@ -40,6 +40,12 @@ from app.ml.predictions import (
     MLRegressionPrediction,
 )
 from app.ml.temporal_safety import MLFitScope
+from app.ml.training import (
+    MLFittedRegressionModel,
+    MLTrainingAlgorithm,
+    MLTrainingResult,
+    MLTrainingSpecification,
+)
 from app.optimization.canonical import (
     canonical_json_bytes,
     decimal_text,
@@ -72,6 +78,9 @@ _VALUE_TYPES: tuple[type[Any], ...] = (
     MLPredictionSpecification,
     MLRegressionPrediction,
     MLFitScope,
+    MLTrainingSpecification,
+    MLFittedRegressionModel,
+    MLTrainingResult,
 )
 _TYPES = {kind.__name__: kind for kind in _VALUE_TYPES}
 _ENUM_TYPES = (
@@ -90,6 +99,7 @@ _ENUM_TYPES = (
     MLBoundaryPolicy,
     MLExclusionReason,
     MLPredictionProblemType,
+    MLTrainingAlgorithm,
 )
 _ENUMS = {kind.__name__: kind for kind in _ENUM_TYPES}
 _ENVELOPE_FIELDS = {

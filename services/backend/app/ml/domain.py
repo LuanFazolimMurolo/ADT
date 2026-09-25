@@ -739,12 +739,20 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLRegressionPrediction,
     )
     from app.ml.temporal_safety import MLFitScope
+    from app.ml.training import (
+        MLFittedRegressionModel,
+        MLTrainingResult,
+        MLTrainingSpecification,
+    )
 
     return value_type in (
         MLModelReference,
         MLPredictionSpecification,
         MLRegressionPrediction,
         MLFitScope,
+        MLTrainingSpecification,
+        MLFittedRegressionModel,
+        MLTrainingResult,
     )
 
 
