@@ -743,6 +743,10 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLPredictionSpecification,
         MLRegressionPrediction,
     )
+    from app.ml.regimes import (
+        MLMarketRegimeClassification,
+        MLMarketRegimeSpecification,
+    )
     from app.ml.registry import (
         MLEvaluationEvidenceReference,
         MLModelLineage,
@@ -766,6 +770,8 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLEvaluationEvidenceReference,
         MLModelLineage,
         MLModelRegistryRecord,
+        MLMarketRegimeSpecification,
+        MLMarketRegimeClassification,
         MLTrainingSpecification,
         MLFittedRegressionModel,
         MLTrainingResult,

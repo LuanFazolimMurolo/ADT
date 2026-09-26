@@ -566,6 +566,8 @@ def test_package_has_no_execution_authority_dependencies() -> None:
         "app.ml",
         "app.domain.errors",
         "app.indicators.domain",
+        "app.indicators.errors",
+        "app.indicators.regime",
         "app.market_data.domain",
         "app.market_data.datasets",
         "app.market_data.timeframes",

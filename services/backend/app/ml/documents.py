@@ -16,6 +16,7 @@ from typing import Any, NoReturn, cast
 
 from app.domain.errors import DomainError
 from app.indicators.domain import IndicatorDescriptor
+from app.indicators.regime import MarketRegimeKind, TrendDirection
 from app.market_data.datasets import DatasetIdentity, DatasetKind, GapPolicy
 from app.market_data.domain import DataRange, Exchange, MarketType
 from app.ml.domain import (
@@ -43,6 +44,10 @@ from app.ml.predictions import (
     MLPredictionProblemType,
     MLPredictionSpecification,
     MLRegressionPrediction,
+)
+from app.ml.regimes import (
+    MLMarketRegimeClassification,
+    MLMarketRegimeSpecification,
 )
 from app.ml.registry import (
     MLEvaluationEvidenceReference,
@@ -94,6 +99,8 @@ _VALUE_TYPES: tuple[type[Any], ...] = (
     MLEvaluationEvidenceReference,
     MLModelLineage,
     MLModelRegistryRecord,
+    MLMarketRegimeSpecification,
+    MLMarketRegimeClassification,
     MLTrainingSpecification,
     MLFittedRegressionModel,
     MLTrainingResult,
@@ -116,6 +123,8 @@ _ENUM_TYPES = (
     MLExclusionReason,
     MLPredictionProblemType,
     MLTrainingAlgorithm,
+    MarketRegimeKind,
+    TrendDirection,
 )
 _ENUMS = {kind.__name__: kind for kind in _ENUM_TYPES}
 _ENVELOPE_FIELDS = {
