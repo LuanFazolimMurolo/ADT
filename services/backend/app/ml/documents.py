@@ -20,6 +20,13 @@ from app.indicators.domain import IndicatorDescriptor
 from app.indicators.regime import MarketRegimeKind, TrendDirection
 from app.market_data.datasets import DatasetIdentity, DatasetKind, GapPolicy
 from app.market_data.domain import DataRange, Exchange, MarketType
+from app.ml.anomalies import (
+    MLAnomalyEvidence,
+    MLAnomalyMethod,
+    MLAnomalyReference,
+    MLAnomalyReferenceMethod,
+    MLAnomalySpecification,
+)
 from app.ml.domain import (
     CONTRACT_TYPES,
     MLBoundaryPolicy,
@@ -99,6 +106,9 @@ _VALUE_TYPES: tuple[type[Any], ...] = (
     TemporalCoverage,
     TemporalSnapshotReference,
     StoredStrategyParameter,
+    MLAnomalySpecification,
+    MLAnomalyReference,
+    MLAnomalyEvidence,
     MLModelReference,
     MLPredictionSpecification,
     MLRegressionPrediction,
@@ -139,6 +149,8 @@ _ENUM_TYPES = (
     MLExclusionReason,
     MLPredictionProblemType,
     MLTrainingAlgorithm,
+    MLAnomalyMethod,
+    MLAnomalyReferenceMethod,
     ComparisonMetric,
     MLDegradationDirection,
     MarketRegimeKind,

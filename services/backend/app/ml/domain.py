@@ -733,6 +733,11 @@ def _is_supported_contract_type(value: MLContract) -> bool:
     if value_type in CONTRACT_TYPES:
         return True
 
+    from app.ml.anomalies import (
+        MLAnomalyEvidence,
+        MLAnomalyReference,
+        MLAnomalySpecification,
+    )
     from app.ml.evaluation import (
         MLEvaluationSpecification,
         MLRegressionEvaluationEvidence,
@@ -768,6 +773,9 @@ def _is_supported_contract_type(value: MLContract) -> bool:
     )
 
     return value_type in (
+        MLAnomalySpecification,
+        MLAnomalyReference,
+        MLAnomalyEvidence,
         MLModelReference,
         MLPredictionSpecification,
         MLRegressionPrediction,
