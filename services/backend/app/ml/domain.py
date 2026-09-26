@@ -738,6 +738,14 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLRegressionEvaluationEvidence,
         MLRegressionMetrics,
     )
+    from app.ml.performance import (
+        MLDegradationEvidence,
+        MLDegradationSpecification,
+        MLPerformanceBaseline,
+        MLPerformanceMetricSpecification,
+        MLPerformancePredictionEvidence,
+        MLPerformanceSubject,
+    )
     from app.ml.predictions import (
         MLModelReference,
         MLPredictionSpecification,
@@ -763,6 +771,12 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLModelReference,
         MLPredictionSpecification,
         MLRegressionPrediction,
+        MLPerformanceSubject,
+        MLPerformanceMetricSpecification,
+        MLPerformancePredictionEvidence,
+        MLPerformanceBaseline,
+        MLDegradationSpecification,
+        MLDegradationEvidence,
         MLFitScope,
         MLEvaluationSpecification,
         MLRegressionMetrics,

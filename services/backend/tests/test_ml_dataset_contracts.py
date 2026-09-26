@@ -564,6 +564,7 @@ def test_package_has_no_execution_authority_dependencies() -> None:
     root = Path(__file__).parents[1] / "app" / "ml"
     allowed = (
         "app.ml",
+        "app.backtesting.reports",
         "app.domain.errors",
         "app.indicators.domain",
         "app.indicators.errors",

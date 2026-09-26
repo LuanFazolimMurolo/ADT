@@ -14,6 +14,7 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Any, NoReturn, cast
 
+from app.backtesting.reports import ComparisonMetric
 from app.domain.errors import DomainError
 from app.indicators.domain import IndicatorDescriptor
 from app.indicators.regime import MarketRegimeKind, TrendDirection
@@ -38,6 +39,15 @@ from app.ml.evaluation import (
     MLEvaluationSpecification,
     MLRegressionEvaluationEvidence,
     MLRegressionMetrics,
+)
+from app.ml.performance import (
+    MLDegradationDirection,
+    MLDegradationEvidence,
+    MLDegradationSpecification,
+    MLPerformanceBaseline,
+    MLPerformanceMetricSpecification,
+    MLPerformancePredictionEvidence,
+    MLPerformanceSubject,
 )
 from app.ml.predictions import (
     MLModelReference,
@@ -92,6 +102,12 @@ _VALUE_TYPES: tuple[type[Any], ...] = (
     MLModelReference,
     MLPredictionSpecification,
     MLRegressionPrediction,
+    MLPerformanceSubject,
+    MLPerformanceMetricSpecification,
+    MLPerformancePredictionEvidence,
+    MLPerformanceBaseline,
+    MLDegradationSpecification,
+    MLDegradationEvidence,
     MLFitScope,
     MLEvaluationSpecification,
     MLRegressionMetrics,
@@ -123,6 +139,8 @@ _ENUM_TYPES = (
     MLExclusionReason,
     MLPredictionProblemType,
     MLTrainingAlgorithm,
+    ComparisonMetric,
+    MLDegradationDirection,
     MarketRegimeKind,
     TrendDirection,
 )
