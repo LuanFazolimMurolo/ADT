@@ -733,6 +733,11 @@ def _is_supported_contract_type(value: MLContract) -> bool:
     if value_type in CONTRACT_TYPES:
         return True
 
+    from app.ml.evaluation import (
+        MLEvaluationSpecification,
+        MLRegressionEvaluationEvidence,
+        MLRegressionMetrics,
+    )
     from app.ml.predictions import (
         MLModelReference,
         MLPredictionSpecification,
@@ -750,6 +755,9 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLPredictionSpecification,
         MLRegressionPrediction,
         MLFitScope,
+        MLEvaluationSpecification,
+        MLRegressionMetrics,
+        MLRegressionEvaluationEvidence,
         MLTrainingSpecification,
         MLFittedRegressionModel,
         MLTrainingResult,

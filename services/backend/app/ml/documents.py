@@ -33,6 +33,11 @@ from app.ml.domain import (
     validate_contract,
 )
 from app.ml.errors import MLCorruptDocumentError, MLUnsupportedSchemaError
+from app.ml.evaluation import (
+    MLEvaluationSpecification,
+    MLRegressionEvaluationEvidence,
+    MLRegressionMetrics,
+)
 from app.ml.predictions import (
     MLModelReference,
     MLPredictionProblemType,
@@ -78,6 +83,9 @@ _VALUE_TYPES: tuple[type[Any], ...] = (
     MLPredictionSpecification,
     MLRegressionPrediction,
     MLFitScope,
+    MLEvaluationSpecification,
+    MLRegressionMetrics,
+    MLRegressionEvaluationEvidence,
     MLTrainingSpecification,
     MLFittedRegressionModel,
     MLTrainingResult,
