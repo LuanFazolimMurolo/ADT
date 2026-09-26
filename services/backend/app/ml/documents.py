@@ -44,6 +44,11 @@ from app.ml.predictions import (
     MLPredictionSpecification,
     MLRegressionPrediction,
 )
+from app.ml.registry import (
+    MLEvaluationEvidenceReference,
+    MLModelLineage,
+    MLModelRegistryRecord,
+)
 from app.ml.temporal_safety import MLFitScope
 from app.ml.training import (
     MLFittedRegressionModel,
@@ -86,6 +91,9 @@ _VALUE_TYPES: tuple[type[Any], ...] = (
     MLEvaluationSpecification,
     MLRegressionMetrics,
     MLRegressionEvaluationEvidence,
+    MLEvaluationEvidenceReference,
+    MLModelLineage,
+    MLModelRegistryRecord,
     MLTrainingSpecification,
     MLFittedRegressionModel,
     MLTrainingResult,

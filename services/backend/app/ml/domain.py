@@ -743,6 +743,11 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLPredictionSpecification,
         MLRegressionPrediction,
     )
+    from app.ml.registry import (
+        MLEvaluationEvidenceReference,
+        MLModelLineage,
+        MLModelRegistryRecord,
+    )
     from app.ml.temporal_safety import MLFitScope
     from app.ml.training import (
         MLFittedRegressionModel,
@@ -758,6 +763,9 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLEvaluationSpecification,
         MLRegressionMetrics,
         MLRegressionEvaluationEvidence,
+        MLEvaluationEvidenceReference,
+        MLModelLineage,
+        MLModelRegistryRecord,
         MLTrainingSpecification,
         MLFittedRegressionModel,
         MLTrainingResult,
