@@ -62,6 +62,11 @@ from app.ml.predictions import (
     MLPredictionSpecification,
     MLRegressionPrediction,
 )
+from app.ml.recommendations import (
+    MLRecommendationEvidenceKind,
+    MLRecommendationEvidenceReference,
+    MLStrategyRecommendation,
+)
 from app.ml.regimes import (
     MLMarketRegimeClassification,
     MLMarketRegimeSpecification,
@@ -127,6 +132,8 @@ _VALUE_TYPES: tuple[type[Any], ...] = (
     MLModelRegistryRecord,
     MLMarketRegimeSpecification,
     MLMarketRegimeClassification,
+    MLRecommendationEvidenceReference,
+    MLStrategyRecommendation,
     MLTrainingSpecification,
     MLFittedRegressionModel,
     MLTrainingResult,
@@ -151,6 +158,7 @@ _ENUM_TYPES = (
     MLTrainingAlgorithm,
     MLAnomalyMethod,
     MLAnomalyReferenceMethod,
+    MLRecommendationEvidenceKind,
     ComparisonMetric,
     MLDegradationDirection,
     MarketRegimeKind,
