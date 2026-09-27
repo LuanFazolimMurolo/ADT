@@ -27,6 +27,12 @@ from app.ml.anomalies import (
     MLAnomalyReferenceMethod,
     MLAnomalySpecification,
 )
+from app.ml.champion_challenger import (
+    MLChampionChallengerDecision,
+    MLChampionChallengerEvidence,
+    MLChampionChallengerMetric,
+    MLChampionChallengerSpecification,
+)
 from app.ml.confidence import (
     MLConfidenceComponentEvidence,
     MLConfidenceComponentKind,
@@ -160,6 +166,8 @@ _VALUE_TYPES: tuple[type[Any], ...] = (
     MLWalkForwardSpecification,
     MLWalkForwardFold,
     MLWalkForwardEvaluationEvidence,
+    MLChampionChallengerSpecification,
+    MLChampionChallengerEvidence,
 )
 _TYPES = {kind.__name__: kind for kind in _VALUE_TYPES}
 _ENUM_TYPES = (
@@ -189,6 +197,8 @@ _ENUM_TYPES = (
     MLDegradationDirection,
     MarketRegimeKind,
     TrendDirection,
+    MLChampionChallengerMetric,
+    MLChampionChallengerDecision,
 )
 _ENUMS = {kind.__name__: kind for kind in _ENUM_TYPES}
 _ENVELOPE_FIELDS = {

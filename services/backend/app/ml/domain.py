@@ -738,6 +738,10 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLAnomalyReference,
         MLAnomalySpecification,
     )
+    from app.ml.champion_challenger import (
+        MLChampionChallengerEvidence,
+        MLChampionChallengerSpecification,
+    )
     from app.ml.confidence import (
         MLConfidenceComponentEvidence,
         MLConfidenceEvidence,
@@ -789,6 +793,8 @@ def _is_supported_contract_type(value: MLContract) -> bool:
     )
 
     return value_type in (
+        MLChampionChallengerSpecification,
+        MLChampionChallengerEvidence,
         MLAnomalySpecification,
         MLAnomalyReference,
         MLAnomalyEvidence,
