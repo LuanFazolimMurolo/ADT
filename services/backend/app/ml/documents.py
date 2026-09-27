@@ -27,6 +27,14 @@ from app.ml.anomalies import (
     MLAnomalyReferenceMethod,
     MLAnomalySpecification,
 )
+from app.ml.confidence import (
+    MLConfidenceComponentEvidence,
+    MLConfidenceComponentKind,
+    MLConfidenceEvidence,
+    MLConfidencePerformanceRule,
+    MLConfidenceSpecification,
+    MLConfidenceWeight,
+)
 from app.ml.domain import (
     CONTRACT_TYPES,
     MLBoundaryPolicy,
@@ -115,6 +123,10 @@ _VALUE_TYPES: tuple[type[Any], ...] = (
     MLAnomalySpecification,
     MLAnomalyReference,
     MLAnomalyEvidence,
+    MLConfidenceWeight,
+    MLConfidenceSpecification,
+    MLConfidenceComponentEvidence,
+    MLConfidenceEvidence,
     MLMarketContextIntelligence,
     MLModelReference,
     MLPredictionSpecification,
@@ -160,6 +172,8 @@ _ENUM_TYPES = (
     MLTrainingAlgorithm,
     MLAnomalyMethod,
     MLAnomalyReferenceMethod,
+    MLConfidenceComponentKind,
+    MLConfidencePerformanceRule,
     MLRecommendationEvidenceKind,
     ComparisonMetric,
     MLDegradationDirection,

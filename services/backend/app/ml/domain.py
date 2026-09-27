@@ -738,6 +738,12 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLAnomalyReference,
         MLAnomalySpecification,
     )
+    from app.ml.confidence import (
+        MLConfidenceComponentEvidence,
+        MLConfidenceEvidence,
+        MLConfidenceSpecification,
+        MLConfidenceWeight,
+    )
     from app.ml.evaluation import (
         MLEvaluationSpecification,
         MLRegressionEvaluationEvidence,
@@ -781,6 +787,10 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLAnomalySpecification,
         MLAnomalyReference,
         MLAnomalyEvidence,
+        MLConfidenceWeight,
+        MLConfidenceSpecification,
+        MLConfidenceComponentEvidence,
+        MLConfidenceEvidence,
         MLMarketContextIntelligence,
         MLModelReference,
         MLPredictionSpecification,
