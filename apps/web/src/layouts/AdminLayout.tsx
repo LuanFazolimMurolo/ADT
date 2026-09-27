@@ -44,6 +44,12 @@ const navigation = [
     end: false,
   },
   {
+    to: "/admin/ml-recommendations",
+    label: "Recomendações ML",
+    icon: "◇",
+    end: false,
+  },
+  {
     to: "/admin/operational-mandates",
     label: "Mandatos operacionais",
     icon: "◈",
