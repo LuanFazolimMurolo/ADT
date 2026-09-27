@@ -34,6 +34,7 @@ from app.api.routes import (
     admin_paper_journal,
     admin_paper_period_metrics,
     admin_paper_portfolio_timeline,
+    admin_paper_recommendation_approvals,
     admin_settings,
     admin_simulations,
     admin_strategies,
@@ -358,6 +359,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(admin_market_datasets.router)
     application.include_router(admin_market_operations.router)
     application.include_router(admin_ml_recommendations.router)
+    application.include_router(admin_paper_recommendation_approvals.router)
     application.include_router(admin_operational_mandates.router)
     application.include_router(admin_operational_market_data_collectors.router)
     application.include_router(admin_operational_paper_capital_authorizations.router)
