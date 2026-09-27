@@ -47,6 +47,7 @@ from app.ml.evaluation import (
     MLRegressionEvaluationEvidence,
     MLRegressionMetrics,
 )
+from app.ml.market_intelligence import MLMarketContextIntelligence
 from app.ml.performance import (
     MLDegradationDirection,
     MLDegradationEvidence,
@@ -114,6 +115,7 @@ _VALUE_TYPES: tuple[type[Any], ...] = (
     MLAnomalySpecification,
     MLAnomalyReference,
     MLAnomalyEvidence,
+    MLMarketContextIntelligence,
     MLModelReference,
     MLPredictionSpecification,
     MLRegressionPrediction,

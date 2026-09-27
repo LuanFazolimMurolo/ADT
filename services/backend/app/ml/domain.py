@@ -743,6 +743,7 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLRegressionEvaluationEvidence,
         MLRegressionMetrics,
     )
+    from app.ml.market_intelligence import MLMarketContextIntelligence
     from app.ml.performance import (
         MLDegradationEvidence,
         MLDegradationSpecification,
@@ -780,6 +781,7 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLAnomalySpecification,
         MLAnomalyReference,
         MLAnomalyEvidence,
+        MLMarketContextIntelligence,
         MLModelReference,
         MLPredictionSpecification,
         MLRegressionPrediction,
