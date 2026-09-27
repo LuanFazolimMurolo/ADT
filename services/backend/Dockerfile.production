@@ -11,8 +11,11 @@ COPY app ./app
 
 RUN pip install --no-cache-dir .
 
-RUN groupadd --system adt \
-    && useradd --system --gid adt --home-dir /app --shell /usr/sbin/nologin adt \
+ARG ADT_UID=10001
+ARG ADT_GID=10001
+
+RUN groupadd --system --gid ${ADT_GID} adt \
+    && useradd --system --uid ${ADT_UID} --gid adt --home-dir /app --shell /usr/sbin/nologin adt \
     && mkdir -p /srv/adt/data \
     && chown -R adt:adt /app /srv/adt/data
 
