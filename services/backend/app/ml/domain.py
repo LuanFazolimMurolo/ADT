@@ -782,6 +782,11 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLTrainingResult,
         MLTrainingSpecification,
     )
+    from app.ml.walk_forward import (
+        MLWalkForwardEvaluationEvidence,
+        MLWalkForwardFold,
+        MLWalkForwardSpecification,
+    )
 
     return value_type in (
         MLAnomalySpecification,
@@ -791,6 +796,9 @@ def _is_supported_contract_type(value: MLContract) -> bool:
         MLConfidenceSpecification,
         MLConfidenceComponentEvidence,
         MLConfidenceEvidence,
+        MLWalkForwardSpecification,
+        MLWalkForwardFold,
+        MLWalkForwardEvaluationEvidence,
         MLMarketContextIntelligence,
         MLModelReference,
         MLPredictionSpecification,

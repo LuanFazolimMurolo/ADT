@@ -92,6 +92,12 @@ from app.ml.training import (
     MLTrainingResult,
     MLTrainingSpecification,
 )
+from app.ml.walk_forward import (
+    MLWalkForwardEvaluationEvidence,
+    MLWalkForwardFold,
+    MLWalkForwardMode,
+    MLWalkForwardSpecification,
+)
 from app.optimization.canonical import (
     canonical_json_bytes,
     decimal_text,
@@ -151,6 +157,9 @@ _VALUE_TYPES: tuple[type[Any], ...] = (
     MLTrainingSpecification,
     MLFittedRegressionModel,
     MLTrainingResult,
+    MLWalkForwardSpecification,
+    MLWalkForwardFold,
+    MLWalkForwardEvaluationEvidence,
 )
 _TYPES = {kind.__name__: kind for kind in _VALUE_TYPES}
 _ENUM_TYPES = (
@@ -170,6 +179,7 @@ _ENUM_TYPES = (
     MLExclusionReason,
     MLPredictionProblemType,
     MLTrainingAlgorithm,
+    MLWalkForwardMode,
     MLAnomalyMethod,
     MLAnomalyReferenceMethod,
     MLConfidenceComponentKind,
