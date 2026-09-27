@@ -6,6 +6,8 @@ services:
     image: adt-backend:${ADT_IMAGE_TAG:-local}
     command: ["python", "-m", "app.main"]
     restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 60s
     environment:
       ADT_ENVIRONMENT: production
       ADT_LOG_LEVEL: ${ADT_LOG_LEVEL:-INFO}
@@ -38,6 +40,8 @@ services:
     image: adt-backend:${ADT_IMAGE_TAG:-local}
     command: ["python", "-m", "app.runtime.market_data_supervisor"]
     restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 60s
     environment:
       ADT_ENVIRONMENT: production
       ADT_LOG_LEVEL: ${ADT_LOG_LEVEL:-INFO}
@@ -59,6 +63,8 @@ services:
     image: adt-backend:${ADT_IMAGE_TAG:-local}
     command: ["python", "-m", "app.runtime.paper_run_supervisor"]
     restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 60s
     environment:
       ADT_ENVIRONMENT: production
       ADT_LOG_LEVEL: ${ADT_LOG_LEVEL:-INFO}
@@ -83,6 +89,8 @@ services:
         VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:?VITE_SUPABASE_PUBLISHABLE_KEY is required}
     image: adt-web:${ADT_IMAGE_TAG:-local}
     restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 15s
     expose:
       - "8080"
     healthcheck:
