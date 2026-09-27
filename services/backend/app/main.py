@@ -19,6 +19,7 @@ from app.api.routes import (
     admin_market_candles,
     admin_market_datasets,
     admin_market_operations,
+    admin_ml_recommendations,
     admin_operational_mandates,
     admin_operational_market_data_collectors,
     admin_operational_paper_capital_authorizations,
@@ -356,6 +357,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application.include_router(admin_market_candles.router)
     application.include_router(admin_market_datasets.router)
     application.include_router(admin_market_operations.router)
+    application.include_router(admin_ml_recommendations.router)
     application.include_router(admin_operational_mandates.router)
     application.include_router(admin_operational_market_data_collectors.router)
     application.include_router(admin_operational_paper_capital_authorizations.router)
