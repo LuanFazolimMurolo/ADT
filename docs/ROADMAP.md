@@ -2061,25 +2061,27 @@ Accepted architecture decision:
 
 ---
 
-## Phase 8: Machine Learning and Recommendation
+## Phase 8: Machine Learning and Recommendation ✅
+
+**Status**: **COMPLETE / CLOSED**.
 
 **Goal**: Add versioned, explainable and rigorously evaluated models that assist
 strategy and parameter selection without silently promoting a model to live use.
 
 **Deliverables**:
-- [ ] Dataset and feature contracts with no look-ahead leakage
-- [ ] Model-training and evaluation pipelines
-- [ ] ML-based regime classification
-- [ ] Performance and degradation prediction
-- [ ] Anomaly detection
-- [ ] Strategy and parameter recommendations
-- [ ] Strategy and parameter intelligence by asset, timeframe and regime
-- [ ] ADT Confidence Score contract, evidence model and calibrated presentation
-- [ ] Robustness, consistency and degradation evidence independent of return
-- [ ] Model registry, versioning, lineage and reproducibility
-- [ ] Walk-forward and holdout integration with the Phase 4 evidence
-- [ ] Human approval before any recommendation becomes an active paper session
-- [ ] Evaluate possible autonomous PAPER orchestration inside
+- [x] Dataset and feature contracts with no look-ahead leakage
+- [x] Model-training and evaluation pipelines
+- [x] ML-based regime classification
+- [x] Performance and degradation prediction
+- [x] Anomaly detection
+- [x] Strategy and parameter recommendations
+- [x] Strategy and parameter intelligence by asset, timeframe and regime
+- [x] ADT Confidence Score contract, evidence model and calibrated presentation
+- [x] Robustness, consistency and degradation evidence independent of return
+- [x] Model registry, versioning, lineage and reproducibility
+- [x] Walk-forward and holdout integration with the Phase 4 evidence
+- [x] Human approval before any recommendation becomes an active paper session
+- [x] Evaluate possible autonomous PAPER orchestration inside
       administrator-approved mandates only after explicit safety and evaluation
       gates
 
@@ -2087,9 +2089,34 @@ The Confidence Score must not be presented as a probability of profit unless a
 future explicitly calibrated statistical contract supports that interpretation.
 Nothing in Phase 8 authorizes automatic real-capital execution.
 
+Autonomous PAPER orchestration was evaluated and is deliberately **DEFERRED**.
+Phase 8 recommendation approval is human decision evidence only; it does not
+grant mandate, capital, materialization, activation, runner, order or LIVE
+execution authority. Any future autonomous PAPER orchestration requires a
+separate reviewed authority contract and explicit safety/evaluation gates.
+
+Integrated Phase 8 closure validation passed:
+
+- Phase 8 backend regression: `529 passed`;
+- Ruff check and Ruff format: **PASS**;
+- Python compileall: **PASS**;
+- execution-authority sentinel: **PASS**;
+- recommendation/approval route-boundary audit: **PASS**;
+- linked Supabase migration history synchronized through `20260927080000`;
+- final linked `db push --dry-run`: **Remote database is up to date**.
+
+The validated implementation baseline immediately before this documentation
+closure is:
+
+`dd118e02f73c6b6ebe0f6e8c27197178ad51a13e`
+
+**Completion evidence**:
+[`docs/PHASE8_MACHINE_LEARNING_RECOMMENDATION_COMPLETION_EVIDENCE.md`](./PHASE8_MACHINE_LEARNING_RECOMMENDATION_COMPLETION_EVIDENCE.md)
+
 **Dependencies**: Phase 7 complete
 **Estimated Duration**: 4+ weeks
-**Blockers**: Model scope, evaluation policy and data-volume assessment
+**Blockers**: Closed by the completed Phase 8 implementation and acceptance
+evidence.
 
 ---
 

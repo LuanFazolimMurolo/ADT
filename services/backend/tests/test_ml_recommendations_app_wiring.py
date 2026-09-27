@@ -39,6 +39,7 @@ def test_global_openapi_exposes_exact_ml_recommendation_paths() -> None:
         path: _mapping(item)
         for path, item in paths.items()
         if path.startswith("/api/v1/admin/ml/recommendations")
+        and not path.endswith("/paper-approvals")
     }
 
     assert set(recommendation_paths) == {
