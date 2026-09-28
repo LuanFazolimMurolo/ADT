@@ -13,6 +13,7 @@ import pytest
 
 import app.operational_paper_session_runs as runs
 from app.database import Database
+from app.domain.errors import PersistenceUnavailableError
 from app.repositories.operational_paper_session_runs import (
     PostgresOperationalPaperSessionRunRepository,
 )
@@ -378,6 +379,132 @@ async def test_run_is_bounded_and_sleeps_between_polls() -> None:
     assert result.epochs_processed == 3
     assert result.cycles_completed == 3
     assert sleeps == [0.01, 0.01]
+
+
+@pytest.mark.asyncio
+async def test_run_retries_transient_persistence_unavailability_without_counting_failed_poll(
+) -> None:
+    class TransientRepository(_Repository):
+        def __init__(self) -> None:
+            super().__init__({0: []})
+            self.failures_remaining = 1
+
+        async def list_nonterminal(
+            self,
+            *,
+            limit: int,
+            offset: int,
+        ) -> list[_Epoch]:
+            self.calls.append((limit, offset))
+
+            if self.failures_remaining:
+                self.failures_remaining -= 1
+                raise PersistenceUnavailableError()
+
+            return list(self.pages.get(offset, []))
+
+    repository = TransientRepository()
+    worker = _Worker()
+    sleeps: list[float] = []
+
+    async def sleeper(delay: float) -> None:
+        sleeps.append(delay)
+
+    supervisor = OperationalPaperSessionRunSupervisor(
+        cast(
+            PostgresOperationalPaperSessionRunRepository,
+            repository,
+        ),
+        cast(
+            OperationalPaperSessionRunWorker,
+            worker,
+        ),
+        policy=OperationalPaperSessionRunSupervisorPolicy(
+            poll_interval_seconds=0.01,
+            persistence_retry_seconds=0.25,
+            page_size=2,
+        ),
+        sleeper=sleeper,
+    )
+
+    result = await supervisor.run(max_polls=1)
+
+    assert repository.calls == [
+        (2, 0),
+        (2, 0),
+    ]
+    assert sleeps == [0.25]
+    assert result.polls_completed == 1
+    assert result.epochs_processed == 0
+    assert result.cycles_completed == 0
+    assert worker.calls == []
+
+
+@pytest.mark.asyncio
+async def test_persistence_retry_wait_is_stop_aware() -> None:
+    class UnavailableRepository(_Repository):
+        async def list_nonterminal(
+            self,
+            *,
+            limit: int,
+            offset: int,
+        ) -> list[_Epoch]:
+            self.calls.append((limit, offset))
+            raise PersistenceUnavailableError()
+
+    repository = UnavailableRepository({})
+    worker = _Worker()
+    sleeps: list[float] = []
+
+    supervisor: OperationalPaperSessionRunSupervisor
+
+    async def sleeper(delay: float) -> None:
+        sleeps.append(delay)
+        supervisor.request_stop()
+
+    supervisor = OperationalPaperSessionRunSupervisor(
+        cast(
+            PostgresOperationalPaperSessionRunRepository,
+            repository,
+        ),
+        cast(
+            OperationalPaperSessionRunWorker,
+            worker,
+        ),
+        policy=OperationalPaperSessionRunSupervisorPolicy(
+            poll_interval_seconds=0.01,
+            persistence_retry_seconds=0.25,
+            page_size=2,
+        ),
+        sleeper=sleeper,
+    )
+
+    result = await supervisor.run()
+
+    assert repository.calls == [(2, 0)]
+    assert sleeps == [0.25]
+    assert worker.stop_requested
+    assert result.polls_completed == 0
+    assert result.epochs_processed == 0
+    assert result.cycles_completed == 0
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        0.0,
+        -1.0,
+        float("inf"),
+        True,
+    ],
+)
+def test_supervisor_policy_rejects_invalid_persistence_retry(
+    value: float,
+) -> None:
+    with pytest.raises(ValueError):
+        OperationalPaperSessionRunSupervisorPolicy(
+            persistence_retry_seconds=value,
+        )
 
 
 @pytest.mark.asyncio

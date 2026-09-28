@@ -34,6 +34,10 @@ from app.repositories.operational_paper_session_runs import (
 )
 from app.repositories.simulations import SimulationRepository
 from app.runtime._signals import install_stop_handlers
+from app.runtime.process_heartbeat import (
+    PROCESS_HEARTBEAT_ROOT,
+    publish_process_heartbeat,
+)
 from app.services.operational_paper_session_run_supervisor import (
     OperationalPaperSessionRunSupervisor,
 )
@@ -168,13 +172,25 @@ async def run(settings: Settings) -> None:
         )
 
         logger.info(
-            "Operational paper-run supervisor starting."
+            "Operational paper-run supervisor starting.",
+            extra={
+                "component": "paper-supervisor",
+                "event": "supervisor_starting",
+            },
         )
 
-        await supervisor.run()
+        async with publish_process_heartbeat(
+            PROCESS_HEARTBEAT_ROOT,
+            "paper-supervisor",
+        ):
+            await supervisor.run()
 
         logger.info(
-            "Operational paper-run supervisor stopped."
+            "Operational paper-run supervisor stopped.",
+            extra={
+                "component": "paper-supervisor",
+                "event": "supervisor_stopped",
+            },
         )
     finally:
         await database.close()

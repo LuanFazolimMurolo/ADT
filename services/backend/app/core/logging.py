@@ -7,6 +7,8 @@ from typing import Final
 from app.core.config import Settings
 
 _STRUCTURED_FIELDS: Final[tuple[str, ...]] = (
+    "component",
+    "event",
     "request_id",
     "method",
     "path",
@@ -17,6 +19,7 @@ _STRUCTURED_FIELDS: Final[tuple[str, ...]] = (
     "operation",
     "provider",
     "attempts",
+    "retry_delay_seconds",
     "used_weight",
 )
 

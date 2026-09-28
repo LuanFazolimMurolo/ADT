@@ -53,6 +53,24 @@ services:
       - type: bind
         source: /srv/adt/data
         target: /srv/adt/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-m",
+          "app.runtime.process_heartbeat",
+          "--data-dir",
+          "/tmp/adt-runtime-health",
+          "--process",
+          "market-supervisor",
+          "--stale-after-seconds",
+          "90",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     networks:
       - adt-internal
 
@@ -76,6 +94,24 @@ services:
       - type: bind
         source: /srv/adt/data
         target: /srv/adt/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-m",
+          "app.runtime.process_heartbeat",
+          "--data-dir",
+          "/tmp/adt-runtime-health",
+          "--process",
+          "paper-supervisor",
+          "--stale-after-seconds",
+          "90",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     networks:
       - adt-internal
 

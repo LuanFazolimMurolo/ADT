@@ -26,6 +26,10 @@ from app.repositories.operational_market_data_collectors import (
     PostgresOperationalMarketDataCollectorRepository,
 )
 from app.runtime._signals import install_stop_handlers
+from app.runtime.process_heartbeat import (
+    PROCESS_HEARTBEAT_ROOT,
+    publish_process_heartbeat,
+)
 from app.services.operational_market_data_collector_runtime import (
     OperationalMarketDataCollectorRuntimeExecutor,
 )
@@ -171,13 +175,25 @@ async def run(settings: Settings) -> None:
             )
 
             logger.info(
-                "Operational market-data supervisor starting."
+                "Operational market-data supervisor starting.",
+                extra={
+                    "component": "market-supervisor",
+                    "event": "supervisor_starting",
+                },
             )
 
-            await supervisor.run()
+            async with publish_process_heartbeat(
+                PROCESS_HEARTBEAT_ROOT,
+                "market-supervisor",
+            ):
+                await supervisor.run()
 
             logger.info(
-                "Operational market-data supervisor stopped."
+                "Operational market-data supervisor stopped.",
+                extra={
+                    "component": "market-supervisor",
+                    "event": "supervisor_stopped",
+                },
             )
     finally:
         await database.close()

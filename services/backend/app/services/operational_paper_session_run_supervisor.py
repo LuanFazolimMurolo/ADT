@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from uuid import UUID
 
+from app.domain.errors import PersistenceUnavailableError
 from app.repositories.operational_paper_session_runs import (
     PostgresOperationalPaperSessionRunRepository,
 )
@@ -18,12 +20,15 @@ from app.services.operational_paper_session_run_worker import (
 
 Sleeper = Callable[[float], Awaitable[None]]
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True, slots=True)
 class OperationalPaperSessionRunSupervisorPolicy:
     """Bounded polling policy for one persistent supervisor process."""
 
     poll_interval_seconds: float = 1.0
+    persistence_retry_seconds: float = 5.0
     page_size: int = 100
 
     def __post_init__(self) -> None:
@@ -33,6 +38,16 @@ class OperationalPaperSessionRunSupervisorPolicy:
             or self.poll_interval_seconds <= 0
         ):
             raise ValueError("O intervalo do supervisor paper é inválido.")
+
+        if (
+            isinstance(self.persistence_retry_seconds, bool)
+            or not math.isfinite(self.persistence_retry_seconds)
+            or self.persistence_retry_seconds <= 0
+        ):
+            raise ValueError(
+                "O intervalo de retry de persistência "
+                "do supervisor paper é inválido."
+            )
 
         if type(self.page_size) is not int or not 1 <= self.page_size <= 100:
             raise ValueError("O tamanho da página do supervisor paper é inválido.")
@@ -201,10 +216,32 @@ class OperationalPaperSessionRunSupervisor:
                 # cycle even while a slower sibling is still active.
                 collect_finished()
 
-                epochs = await self._repository.list_nonterminal(
-                    limit=self._policy.page_size,
-                    offset=self._offset,
-                )
+                try:
+                    epochs = await self._repository.list_nonterminal(
+                        limit=self._policy.page_size,
+                        offset=self._offset,
+                    )
+                except PersistenceUnavailableError:
+                    if self._stop_requested.is_set():
+                        break
+
+                    logger.warning(
+                        "Operational paper-run supervisor persistence "
+                        "unavailable; retrying.",
+                        extra={
+                            "component": "paper-supervisor",
+                            "event": "persistence_retry",
+                            "operation": "list_nonterminal",
+                            "retry_delay_seconds": (
+                                self._policy.persistence_retry_seconds
+                            ),
+                        },
+                    )
+
+                    await self._wait_for_delay(
+                        self._policy.persistence_retry_seconds
+                    )
+                    continue
 
                 discovered = len(epochs)
 
@@ -270,20 +307,38 @@ class OperationalPaperSessionRunSupervisor:
         )
 
     async def _wait_until_next_poll(self) -> None:
+        await self._wait_for_delay(
+            self._policy.poll_interval_seconds
+        )
+
+    async def _wait_for_delay(
+        self,
+        delay_seconds: float,
+    ) -> None:
+        """Wait for one delay while remaining shutdown-responsive."""
+
         async def wait_for_stop() -> None:
             await self._stop_requested.wait()
 
-        sleep_task = asyncio.ensure_future(self._sleeper(self._policy.poll_interval_seconds))
-        stop_task = asyncio.create_task(wait_for_stop())
+        sleep_task = asyncio.ensure_future(
+            self._sleeper(delay_seconds)
+        )
+        stop_task = asyncio.create_task(
+            wait_for_stop()
+        )
 
         try:
             await asyncio.wait(
-                {sleep_task, stop_task},
+                {
+                    sleep_task,
+                    stop_task,
+                },
                 return_when=asyncio.FIRST_COMPLETED,
             )
         finally:
             sleep_task.cancel()
             stop_task.cancel()
+
             await asyncio.gather(
                 sleep_task,
                 stop_task,

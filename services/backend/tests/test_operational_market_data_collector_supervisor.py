@@ -11,6 +11,7 @@ import pytest
 
 import app.operational_market_data_collectors as collectors
 from app.database import Database
+from app.domain.errors import PersistenceUnavailableError
 from app.repositories.operational_market_data_collectors import (
     PostgresOperationalMarketDataCollectorRepository,
 )
@@ -75,6 +76,39 @@ class _FakeRepository:
         )
 
 
+class _PersistenceFailOnceRepository(_FakeRepository):
+    def __init__(
+        self,
+        pages: dict[
+            int,
+            list[_EpochReference],
+        ],
+    ) -> None:
+        super().__init__(pages)
+        self._failed = False
+
+    async def list_nonterminal(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[collectors.OperationalMarketDataCollectorEpoch]:
+        if not self._failed:
+            self._failed = True
+            self.calls.append(
+                (
+                    limit,
+                    offset,
+                )
+            )
+            raise PersistenceUnavailableError()
+
+        return await super().list_nonterminal(
+            limit=limit,
+            offset=offset,
+        )
+
+
 class _FakeWorker:
     def __init__(
         self,
@@ -112,12 +146,40 @@ class _FakeWorker:
         )
 
 
+class _PersistenceFailOnceWorker(_FakeWorker):
+    def __init__(self) -> None:
+        super().__init__()
+        self._failed = False
+
+    async def run_epoch(
+        self,
+        epoch_id: UUID,
+        *,
+        max_cycles: int | None = None,
+    ) -> OperationalMarketDataCollectorWorkerResult:
+        if not self._failed:
+            self._failed = True
+            self.calls.append(
+                (
+                    epoch_id,
+                    max_cycles,
+                )
+            )
+            raise PersistenceUnavailableError()
+
+        return await super().run_epoch(
+            epoch_id,
+            max_cycles=max_cycles,
+        )
+
+
 def _supervisor(
     repository: _FakeRepository,
     worker: _FakeWorker,
     *,
     page_size: int = 100,
     sleeper=None,
+    persistence_retry_seconds: float = 0.02,
 ) -> OperationalMarketDataCollectorSupervisor:
     kwargs = {}
 
@@ -136,6 +198,7 @@ def _supervisor(
         policy=OperationalMarketDataCollectorSupervisorPolicy(
             poll_interval_seconds=0.01,
             page_size=page_size,
+            persistence_retry_seconds=persistence_retry_seconds,
         ),
         **kwargs,
     )
@@ -310,6 +373,106 @@ async def test_empty_page_wraps_to_zero() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_retries_transient_persistence_failure_during_discovery() -> None:
+    repository = _PersistenceFailOnceRepository(
+        {
+            0: [],
+        }
+    )
+    worker = _FakeWorker()
+    sleeps: list[float] = []
+
+    async def sleeper(delay: float) -> None:
+        sleeps.append(delay)
+
+    supervisor = _supervisor(
+        repository,
+        worker,
+        sleeper=sleeper,
+        persistence_retry_seconds=0.02,
+    )
+
+    result = await supervisor.run(
+        max_polls=1,
+    )
+
+    assert result.polls_completed == 1
+    assert result.epochs_processed == 0
+    assert repository.calls == [
+        (
+            100,
+            0,
+        ),
+        (
+            100,
+            0,
+        ),
+    ]
+    assert sleeps == [
+        0.02,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_run_retries_transient_persistence_failure_from_worker() -> None:
+    epoch = _EpochReference(uuid4())
+
+    repository = _FakeRepository(
+        {
+            0: [
+                epoch,
+            ],
+        }
+    )
+    worker = _PersistenceFailOnceWorker()
+    sleeps: list[float] = []
+
+    async def sleeper(delay: float) -> None:
+        sleeps.append(delay)
+
+    supervisor = _supervisor(
+        repository,
+        worker,
+        sleeper=sleeper,
+        persistence_retry_seconds=0.02,
+    )
+
+    result = await supervisor.run(
+        max_polls=1,
+    )
+
+    assert result.polls_completed == 1
+    assert result.epochs_processed == 1
+    assert result.cycles_completed == 1
+
+    assert repository.calls == [
+        (
+            100,
+            0,
+        ),
+        (
+            100,
+            0,
+        ),
+    ]
+
+    assert worker.calls == [
+        (
+            epoch.epoch_id,
+            1,
+        ),
+        (
+            epoch.epoch_id,
+            1,
+        ),
+    ]
+
+    assert sleeps == [
+        0.02,
+    ]
+
+
+@pytest.mark.asyncio
 async def test_run_is_bounded_and_sleeps_between_polls() -> None:
     repository = _FakeRepository(
         {
@@ -423,6 +586,25 @@ def test_supervisor_policy_is_bounded(
         OperationalMarketDataCollectorSupervisorPolicy(
             poll_interval_seconds=poll_interval_seconds,
             page_size=page_size,
+        )
+
+
+@pytest.mark.parametrize(
+    "persistence_retry_seconds",
+    (
+        0.0,
+        -1.0,
+        float("nan"),
+        float("inf"),
+        True,
+    ),
+)
+def test_supervisor_policy_rejects_invalid_persistence_retry(
+    persistence_retry_seconds: float,
+) -> None:
+    with pytest.raises(ValueError):
+        OperationalMarketDataCollectorSupervisorPolicy(
+            persistence_retry_seconds=persistence_retry_seconds,
         )
 
 
