@@ -1,0 +1,8 @@
+[Unit]
+Description=ADT Persistent Runtime
+Wants=adt-market-data-supervisor.service
+Wants=adt-paper-run-supervisor.service
+After=network-online.target
+
+[Install]
+WantedBy=default.target

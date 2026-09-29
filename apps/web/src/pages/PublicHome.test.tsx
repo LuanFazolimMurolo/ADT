@@ -6,12 +6,14 @@ import { PublicHome } from './PublicHome'
 const mocks = vi.hoisted(() => ({
   getSystemStatus: vi.fn(),
   getPublicSimulation: vi.fn(),
+  getPublicOfficialPaper: vi.fn(),
 }))
 
 vi.mock('../http/client', () => ({
   apiClient: {
     getSystemStatus: mocks.getSystemStatus,
     getPublicSimulation: mocks.getPublicSimulation,
+    getPublicOfficialPaper: mocks.getPublicOfficialPaper,
   },
 }))
 
@@ -31,12 +33,19 @@ beforeEach(() => {
     timestamp: '2026-08-08T12:00:00Z',
   })
   mocks.getPublicSimulation.mockResolvedValue(null)
+  mocks.getPublicOfficialPaper.mockResolvedValue({
+    observed_at: '2026-09-29T20:00:00Z',
+    limit: 20,
+    count: 0,
+    items: [],
+  })
 })
 
 describe('PublicHome', () => {
   it('renderiza a apresentação institucional e o loading público sem autenticação', () => {
     mocks.getSystemStatus.mockReturnValue(new Promise(() => undefined))
     mocks.getPublicSimulation.mockReturnValue(new Promise(() => undefined))
+    mocks.getPublicOfficialPaper.mockReturnValue(new Promise(() => undefined))
 
     renderHome()
 
@@ -49,6 +58,16 @@ describe('PublicHome', () => {
     expect(screen.getAllByText(/Automatic Dry Trade/i)).not.toHaveLength(0)
     expect(screen.getByText('Verificando disponibilidade')).toBeDefined()
     expect(screen.getByText('Carregando simulação pública…')).toBeDefined()
+  })
+
+  it('mantém o runtime PAPER oficial em loading enquanto o contrato não responde', () => {
+    mocks.getSystemStatus.mockReturnValue(new Promise(() => undefined))
+    mocks.getPublicSimulation.mockReturnValue(new Promise(() => undefined))
+    mocks.getPublicOfficialPaper.mockReturnValue(new Promise(() => undefined))
+
+    renderHome()
+
+    expect(screen.getByText('Consultando runtime oficial…')).toBeDefined()
   })
 
   it('mostra o estado operacional retornado pelo endpoint público', async () => {
@@ -133,7 +152,70 @@ describe('PublicHome', () => {
     expect(document.body.textContent).not.toContain('/private/path')
   })
 
-  it('oferece somente login geral e chama apenas os dois contratos públicos', async () => {
+  it('exibe somente o snapshot operacional permitido do PAPER oficial', async () => {
+    mocks.getPublicOfficialPaper.mockResolvedValue({
+      observed_at: '2026-09-29T20:00:00Z',
+      limit: 20,
+      count: 1,
+      items: [
+        {
+          session_id: 'public-session-01',
+          desired_state: 'RUNNING',
+          observed_state: 'RUNNING',
+          availability: 'RUNNING',
+          ownership_fresh: true,
+          heartbeat_at: '2026-09-29T19:59:55Z',
+          lease_expires_at: '2026-09-29T20:00:30Z',
+          failure_code: null,
+        },
+      ],
+    })
+
+    renderHome()
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Runtime PAPER oficial',
+      }),
+    ).toBeDefined()
+
+    expect(await screen.findByText('Em execução')).toBeDefined()
+    expect(screen.getByText('public-session-01')).toBeDefined()
+    expect(screen.getByText('Válido')).toBeDefined()
+    expect(screen.queryByText('Código de falha')).toBeNull()
+  })
+
+  it('mostra estado vazio quando não há runtime PAPER oficial ativo', async () => {
+    renderHome()
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 3,
+        name: 'Nenhuma sessão PAPER oficial ativa no momento.',
+      }),
+    ).toBeDefined()
+  })
+
+  it('isola falha do runtime PAPER oficial sem expor detalhes internos', async () => {
+    mocks.getPublicOfficialPaper.mockRejectedValue(
+      new Error('postgres://secret@private-host/internal'),
+    )
+
+    renderHome()
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 3,
+        name: 'Runtime oficial temporariamente indisponível.',
+      }),
+    ).toBeDefined()
+
+    expect(document.body.textContent).not.toContain('private-host')
+    expect(document.body.textContent).not.toContain('postgres://')
+  })
+
+  it('oferece somente login geral e chama apenas os três contratos públicos', async () => {
     renderHome()
 
     const login = screen.getByRole('link', { name: 'Entrar' })
@@ -149,6 +231,7 @@ describe('PublicHome', () => {
     await waitFor(() => {
       expect(mocks.getSystemStatus).toHaveBeenCalledOnce()
       expect(mocks.getPublicSimulation).toHaveBeenCalledOnce()
+      expect(mocks.getPublicOfficialPaper).toHaveBeenCalledOnce()
     })
   })
 })

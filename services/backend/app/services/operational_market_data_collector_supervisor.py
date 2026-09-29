@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from app.domain.errors import PersistenceUnavailableError
 from app.repositories.operational_market_data_collectors import (
     PostgresOperationalMarketDataCollectorRepository,
 )
@@ -17,6 +19,8 @@ from app.services.operational_market_data_collector_worker import (
 
 Sleeper = Callable[[float], Awaitable[None]]
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True, slots=True)
 class OperationalMarketDataCollectorSupervisorPolicy:
@@ -24,6 +28,7 @@ class OperationalMarketDataCollectorSupervisorPolicy:
 
     poll_interval_seconds: float = 1.0
     page_size: int = 100
+    persistence_retry_seconds: float = 5.0
 
     def __post_init__(self) -> None:
         if (
@@ -35,6 +40,16 @@ class OperationalMarketDataCollectorSupervisorPolicy:
 
         if type(self.page_size) is not int or not 1 <= self.page_size <= 100:
             raise ValueError("O tamanho da página do supervisor collector é inválido.")
+
+        retry = self.persistence_retry_seconds
+        if (
+            isinstance(retry, bool)
+            or not math.isfinite(retry)
+            or retry <= 0
+        ):
+            raise ValueError(
+                "O intervalo de retry de persistência do supervisor collector é inválido."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,7 +158,28 @@ class OperationalMarketDataCollectorSupervisor:
         last_worker_result: OperationalMarketDataCollectorWorkerResult | None = None
 
         while not self._stop_requested.is_set():
-            poll = await self.poll_once()
+            try:
+                poll = await self.poll_once()
+            except PersistenceUnavailableError:
+                if self._stop_requested.is_set():
+                    break
+
+                logger.warning(
+                    "Operational market-data supervisor persistence unavailable; retrying.",
+                    extra={
+                        "component": "market-supervisor",
+                        "event": "persistence_retry",
+                        "operation": "poll_once",
+                        "retry_delay_seconds": (
+                            self._policy.persistence_retry_seconds
+                        ),
+                    },
+                )
+
+                await self._wait_for_delay(
+                    self._policy.persistence_retry_seconds
+                )
+                continue
 
             polls_completed += 1
             epochs_processed += poll.epochs_processed
@@ -168,11 +204,22 @@ class OperationalMarketDataCollectorSupervisor:
         )
 
     async def _wait_until_next_poll(self) -> None:
-        async def wait_for_stop() -> None:
-            await self._stop_requested.wait()
+        await self._wait_for_delay(
+            self._policy.poll_interval_seconds
+        )
 
-        sleep_task = asyncio.ensure_future(self._sleeper(self._policy.poll_interval_seconds))
-        stop_task = asyncio.create_task(wait_for_stop())
+    async def _wait_for_delay(
+        self,
+        delay_seconds: float,
+    ) -> None:
+        """Wait for one bounded delay while remaining shutdown-responsive."""
+
+        sleep_task = asyncio.ensure_future(
+            self._sleeper(delay_seconds)
+        )
+        stop_task = asyncio.create_task(
+            self._stop_requested.wait()
+        )
 
         try:
             await asyncio.wait(
@@ -183,8 +230,11 @@ class OperationalMarketDataCollectorSupervisor:
                 return_when=asyncio.FIRST_COMPLETED,
             )
         finally:
-            sleep_task.cancel()
-            stop_task.cancel()
+            if not sleep_task.done():
+                sleep_task.cancel()
+
+            if not stop_task.done():
+                stop_task.cancel()
 
             await asyncio.gather(
                 sleep_task,
@@ -192,5 +242,8 @@ class OperationalMarketDataCollectorSupervisor:
                 return_exceptions=True,
             )
 
-        if not sleep_task.cancelled():
+        if (
+            sleep_task.done()
+            and not sleep_task.cancelled()
+        ):
             sleep_task.result()

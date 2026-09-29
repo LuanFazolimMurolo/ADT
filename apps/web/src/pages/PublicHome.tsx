@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiClient } from '../http/client'
-import type { PublicSimulationSummary } from '../types/api'
+import type {
+  PublicOfficialPaperItem,
+  PublicOfficialPaperSnapshot,
+  PublicSimulationSummary,
+} from '../types/api'
 import type { SystemStatus } from '../types/system'
 import { formatDate, formatMoney } from '../utils/format'
 
@@ -15,6 +19,35 @@ type PublicSimulationState =
   | { state: 'available'; simulation: PublicSimulationSummary }
   | { state: 'empty' }
   | { state: 'unavailable' }
+
+type PublicOfficialPaperState =
+  | { state: 'loading' }
+  | { state: 'available'; snapshot: PublicOfficialPaperSnapshot }
+  | { state: 'empty' }
+  | { state: 'unavailable' }
+
+const officialPaperAvailabilityLabels: Record<
+  PublicOfficialPaperItem['availability'],
+  string
+> = {
+  RUNNING: 'Em execução',
+  CONTROLLED_INACTIVE: 'Inativa de forma controlada',
+  CONVERGING: 'Sincronizando estado',
+  DEGRADED: 'Disponibilidade degradada',
+  FAILED: 'Falha operacional',
+}
+
+function availabilityClass(
+  availability: PublicOfficialPaperItem['availability'],
+) {
+  return availability.toLowerCase().replace(/_/g, '-')
+}
+
+function ownershipLabel(value: boolean | null) {
+  if (value === true) return 'Válido'
+  if (value === false) return 'Não válido'
+  return 'Não reivindicado'
+}
 
 const principles = [
   {
@@ -53,6 +86,8 @@ export function PublicHome() {
   const [system, setSystem] = useState<SystemState>({ state: 'loading' })
   const [publicSimulation, setPublicSimulation] =
     useState<PublicSimulationState>({ state: 'loading' })
+  const [officialPaper, setOfficialPaper] =
+    useState<PublicOfficialPaperState>({ state: 'loading' })
 
   useEffect(() => {
     let active = true
@@ -78,6 +113,21 @@ export function PublicHome() {
         if (active) setPublicSimulation({ state: 'unavailable' })
       })
 
+    void apiClient
+      .getPublicOfficialPaper()
+      .then((snapshot) => {
+        if (!active) return
+
+        setOfficialPaper(
+          snapshot.items.length > 0
+            ? { state: 'available', snapshot }
+            : { state: 'empty' },
+        )
+      })
+      .catch(() => {
+        if (active) setOfficialPaper({ state: 'unavailable' })
+      })
+
     return () => {
       active = false
     }
@@ -97,6 +147,7 @@ export function PublicHome() {
         </a>
         <nav aria-label="Navegação pública">
           <a href="#principios">Princípios</a>
+          <a href="#adt-live">ADT Live</a>
           <a href="#paper-trading">Paper trading</a>
           <Link className="button button--compact" to="/login">
             Entrar
@@ -216,6 +267,126 @@ export function PublicHome() {
               </>
             )}
           </div>
+        </section>
+
+        <section
+          className="public-section"
+          id="adt-live"
+          aria-labelledby="official-paper-title"
+        >
+          <div className="public-section__heading">
+            <div>
+              <p className="eyebrow">ADT Live</p>
+              <h2 id="official-paper-title">Runtime PAPER oficial</h2>
+            </div>
+            <p>
+              Snapshot operacional sanitizado do trader PAPER oficial. Estes
+              estados descrevem disponibilidade de execução simulada, não
+              rentabilidade, qualidade da estratégia ou capital real.
+            </p>
+          </div>
+
+          {officialPaper.state === 'loading' && (
+            <div
+              className="public-simulation-state"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="spinner" aria-hidden="true" />
+              <p>Consultando runtime oficial…</p>
+            </div>
+          )}
+
+          {officialPaper.state === 'empty' && (
+            <div className="public-simulation-state">
+              <span aria-hidden="true">◇</span>
+              <h3>Nenhuma sessão PAPER oficial ativa no momento.</h3>
+              <p>
+                O snapshot público foi consultado e não possui runtimes ativos.
+              </p>
+            </div>
+          )}
+
+          {officialPaper.state === 'unavailable' && (
+            <div className="public-simulation-state" role="status">
+              <span aria-hidden="true">◇</span>
+              <h3>Runtime oficial temporariamente indisponível.</h3>
+              <p>
+                A landing continua acessível. Nenhum detalhe interno do erro foi
+                exibido.
+              </p>
+            </div>
+          )}
+
+          {officialPaper.state === 'available' && (
+            <div className="public-runtime-snapshot">
+              <header className="public-runtime-snapshot__header">
+                <div>
+                  <span className="metric-label">SNAPSHOT OPERACIONAL</span>
+                  <strong>
+                    {officialPaper.snapshot.count}{' '}
+                    {officialPaper.snapshot.count === 1 ? 'sessão' : 'sessões'}
+                  </strong>
+                </div>
+                <span>
+                  Observado em {formatDate(officialPaper.snapshot.observed_at)} ·
+                  limite {officialPaper.snapshot.limit}
+                </span>
+              </header>
+
+              <div className="public-runtime-grid">
+                {officialPaper.snapshot.items.map((item, index) => (
+                  <article
+                    className={`public-runtime-card public-runtime-card--${availabilityClass(
+                      item.availability,
+                    )}`}
+                    key={item.session_id}
+                  >
+                    <header className="public-runtime-card__header">
+                      <span className="public-runtime-card__index">
+                        {String(index + 1).padStart(2, '0')}
+                      </span>
+                      <span className="public-runtime-availability">
+                        {officialPaperAvailabilityLabels[item.availability]}
+                      </span>
+                    </header>
+
+                    <h3>Sessão {String(index + 1).padStart(2, '0')}</h3>
+                    <code title={item.session_id}>{item.session_id}</code>
+
+                    <dl className="public-runtime-metrics">
+                      <div>
+                        <dt>Estado desejado</dt>
+                        <dd>{item.desired_state}</dd>
+                      </div>
+                      <div>
+                        <dt>Estado observado</dt>
+                        <dd>{item.observed_state}</dd>
+                      </div>
+                      <div>
+                        <dt>Ownership</dt>
+                        <dd>{ownershipLabel(item.ownership_fresh)}</dd>
+                      </div>
+                      <div>
+                        <dt>Heartbeat</dt>
+                        <dd>
+                          {item.heartbeat_at
+                            ? formatDate(item.heartbeat_at)
+                            : 'Não informado'}
+                        </dd>
+                      </div>
+                      {item.failure_code && (
+                        <div className="public-runtime-metrics__failure">
+                          <dt>Código de falha</dt>
+                          <dd>{item.failure_code}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </article>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         <section

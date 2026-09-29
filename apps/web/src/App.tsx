@@ -15,6 +15,7 @@ import { AppPaperSessionDetailPage } from "./pages/app/AppPaperSessionDetailPage
 import { AppPaperSessionPerformancePage } from "./pages/app/AppPaperSessionPerformancePage";
 import { InstrumentChartPage } from "./pages/admin/InstrumentChartPage";
 import { MarketOperationsPage } from "./pages/admin/MarketOperationsPage";
+import { MLRecommendationsPage } from "./pages/admin/MLRecommendationsPage";
 import { OperationalMandatesPage } from "./pages/admin/OperationalMandatesPage";
 import { OperationalPaperCapitalAuthorizationsPage } from "./pages/admin/OperationalPaperCapitalAuthorizationsPage";
 import { OperationalPaperSessionProfilesPage } from "./pages/admin/OperationalPaperSessionProfilesPage";
@@ -117,6 +118,10 @@ function App() {
                 <Route
                   path="market-operations"
                   element={<MarketOperationsPage />}
+                />
+                <Route
+                  path="ml-recommendations"
+                  element={<MLRecommendationsPage />}
                 />
                 <Route
                   path="operational-mandates"

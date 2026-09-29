@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from uuid import UUID
 
+from app.domain.errors import PersistenceUnavailableError
 from app.repositories.operational_paper_session_runs import (
     PostgresOperationalPaperSessionRunRepository,
 )
@@ -17,12 +20,15 @@ from app.services.operational_paper_session_run_worker import (
 
 Sleeper = Callable[[float], Awaitable[None]]
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True, slots=True)
 class OperationalPaperSessionRunSupervisorPolicy:
     """Bounded polling policy for one persistent supervisor process."""
 
     poll_interval_seconds: float = 1.0
+    persistence_retry_seconds: float = 5.0
     page_size: int = 100
 
     def __post_init__(self) -> None:
@@ -32,6 +38,16 @@ class OperationalPaperSessionRunSupervisorPolicy:
             or self.poll_interval_seconds <= 0
         ):
             raise ValueError("O intervalo do supervisor paper é inválido.")
+
+        if (
+            isinstance(self.persistence_retry_seconds, bool)
+            or not math.isfinite(self.persistence_retry_seconds)
+            or self.persistence_retry_seconds <= 0
+        ):
+            raise ValueError(
+                "O intervalo de retry de persistência "
+                "do supervisor paper é inválido."
+            )
 
         if type(self.page_size) is not int or not 1 <= self.page_size <= 100:
             raise ValueError("O tamanho da página do supervisor paper é inválido.")
@@ -96,21 +112,33 @@ class OperationalPaperSessionRunSupervisor:
         )
 
         discovered = len(epochs)
-        processed = 0
-        cycles_completed = 0
-        last_worker_result: OperationalPaperSessionRunWorkerResult | None = None
+        selected_epochs = []
 
         for epoch in epochs:
             if self._stop_requested.is_set():
                 break
+            selected_epochs.append(epoch)
 
-            result = await self._worker.run_epoch(
-                epoch.epoch_id,
-                max_cycles=1,
+        results = await asyncio.gather(
+            *(
+                self._worker.run_epoch(
+                    epoch.epoch_id,
+                    max_cycles=1,
+                )
+                for epoch in selected_epochs
             )
-            processed += 1
-            cycles_completed += result.cycles_completed
-            last_worker_result = result
+        )
+
+        processed = len(results)
+        cycles_completed = sum(
+            result.cycles_completed
+            for result in results
+        )
+        last_worker_result = (
+            results[-1]
+            if results
+            else None
+        )
 
         if discovered < self._policy.page_size:
             next_offset = 0
@@ -132,32 +160,144 @@ class OperationalPaperSessionRunSupervisor:
         *,
         max_polls: int | None = None,
     ) -> OperationalPaperSessionRunSupervisorLoopResult:
-        """Run persistent bounded polls until shutdown or an optional test bound."""
-        if max_polls is not None and (isinstance(max_polls, bool) or max_polls <= 0):
-            raise ValueError("O limite de polls do supervisor paper é inválido.")
+        """Run persistent polling with independent per-epoch cycle scheduling."""
+        if max_polls is not None and (
+            isinstance(max_polls, bool)
+            or max_polls <= 0
+        ):
+            raise ValueError(
+                "O limite de polls do supervisor paper é inválido."
+            )
 
         polls_completed = 0
         epochs_processed = 0
         cycles_completed = 0
         last_worker_result: OperationalPaperSessionRunWorkerResult | None = None
 
-        while not self._stop_requested.is_set():
-            poll = await self.poll_once()
+        active_tasks: dict[
+            UUID,
+            asyncio.Task[
+                OperationalPaperSessionRunWorkerResult
+            ],
+        ] = {}
 
-            polls_completed += 1
-            epochs_processed += poll.epochs_processed
-            cycles_completed += poll.cycles_completed
+        def collect_finished() -> None:
+            nonlocal epochs_processed
+            nonlocal cycles_completed
+            nonlocal last_worker_result
 
-            if poll.last_worker_result is not None:
-                last_worker_result = poll.last_worker_result
+            finished = [
+                epoch_id
+                for epoch_id, task in active_tasks.items()
+                if task.done()
+            ]
 
-            if max_polls is not None and polls_completed >= max_polls:
-                break
+            for epoch_id in finished:
+                task = active_tasks.pop(epoch_id)
+                result = task.result()
 
-            if self._stop_requested.is_set():
-                break
+                epochs_processed += 1
+                cycles_completed += result.cycles_completed
+                last_worker_result = result
 
-            await self._wait_until_next_poll()
+        async def drain_active() -> None:
+            if not active_tasks:
+                return
+
+            await asyncio.gather(
+                *active_tasks.values()
+            )
+            collect_finished()
+
+        try:
+            while not self._stop_requested.is_set():
+                # Reap completed epochs before discovery so a fast
+                # epoch can immediately receive its next bounded
+                # cycle even while a slower sibling is still active.
+                collect_finished()
+
+                try:
+                    epochs = await self._repository.list_nonterminal(
+                        limit=self._policy.page_size,
+                        offset=self._offset,
+                    )
+                except PersistenceUnavailableError:
+                    if self._stop_requested.is_set():
+                        break
+
+                    logger.warning(
+                        "Operational paper-run supervisor persistence "
+                        "unavailable; retrying.",
+                        extra={
+                            "component": "paper-supervisor",
+                            "event": "persistence_retry",
+                            "operation": "list_nonterminal",
+                            "retry_delay_seconds": (
+                                self._policy.persistence_retry_seconds
+                            ),
+                        },
+                    )
+
+                    await self._wait_for_delay(
+                        self._policy.persistence_retry_seconds
+                    )
+                    continue
+
+                discovered = len(epochs)
+
+                if discovered < self._policy.page_size:
+                    next_offset = 0
+                else:
+                    next_offset = (
+                        self._offset + discovered
+                    )
+
+                self._offset = next_offset
+
+                for epoch in epochs:
+                    if self._stop_requested.is_set():
+                        break
+
+                    if epoch.epoch_id in active_tasks:
+                        continue
+
+                    active_tasks[epoch.epoch_id] = (
+                        asyncio.create_task(
+                            self._worker.run_epoch(
+                                epoch.epoch_id,
+                                max_cycles=1,
+                            )
+                        )
+                    )
+
+                polls_completed += 1
+
+                if (
+                    max_polls is not None
+                    and polls_completed >= max_polls
+                ):
+                    break
+
+                if self._stop_requested.is_set():
+                    break
+
+                await self._wait_until_next_poll()
+
+            await drain_active()
+
+        except asyncio.CancelledError:
+            # A process-level shutdown must stop scheduling new
+            # work and let already-running synchronous paper
+            # cycles reach their safe boundary.
+            self.request_stop()
+
+            if active_tasks:
+                await asyncio.gather(
+                    *active_tasks.values(),
+                    return_exceptions=True,
+                )
+
+            raise
 
         return OperationalPaperSessionRunSupervisorLoopResult(
             polls_completed=polls_completed,
@@ -167,20 +307,38 @@ class OperationalPaperSessionRunSupervisor:
         )
 
     async def _wait_until_next_poll(self) -> None:
+        await self._wait_for_delay(
+            self._policy.poll_interval_seconds
+        )
+
+    async def _wait_for_delay(
+        self,
+        delay_seconds: float,
+    ) -> None:
+        """Wait for one delay while remaining shutdown-responsive."""
+
         async def wait_for_stop() -> None:
             await self._stop_requested.wait()
 
-        sleep_task = asyncio.ensure_future(self._sleeper(self._policy.poll_interval_seconds))
-        stop_task = asyncio.create_task(wait_for_stop())
+        sleep_task = asyncio.ensure_future(
+            self._sleeper(delay_seconds)
+        )
+        stop_task = asyncio.create_task(
+            wait_for_stop()
+        )
 
         try:
             await asyncio.wait(
-                {sleep_task, stop_task},
+                {
+                    sleep_task,
+                    stop_task,
+                },
                 return_when=asyncio.FIRST_COMPLETED,
             )
         finally:
             sleep_task.cancel()
             stop_task.cancel()
+
             await asyncio.gather(
                 sleep_task,
                 stop_task,

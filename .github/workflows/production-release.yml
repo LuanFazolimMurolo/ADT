@@ -1,0 +1,120 @@
+name: Production release preparation
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact full Git commit SHA to prepare
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    name: Prepare immutable production release
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: production
+
+    steps:
+      - name: Validate requested release SHA
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+
+          value = os.environ["RELEASE_SHA"].strip()
+
+          if re.fullmatch(r"[0-9a-f]{40}", value) is None:
+              raise SystemExit(
+                  "release_sha must be one exact lowercase 40-character Git SHA"
+              )
+
+          print("PASS: release SHA shape")
+          PY
+
+      - name: Checkout requested release
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_sha }}
+          persist-credentials: false
+
+      - name: Verify exact checkout
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "$ACTUAL_SHA" = "$RELEASE_SHA"
+          echo "PASS: checkout matches requested release SHA"
+
+      - name: Validate production storage bootstrap
+        run: sh -n ops/bootstrap-production-storage.sh
+
+      - name: Validate production topology
+        env:
+          ADT_CORS_ORIGINS: https://adt.example.invalid
+          SUPABASE_URL: https://project.example.invalid
+          SUPABASE_PUBLISHABLE_KEY: release-public-placeholder
+          SUPABASE_DATABASE_URL: postgresql://release:release@db.example.invalid:5432/adt?sslmode=require
+          VITE_ADT_API_URL: https://api.example.invalid
+          VITE_SUPABASE_URL: https://project.example.invalid
+          VITE_SUPABASE_PUBLISHABLE_KEY: release-public-placeholder
+        run: docker compose -f docker-compose.production.yml config >/dev/null
+
+      - name: Build backend production image
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          docker build             --file services/backend/Dockerfile.production             --tag "adt-backend:${RELEASE_SHA}"             services/backend
+
+      - name: Build frontend production image
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          docker build             --file apps/web/Dockerfile.production             --build-arg VITE_ADT_API_URL=https://api.example.invalid             --build-arg VITE_SUPABASE_URL=https://project.example.invalid             --build-arg VITE_SUPABASE_PUBLISHABLE_KEY=release-public-placeholder             --tag "adt-web:${RELEASE_SHA}"             apps/web
+
+      - name: Create release manifest
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          mkdir -p release
+
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          sha = os.environ["RELEASE_SHA"]
+
+          manifest = {
+              "schema_version": 1,
+              "release_sha": sha,
+              "backend_image": f"adt-backend:{sha}",
+              "frontend_image": f"adt-web:{sha}",
+              "operational_deployment_performed": False,
+              "registry_push_performed": False,
+              "migration_performed": False,
+          }
+
+          Path("release/manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+          )
+
+          print("PASS: release manifest created")
+          PY
+
+      - name: Upload release manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-release-${{ inputs.release_sha }}
+          path: release/manifest.json
+          if-no-files-found: error
+          retention-days: 30

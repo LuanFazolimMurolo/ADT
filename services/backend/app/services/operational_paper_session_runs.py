@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import datetime, timedelta
 from uuid import UUID
 
@@ -267,6 +267,34 @@ class OperationalPaperSessionRunService:
         _require(latest.epoch_checksum == epoch.epoch_checksum)
         return config
 
+    @staticmethod
+    def _same_execution_snapshot(
+        expected: runs.OperationalPaperSessionRunEpoch,
+        current: runs.OperationalPaperSessionRunEpoch | None,
+    ) -> bool:
+        """Ignore only record-version and lease-heartbeat churn."""
+        if current is None:
+            return False
+
+        for field in fields(expected):
+            if field.name in {"record_version", "worker_claim"}:
+                continue
+            if getattr(expected, field.name) != getattr(current, field.name):
+                return False
+
+        expected_claim = expected.worker_claim
+        current_claim = current.worker_claim
+
+        if expected_claim is None or current_claim is None:
+            return expected_claim is current_claim
+
+        return (
+            expected_claim.epoch_id == current_claim.epoch_id
+            and expected_claim.worker_id == current_claim.worker_id
+            and expected_claim.fencing_token == current_claim.fencing_token
+            and expected_claim.claimed_at == current_claim.claimed_at
+        )
+
     async def _executable_epoch(
         self, epoch_id: UUID, *, resuming: bool
     ) -> runs.OperationalPaperSessionRunEpoch:
@@ -296,7 +324,10 @@ class OperationalPaperSessionRunService:
                     _Code.LOCAL_STATE_INVALID,
                 )
             current = await self._repository.get_current_for_session(epoch.session_id)
-            _require(current == epoch, _Code.LOCAL_STATE_INVALID)
+            _require(
+                self._same_execution_snapshot(epoch, current),
+                _Code.LOCAL_STATE_INVALID,
+            )
             return epoch
 
     async def _authority(

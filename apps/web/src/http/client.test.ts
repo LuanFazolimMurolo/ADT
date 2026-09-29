@@ -479,6 +479,55 @@ describe("ApiClient", () => {
     await expect(client.getPublicSimulation()).resolves.toBeNull();
   });
 
+  it("consulta o PAPER oficial público sem enviar Authorization", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        observed_at: "2026-09-29T20:00:00Z",
+        limit: 20,
+        count: 1,
+        items: [
+          {
+            session_id: "session-public",
+            desired_state: "RUNNING",
+            observed_state: "RUNNING",
+            availability: "RUNNING",
+            ownership_fresh: true,
+            heartbeat_at: "2026-09-29T19:59:55Z",
+            lease_expires_at: "2026-09-29T20:00:30Z",
+            failure_code: null,
+          },
+        ],
+      }),
+    );
+
+    const client = new ApiClient({
+      baseUrl: "http://api.test",
+      getAccessToken: async () => "token-that-must-not-be-used",
+      fetchImplementation: fetchMock as typeof fetch,
+    });
+
+    await expect(client.getPublicOfficialPaper()).resolves.toMatchObject({
+      limit: 20,
+      count: 1,
+      items: [
+        {
+          session_id: "session-public",
+          availability: "RUNNING",
+          ownership_fresh: true,
+        },
+      ],
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://api.test/api/v1/public/official-paper",
+    );
+
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
+
+    expect(headers.get("Authorization")).toBeNull();
+  });
+
   it("não invalida a sessão administrativa por erro de endpoint público", async () => {
     const onFailure = vi.fn();
     const client = new ApiClient({

@@ -12,17 +12,32 @@ remains the evidence of the repository's actual state.
 
 ## Current phase
 
-**Phase 7 — Operational Control Plane — COMPLETE / CLOSED**
+**Phase 8 — Machine Learning and Recommendation — COMPLETE / CLOSED**
 
-Phase 6 is complete and versioned. Phase 7 is now complete, closed and
-integrated into `main`.
+Phase 7 remains complete and closed.
 
-Phase 7-15 closed the sole remaining Phase 7 roadmap deliverable: reviewed
-trading-horizon labels.
+Phase 8 now provides deterministic dataset, feature, prediction, training,
+evaluation, registry, regime, degradation, anomaly, recommendation,
+market-intelligence, confidence, walk-forward and champion/challenger evidence,
+plus read-only recommendation inspection, administrator explainability and
+durable human PAPER recommendation approval evidence.
 
-Phase 8 — Machine Learning and Recommendation is now roadmap-unblocked by its
-`Phase 7 complete` dependency, but Phase 8 has not been started or selected for
-implementation by this closure.
+The validated implementation baseline immediately before Phase 8 documentation
+closure is:
+
+`dd118e02f73c6b6ebe0f6e8c27197178ad51a13e`
+
+Integrated Phase 8 acceptance passed `529` backend tests together with Ruff,
+Ruff format, compileall, execution-authority boundary inspection and linked
+Supabase migration parity through `20260927080000`.
+
+Autonomous PAPER orchestration was evaluated and is deliberately deferred.
+Recommendation approval does not grant capital authorization, session
+materialization, activation, runner START, order creation or LIVE authority.
+
+Completion evidence:
+
+[`PHASE8_MACHINE_LEARNING_RECOMMENDATION_COMPLETION_EVIDENCE.md`](./PHASE8_MACHINE_LEARNING_RECOMMENDATION_COMPLETION_EVIDENCE.md)
 
 ## Current delivery
 

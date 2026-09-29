@@ -93,6 +93,35 @@ class _ImmediateExecutor(OperationalMarketDataCollectorCycleExecutor):
         return self.executed
 
 
+class _AdvancingExecutor:
+    def __init__(
+        self,
+        current_time: list[datetime],
+    ) -> None:
+        self._current_time = current_time
+        self.calls = 0
+
+    async def execute_cycle(
+        self,
+        specification: collectors.OperationalMarketDataCollectorSpecification,
+        *,
+        startup_hook: CycleStartupHook,
+    ) -> bool:
+        assert specification == _specification()
+        self.calls += 1
+
+        await startup_hook()
+
+        # Simulate one expensive physical cycle that consumes
+        # most of a 30-second lease without giving the periodic
+        # heartbeat a chance to persist first.
+        self._current_time[0] = NOW + timedelta(
+            seconds=25
+        )
+
+        return True
+
+
 class _BlockingExecutor:
     def __init__(self) -> None:
         self.entered = asyncio.Event()
@@ -209,6 +238,49 @@ async def test_real_repository_claim_starting_running_and_one_cycle(
 
 
 @pytest.mark.asyncio
+async def test_successful_bounded_cycle_refreshes_lease_before_return(
+    repository: PostgresOperationalMarketDataCollectorRepository,
+    auth_user_id: UUID,
+) -> None:
+    epoch = await _start(
+        repository,
+        auth_user_id,
+        key="worker:post-cycle-renew",
+    )
+
+    current_time = [NOW]
+
+    executor = _AdvancingExecutor(
+        current_time
+    )
+
+    worker = OperationalMarketDataCollectorWorker(
+        repository,
+        executor,
+        clock=lambda: current_time[0],
+    )
+
+    result = await worker.run_epoch(
+        epoch.epoch_id,
+        max_cycles=1,
+    )
+
+    assert result.exit_code is None
+    assert result.cycles_completed == 1
+    assert result.epoch.worker_claim is not None
+
+    claim = result.epoch.worker_claim
+
+    assert claim.heartbeat_at == (
+        NOW + timedelta(seconds=25)
+    )
+    assert claim.lease_expires_at == (
+        NOW + timedelta(seconds=55)
+    )
+    assert executor.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_unclaimed_pause_settles_without_physical_cycle(
     repository: PostgresOperationalMarketDataCollectorRepository,
     auth_user_id: UUID,
@@ -294,7 +366,7 @@ async def test_expired_foreign_claim_recovers_with_higher_fence(
 
 
 @pytest.mark.asyncio
-async def test_expired_same_worker_identity_is_lease_lost_not_recovered(
+async def test_expired_same_process_rotates_identity_and_recovers(
     repository: PostgresOperationalMarketDataCollectorRepository,
     auth_user_id: UUID,
 ) -> None:
@@ -314,19 +386,30 @@ async def test_expired_same_worker_identity_is_lease_lost_not_recovered(
         now=NOW,
     )
 
+    assert claimed.worker_claim is not None
+    assert claimed.worker_claim.fencing_token == 1
+
     executor = _ImmediateExecutor()
 
-    result = await OperationalMarketDataCollectorWorker(
+    worker = OperationalMarketDataCollectorWorker(
         repository,
         executor,
         worker_id=worker_id,
         clock=lambda: NOW + timedelta(seconds=2),
-    ).run_epoch(epoch.epoch_id, max_cycles=1)
+    )
 
-    assert result.cycles_completed == 0
-    assert result.exit_code is collectors.OperationalMarketDataCollectorFailureCode.LEASE_LOST
-    assert result.epoch.worker_claim == claimed.worker_claim
-    assert executor.calls == 0
+    result = await worker.run_epoch(
+        epoch.epoch_id,
+        max_cycles=1,
+    )
+
+    assert result.exit_code is None
+    assert result.cycles_completed == 1
+    assert result.epoch.worker_claim is not None
+    assert result.epoch.worker_claim.worker_id != worker_id
+    assert result.epoch.worker_claim.worker_id == worker.worker_id
+    assert result.epoch.worker_claim.fencing_token == 2
+    assert executor.calls == 1
 
 
 @pytest.mark.asyncio

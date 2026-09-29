@@ -1,0 +1,24 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    ADT_DATA_DIR=/srv/adt/data
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY app ./app
+
+RUN pip install --no-cache-dir .
+
+ARG ADT_UID=10001
+ARG ADT_GID=10001
+
+RUN groupadd --system --gid ${ADT_GID} adt \
+    && useradd --system --uid ${ADT_UID} --gid adt --home-dir /app --shell /usr/sbin/nologin adt \
+    && mkdir -p /srv/adt/data \
+    && chown -R adt:adt /app /srv/adt/data
+
+USER adt
+
+CMD ["python", "-m", "app.main"]

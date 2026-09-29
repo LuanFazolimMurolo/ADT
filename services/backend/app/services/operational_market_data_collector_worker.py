@@ -221,6 +221,26 @@ class OperationalMarketDataCollectorWorker:
                         cycles_completed,
                     )
 
+                # Refresh the full lease at every completed execution
+                # boundary. The physical cycle may consume most of the
+                # original lease, especially when synchronous local I/O
+                # temporarily starves the background heartbeat task.
+                epoch = await self._renew_once(
+                    epoch_id,
+                    fence,
+                )
+                fallback = epoch
+
+                if epoch.desired_state is not _Desired.RUNNING:
+                    epoch = await self._settle_control_boundary(
+                        epoch,
+                        fence,
+                    )
+                    return OperationalMarketDataCollectorWorkerResult(
+                        epoch,
+                        cycles_completed,
+                    )
+
                 if max_cycles is not None and cycles_completed >= max_cycles:
                     return OperationalMarketDataCollectorWorkerResult(
                         epoch,
@@ -231,17 +251,6 @@ class OperationalMarketDataCollectorWorker:
                 # cycle, normally because the persisted local cadence is not due.
                 # Return to the supervisor instead of busy-spinning.
                 if not executed:
-                    epoch = await self._renew_once(
-                        epoch_id,
-                        fence,
-                    )
-
-                    if epoch.desired_state is not _Desired.RUNNING:
-                        epoch = await self._settle_control_boundary(
-                            epoch,
-                            fence,
-                        )
-
                     return OperationalMarketDataCollectorWorkerResult(
                         epoch,
                         cycles_completed,
@@ -360,9 +369,21 @@ class OperationalMarketDataCollectorWorker:
             if now < claim.lease_expires_at:
                 return epoch
 
-            # Recovery must establish a new worker identity. One expired worker
-            # instance cannot silently resurrect its own stale identity.
-            raise collectors.OperationalMarketDataCollectorLeaseError()
+            # Never resurrect the expired identity. Rotate the local
+            # worker identity first, then perform an ordinary fenced
+            # recovery with the fresh identity.
+            replacement_worker_id = uuid4()
+
+            recovered = await self._repository.recover(
+                epoch.epoch_id,
+                expected_record_version=epoch.record_version,
+                worker_id=replacement_worker_id,
+                lease_expires_at=now + self._policy.lease_duration,
+                now=now,
+            )
+
+            self._worker_id = replacement_worker_id
+            return recovered
 
         if now >= claim.lease_expires_at:
             return await self._repository.recover(
@@ -565,13 +586,38 @@ class OperationalMarketDataCollectorWorker:
 
             now = self._now()
 
+            claim = self._require_own_claim(
+                current,
+                fence=fence,
+                require_unexpired=True,
+            )
+
+            if now < claim.heartbeat_at:
+                raise collectors.OperationalMarketDataCollectorLeaseError()
+
+            lease_expires_at = (
+                now + self._policy.lease_duration
+            )
+
+            # Renewal is internally idempotent. A bounded cycle may
+            # finish without advancing an injected/frozen test clock,
+            # or another heartbeat may already provide equal-or-better
+            # lease coverage. Do not submit a forbidden no-op mutation
+            # to the strict domain/repository contract.
+            if (
+                now == claim.heartbeat_at
+                or lease_expires_at
+                <= claim.lease_expires_at
+            ):
+                return current
+
             try:
                 return await self._repository.renew(
                     epoch_id,
                     expected_record_version=current.record_version,
                     worker_id=self._worker_id,
                     fencing_token=fence,
-                    lease_expires_at=now + self._policy.lease_duration,
+                    lease_expires_at=lease_expires_at,
                     now=now,
                 )
             except collectors.OperationalMarketDataCollectorRecordVersionConflictError:

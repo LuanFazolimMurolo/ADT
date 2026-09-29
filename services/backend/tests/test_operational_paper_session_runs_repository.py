@@ -1310,3 +1310,141 @@ async def test_list_nonterminal_rejects_unbounded_pagination(
             limit=limit,
             offset=offset,
         )
+
+
+async def test_paused_stopping_claim_uses_exact_version_and_fence_guards(
+    repository: PostgresOperationalPaperSessionRunRepository,
+    claimed: runs.OperationalPaperSessionRunEpoch,
+) -> None:
+    old_claim = claimed.worker_claim
+    assert old_claim is not None
+    requested = await _command(repository, claimed, "PAUSE")
+    paused = await repository.settle_paused(
+        claimed.epoch_id,
+        expected_record_version=requested.record_version,
+        worker_id=old_claim.worker_id,
+        fencing_token=old_claim.fencing_token,
+        now=START_AT + timedelta(seconds=5),
+    )
+    requested = await _command(repository, paused, "STOP")
+    now = START_AT + timedelta(seconds=10)
+    worker_id = uuid4()
+    with pytest.raises(runs.OperationalPaperSessionRunRecordVersionConflictError):
+        await repository.claim_for_stopping(
+            requested.epoch_id,
+            expected_record_version=paused.record_version,
+            worker_id=worker_id,
+            now=now,
+            lease_expires_at=now + timedelta(seconds=30),
+        )
+    with pytest.raises(runs.OperationalPaperSessionRunLeaseError):
+        await repository.claim_for_stopping(
+            requested.epoch_id,
+            expected_record_version=requested.record_version,
+            worker_id=worker_id,
+            now=now,
+            lease_expires_at=now,
+        )
+    assert await repository.get(requested.epoch_id) == requested
+    stopping = await repository.claim_for_stopping(
+        requested.epoch_id,
+        expected_record_version=requested.record_version,
+        worker_id=worker_id,
+        now=now,
+        lease_expires_at=now + timedelta(seconds=30),
+    )
+    assert stopping.observed_state is runs.OperationalPaperSessionRunObservedState.STOPPING
+    assert stopping.fencing_token == old_claim.fencing_token + 1
+    assert stopping.record_version == requested.record_version + 1
+    assert stopping.worker_claim is not None
+    assert await repository.get(stopping.epoch_id) == stopping
+    for owner, fence, at in [
+        (old_claim.worker_id, old_claim.fencing_token, now),
+        (worker_id, old_claim.fencing_token, now),
+        (old_claim.worker_id, stopping.fencing_token, now),
+        (worker_id, stopping.fencing_token, now + timedelta(seconds=30)),
+    ]:
+        with pytest.raises(runs.OperationalPaperSessionRunLeaseError):
+            await repository.settle_stopped(
+                stopping.epoch_id,
+                expected_record_version=stopping.record_version,
+                worker_id=owner,
+                fencing_token=fence,
+                now=at,
+            )
+    with pytest.raises(runs.OperationalPaperSessionRunRecordVersionConflictError):
+        await repository.settle_stopped(
+            stopping.epoch_id,
+            expected_record_version=requested.record_version,
+            worker_id=worker_id,
+            fencing_token=stopping.fencing_token,
+            now=now,
+        )
+    assert await repository.get(stopping.epoch_id) == stopping
+    stopped = await repository.settle_stopped(
+        stopping.epoch_id,
+        expected_record_version=stopping.record_version,
+        worker_id=worker_id,
+        fencing_token=stopping.fencing_token,
+        now=now,
+    )
+    assert stopped.observed_state is runs.OperationalPaperSessionRunObservedState.STOPPED
+    assert stopped.worker_claim is None
+
+
+async def test_stopping_claim_cannot_claim_pending_or_running_intent(
+    repository: PostgresOperationalPaperSessionRunRepository,
+    pending: runs.OperationalPaperSessionRunEpoch,
+) -> None:
+    for kind in (None, "STOP"):
+        epoch = pending if kind is None else await _command(repository, pending, kind)
+        with pytest.raises(runs.OperationalPaperSessionRunLeaseError):
+            await repository.claim_for_stopping(
+                epoch.epoch_id,
+                expected_record_version=epoch.record_version,
+                worker_id=uuid4(),
+                now=START_AT + timedelta(seconds=10),
+                lease_expires_at=START_AT + timedelta(seconds=40),
+            )
+        assert await repository.get(epoch.epoch_id) == epoch
+
+
+async def test_sql_stopping_claim_preserves_lease_and_fence_defenses(
+    database_url: str,
+    repository: PostgresOperationalPaperSessionRunRepository,
+    claimed: runs.OperationalPaperSessionRunEpoch,
+) -> None:
+    claim = claimed.worker_claim
+    assert claim is not None
+    requested = await _command(repository, claimed, "PAUSE")
+    paused = await repository.settle_paused(
+        claimed.epoch_id,
+        expected_record_version=requested.record_version,
+        worker_id=claim.worker_id,
+        fencing_token=claim.fencing_token,
+        now=START_AT + timedelta(seconds=5),
+    )
+    requested = await _command(repository, paused, "STOP")
+    now = START_AT + timedelta(seconds=10)
+    target = runs.claim_operational_paper_session_run_epoch_for_stopping(
+        requested,
+        worker_id=uuid4(),
+        claimed_at=now,
+        lease_expires_at=now + timedelta(seconds=30),
+    )
+    for changes in (
+        {"fencing_token": requested.fencing_token},
+        {"fencing_token": requested.fencing_token + 2},
+        {"record_version": requested.record_version},
+        {"worker_lease_expires_at": now},
+        {"worker_heartbeat_at": now + timedelta(seconds=1)},
+        {"observed_state": "STARTING"},
+        {"worker_id": None},
+        {"desired_state": "RUNNING"},
+    ):
+        values = _epoch_row(target)
+        values.update(changes)
+        with pytest.raises(psycopg.Error):
+            with psycopg.connect(database_url) as connection:
+                _update_epoch_row(connection, requested.epoch_id, values)
+        assert await repository.get(requested.epoch_id) == requested

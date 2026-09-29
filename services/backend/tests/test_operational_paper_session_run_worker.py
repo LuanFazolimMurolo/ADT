@@ -16,6 +16,7 @@ import pytest_asyncio
 import app.operational_paper_session_runs as runs
 from app.database import Database
 from app.market_data.errors import MarketJobLockTimeoutError
+from app.paper_trading.errors import PaperSessionCorruptError, PaperSessionVerificationError
 from app.paper_trading.service import PaperTradingService
 from app.repositories.operational_paper_session_runs import (
     PostgresOperationalPaperSessionRunRepository,
@@ -118,6 +119,7 @@ class _TransitionEpoch:
     worker_claim: _Claim
     desired_state: runs.OperationalPaperSessionRunDesiredState
     observed_state: runs.OperationalPaperSessionRunObservedState
+    session_id: str = "f" * 64
 
 
 class _MarkRunningConflictRepository:
@@ -321,6 +323,7 @@ async def test_stop_boundary_requires_stopped_postcondition_after_version_churn(
         return cast(runs.OperationalPaperSessionRunEpoch, epoch)
 
     monkeypatch.setattr(worker, "_latest_owned", latest_owned)
+    monkeypatch.setattr(worker, "_paper", _CountingPaper())
 
     with pytest.raises(runs.OperationalPaperSessionRunStateTransitionConflictError):
         await worker._settle_control_boundary(
@@ -375,10 +378,38 @@ class _FailingControl(_PassingControl):
         return object()
 
 
+class _BlockingControl(_PassingControl):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def validate_execution_eligibility(
+        self,
+        _epoch_id: UUID,
+    ) -> object:
+        self.calls += 1
+
+        if self.calls == 1:
+            self.started.set()
+            await self.release.wait()
+
+        return object()
+
+
 class _CountingPaper:
     def __init__(self) -> None:
         self.calls = 0
         self.session_ids: list[str] = []
+        self.finalize_calls = 0
+
+    def has_persisted_state(self, _session_id: str) -> bool:
+        return self.calls > 0
+
+    def finalize(self, session_id: str) -> object:
+        assert self.has_persisted_state(session_id)
+        self.finalize_calls += 1
+        return object()
 
     def run_once(self, session_id: str) -> object:
         self.calls += 1
@@ -558,6 +589,105 @@ async def test_expired_claim_recovers_same_epoch_with_higher_fence(
 
 
 @pytest.mark.asyncio
+async def test_heartbeat_renews_real_postgres_lease_during_slow_eligibility(
+    pg_run_repository: PostgresOperationalPaperSessionRunRepository,
+    pg_pending_epoch: runs.OperationalPaperSessionRunEpoch,
+) -> None:
+    worker_id = uuid4()
+    clock = _StepClock(
+        START_AT + timedelta(seconds=1),
+        step=timedelta(milliseconds=50),
+    )
+    control = _BlockingControl()
+    paper = _CountingPaper()
+
+    worker = _functional_worker(
+        pg_run_repository,
+        control,
+        paper,
+        worker_id=worker_id,
+        clock=clock,
+        policy=OperationalPaperSessionRunWorkerPolicy(
+            lease_duration_seconds=5,
+            heartbeat_interval_seconds=0.01,
+        ),
+    )
+
+    task = asyncio.create_task(
+        worker.run_epoch(
+            pg_pending_epoch.epoch_id,
+            max_cycles=1,
+        )
+    )
+
+    try:
+        await asyncio.wait_for(
+            control.started.wait(),
+            timeout=3,
+        )
+
+        before = await pg_run_repository.get(
+            pg_pending_epoch.epoch_id
+        )
+        assert before is not None
+        assert before.worker_claim is not None
+        assert (
+            before.observed_state
+            is runs.OperationalPaperSessionRunObservedState.STARTING
+        )
+
+        before_heartbeat = before.worker_claim.heartbeat_at
+        before_version = before.record_version
+
+        await asyncio.sleep(0.06)
+
+        during = await pg_run_repository.get(
+            pg_pending_epoch.epoch_id
+        )
+        assert during is not None
+        assert during.worker_claim is not None
+
+        assert during.worker_claim.worker_id == worker_id
+        assert during.worker_claim.fencing_token == 1
+        assert during.worker_claim.heartbeat_at > before_heartbeat
+        assert during.record_version > before_version
+        assert (
+            during.observed_state
+            is runs.OperationalPaperSessionRunObservedState.STARTING
+        )
+        assert paper.calls == 0
+    finally:
+        control.release.set()
+
+    result = await asyncio.wait_for(
+        task,
+        timeout=3,
+    )
+
+    assert result.cycles_completed == 1
+    assert result.exit_code is None
+    assert control.calls == 2
+    assert paper.calls == 1
+    assert paper.session_ids == [pg_pending_epoch.session_id]
+
+    persisted = await pg_run_repository.get(
+        pg_pending_epoch.epoch_id
+    )
+    assert persisted is not None
+    assert (
+        persisted.observed_state
+        is runs.OperationalPaperSessionRunObservedState.RUNNING
+    )
+    assert (
+        persisted.desired_state
+        is runs.OperationalPaperSessionRunDesiredState.RUNNING
+    )
+    assert persisted.worker_claim is not None
+    assert persisted.worker_claim.worker_id == worker_id
+    assert persisted.worker_claim.fencing_token == 1
+
+
+@pytest.mark.asyncio
 async def test_heartbeat_renews_real_postgres_lease_during_slow_cycle(
     pg_run_repository: PostgresOperationalPaperSessionRunRepository,
     pg_pending_epoch: runs.OperationalPaperSessionRunEpoch,
@@ -682,6 +812,7 @@ async def test_pause_requested_during_cycle_settles_only_at_boundary(
     assert paper.calls == 1
     assert result.epoch.desired_state is runs.OperationalPaperSessionRunDesiredState.PAUSED
     assert result.epoch.observed_state is runs.OperationalPaperSessionRunObservedState.PAUSED
+    assert paper.finalize_calls == 0
 
 
 @pytest.mark.asyncio
@@ -741,6 +872,7 @@ async def test_stop_requested_during_cycle_stops_only_after_boundary(
     assert paper.calls == 1
     assert result.epoch.desired_state is runs.OperationalPaperSessionRunDesiredState.STOPPED
     assert result.epoch.observed_state is runs.OperationalPaperSessionRunObservedState.STOPPED
+    assert paper.finalize_calls == 1
 
 
 @pytest.mark.asyncio
@@ -1146,3 +1278,378 @@ async def test_failure_persistence_churn_never_fabricates_failed_epoch(
     # The exit reason is known, but FAILED was never persisted.
     assert result.epoch.observed_state is runs.OperationalPaperSessionRunObservedState.RUNNING
     assert result.epoch.failure is None
+
+
+class _FinalizingPaper(_CountingPaper):
+    def __init__(
+        self, *, has_state: bool, block: bool = False, error: Exception | None = None
+    ) -> None:
+        super().__init__()
+        self.has_state = has_state
+        self.block = block
+        self.error = error
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.finished = threading.Event()
+
+    def has_persisted_state(self, _session_id: str) -> bool:
+        return self.has_state
+
+    def finalize(self, session_id: str) -> object:
+        super().finalize(session_id)
+        self.started.set()
+        if self.block and not self.release.wait(timeout=5):
+            raise RuntimeError("bounded finalization was not released")
+        self.finished.set()
+        if self.error is not None:
+            raise self.error
+        return object()
+
+
+async def _request_test_stop(
+    repository: PostgresOperationalPaperSessionRunRepository,
+    pending: runs.OperationalPaperSessionRunEpoch,
+    observed: str,
+    worker_id: UUID,
+) -> runs.OperationalPaperSessionRunEpoch:
+    epoch = pending
+    if observed not in {"PENDING", "PAUSED_UNEXECUTED"}:
+        epoch = await repository.claim(
+            epoch.epoch_id,
+            expected_record_version=epoch.record_version,
+            worker_id=worker_id,
+            now=START_AT + timedelta(seconds=1),
+            lease_expires_at=START_AT + timedelta(seconds=6 if observed == "RECOVERING" else 61),
+        )
+        if observed in {"RUNNING", "PAUSED"}:
+            epoch = await repository.mark_running(
+                epoch.epoch_id,
+                expected_record_version=epoch.record_version,
+                worker_id=worker_id,
+                fencing_token=epoch.fencing_token,
+                now=START_AT + timedelta(seconds=2),
+            )
+    if observed in {"PAUSED", "PAUSED_UNEXECUTED"}:
+        await repository.request_command(
+            _intent(epoch, "PAUSE"),
+            actor_id=epoch.start_requested_by,
+            idempotency_key="stop-test:pause",
+            now=START_AT + timedelta(seconds=3),
+        )
+        epoch = await repository.get(epoch.epoch_id)
+        assert epoch is not None
+        if epoch.worker_claim is None:
+            epoch = await repository.settle_unclaimed(
+                epoch.epoch_id,
+                expected_record_version=epoch.record_version,
+                now=START_AT + timedelta(seconds=4),
+            )
+        else:
+            epoch = await repository.settle_paused(
+                epoch.epoch_id,
+                expected_record_version=epoch.record_version,
+                worker_id=worker_id,
+                fencing_token=epoch.fencing_token,
+                now=START_AT + timedelta(seconds=4),
+            )
+    await repository.request_command(
+        _intent(epoch, "STOP"),
+        actor_id=epoch.start_requested_by,
+        idempotency_key="stop-test:stop",
+        now=START_AT + timedelta(seconds=5),
+    )
+    epoch = await repository.get(epoch.epoch_id)
+    assert epoch is not None
+    if observed == "RECOVERING":
+        epoch = await repository.recover(
+            epoch.epoch_id,
+            expected_record_version=epoch.record_version,
+            worker_id=worker_id,
+            now=START_AT + timedelta(seconds=6),
+            lease_expires_at=START_AT + timedelta(seconds=61),
+        )
+    return epoch
+
+
+@pytest.mark.parametrize("observed", ["PENDING", "PAUSED_UNEXECUTED", "PAUSED", "STARTING"])
+async def test_stop_without_paper_state_never_finalizes_or_allocates_stopping_claim(
+    pg_run_repository: PostgresOperationalPaperSessionRunRepository,
+    pg_pending_epoch: runs.OperationalPaperSessionRunEpoch,
+    observed: str,
+) -> None:
+    worker_id = uuid4()
+    epoch = await _request_test_stop(pg_run_repository, pg_pending_epoch, observed, worker_id)
+    paper = _FinalizingPaper(has_state=False)
+    control = _PassingControl()
+    worker = _functional_worker(
+        pg_run_repository,
+        control,
+        paper,
+        worker_id=worker_id,
+        clock=_StepClock(START_AT + timedelta(seconds=10)),
+    )
+    result = await worker.run_epoch(epoch.epoch_id)
+    assert result.exit_code is None
+    assert result.epoch.observed_state is runs.OperationalPaperSessionRunObservedState.STOPPED
+    assert result.epoch.fencing_token == epoch.fencing_token
+    assert result.epoch.worker_claim is None
+    assert paper.finalize_calls == paper.calls == control.calls == 0
+
+
+@pytest.mark.parametrize("observed", ["PAUSED", "RUNNING", "STARTING", "RECOVERING"])
+async def test_executed_stop_finalizes_before_terminal_settlement(
+    pg_run_repository: PostgresOperationalPaperSessionRunRepository,
+    pg_pending_epoch: runs.OperationalPaperSessionRunEpoch,
+    observed: str,
+) -> None:
+    worker_id = uuid4()
+    epoch = await _request_test_stop(pg_run_repository, pg_pending_epoch, observed, worker_id)
+    paper = _FinalizingPaper(has_state=True, block=True)
+    control = _PassingControl()
+    worker = _functional_worker(
+        pg_run_repository,
+        control,
+        paper,
+        worker_id=worker_id,
+        clock=_StepClock(START_AT + timedelta(seconds=10)),
+    )
+    task = asyncio.create_task(worker.run_epoch(epoch.epoch_id))
+    try:
+        assert await asyncio.to_thread(paper.started.wait, 2)
+        during = await pg_run_repository.get(epoch.epoch_id)
+        assert during is not None
+        assert during.observed_state is runs.OperationalPaperSessionRunObservedState.STOPPING
+        assert during.worker_claim is not None
+        assert during.worker_claim.worker_id == worker_id
+        assert during.fencing_token == epoch.fencing_token + (observed == "PAUSED")
+        assert during.terminal_at is None
+        assert not task.done()
+    finally:
+        paper.release.set()
+    result = await asyncio.wait_for(task, 3)
+    assert result.exit_code is None
+    assert result.epoch.observed_state is runs.OperationalPaperSessionRunObservedState.STOPPED
+    assert result.epoch.worker_claim is None
+    assert paper.finished.is_set()
+    assert paper.finalize_calls == 1
+    assert paper.calls == control.calls == 0
+
+
+@pytest.mark.parametrize(
+    "error,code",
+    [
+        (
+            PaperSessionVerificationError(),
+            runs.OperationalPaperSessionRunFailureCode.LOCAL_STATE_INVALID,
+        ),
+        (
+            RuntimeError("private failure"),
+            runs.OperationalPaperSessionRunFailureCode.INTERNAL_ERROR,
+        ),
+    ],
+)
+async def test_finalize_failure_preserves_worker_error_mapping(
+    pg_run_repository: PostgresOperationalPaperSessionRunRepository,
+    pg_pending_epoch: runs.OperationalPaperSessionRunEpoch,
+    error: Exception,
+    code: runs.OperationalPaperSessionRunFailureCode,
+) -> None:
+    worker_id = uuid4()
+    epoch = await _request_test_stop(pg_run_repository, pg_pending_epoch, "PAUSED", worker_id)
+    paper = _FinalizingPaper(has_state=True, error=error)
+    worker = _functional_worker(
+        pg_run_repository,
+        _PassingControl(),
+        paper,
+        worker_id=worker_id,
+        clock=_StepClock(START_AT + timedelta(seconds=10)),
+    )
+    result = await worker.run_epoch(epoch.epoch_id)
+    assert result.exit_code is code
+    assert result.epoch.observed_state is runs.OperationalPaperSessionRunObservedState.FAILED
+    assert result.epoch.failure is not None
+    assert result.epoch.failure.code is code
+    assert result.epoch.worker_claim is None
+    assert paper.finalize_calls == 1
+
+
+@pytest.mark.parametrize(
+    "cancel,error", [(False, None), (True, None), (True, PaperSessionVerificationError())]
+)
+async def test_finalize_heartbeat_and_cancellation_wait_for_synchronous_completion(
+    pg_run_repository: PostgresOperationalPaperSessionRunRepository,
+    pg_pending_epoch: runs.OperationalPaperSessionRunEpoch,
+    cancel: bool,
+    error: Exception | None,
+) -> None:
+    worker_id = uuid4()
+    epoch = await _request_test_stop(pg_run_repository, pg_pending_epoch, "PAUSED", worker_id)
+    paper = _FinalizingPaper(has_state=True, block=True, error=error)
+    worker = _functional_worker(
+        pg_run_repository,
+        _PassingControl(),
+        paper,
+        worker_id=worker_id,
+        clock=_StepClock(START_AT + timedelta(seconds=10), step=timedelta(milliseconds=50)),
+        policy=OperationalPaperSessionRunWorkerPolicy(
+            lease_duration_seconds=5, heartbeat_interval_seconds=0.01
+        ),
+    )
+    task = asyncio.create_task(worker.run_epoch(epoch.epoch_id))
+    try:
+        assert await asyncio.to_thread(paper.started.wait, 2)
+        before = await pg_run_repository.get(epoch.epoch_id)
+        assert before is not None and before.worker_claim is not None
+        if cancel:
+            task.cancel()
+            await asyncio.sleep(0)
+            task.cancel()  # Repeated cancellation must not abandon the thread either.
+        async with asyncio.timeout(2):
+            while True:
+                during = await pg_run_repository.get(epoch.epoch_id)
+                assert during is not None and during.worker_claim is not None
+                if during.worker_claim.heartbeat_at > before.worker_claim.heartbeat_at:
+                    break
+                await asyncio.sleep(0.01)
+        assert during.observed_state is runs.OperationalPaperSessionRunObservedState.STOPPING
+        assert during.worker_claim.lease_expires_at > before.worker_claim.lease_expires_at
+        assert not task.done()
+        assert not paper.finished.is_set()
+    finally:
+        paper.release.set()
+    if cancel:
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 3)
+        after = await pg_run_repository.get(epoch.epoch_id)
+        assert after is not None
+        assert after.observed_state is runs.OperationalPaperSessionRunObservedState.STOPPING
+    else:
+        result = await asyncio.wait_for(task, 3)
+        assert result.epoch.observed_state is runs.OperationalPaperSessionRunObservedState.STOPPED
+    assert paper.finished.is_set()
+    assert paper.finalize_calls == 1
+
+
+async def test_corrupt_state_query_never_becomes_unexecuted_stop(
+    pg_run_repository: PostgresOperationalPaperSessionRunRepository,
+    pg_pending_epoch: runs.OperationalPaperSessionRunEpoch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker_id = uuid4()
+    epoch = await _request_test_stop(pg_run_repository, pg_pending_epoch, "PAUSED", worker_id)
+    paper = _FinalizingPaper(has_state=True)
+
+    def corrupt(_session_id: str) -> bool:
+        raise PaperSessionCorruptError()
+
+    monkeypatch.setattr(paper, "has_persisted_state", corrupt)
+    worker = _functional_worker(
+        pg_run_repository,
+        _PassingControl(),
+        paper,
+        worker_id=worker_id,
+        clock=_StepClock(START_AT + timedelta(seconds=10)),
+    )
+    result = await worker.run_epoch(epoch.epoch_id)
+    assert result.exit_code is runs.OperationalPaperSessionRunFailureCode.LOCAL_STATE_INVALID
+    assert result.epoch == epoch
+    assert paper.finalize_calls == 0
+
+
+@pytest.mark.parametrize("finalize_fails", [False, True])
+async def test_finalize_heartbeat_error_wins_without_terminal_settlement(
+    pg_run_repository: PostgresOperationalPaperSessionRunRepository,
+    pg_pending_epoch: runs.OperationalPaperSessionRunEpoch,
+    monkeypatch: pytest.MonkeyPatch,
+    finalize_fails: bool,
+) -> None:
+    worker_id = uuid4()
+    epoch = await _request_test_stop(pg_run_repository, pg_pending_epoch, "PAUSED", worker_id)
+    paper = _FinalizingPaper(
+        has_state=True,
+        block=True,
+        error=PaperSessionVerificationError() if finalize_fails else None,
+    )
+    worker = _functional_worker(
+        pg_run_repository,
+        _PassingControl(),
+        paper,
+        worker_id=worker_id,
+        clock=_StepClock(START_AT + timedelta(seconds=10)),
+    )
+    heartbeat_failed = asyncio.Event()
+
+    async def heartbeat(_epoch_id: UUID, _fence: int, _stop: asyncio.Event) -> None:
+        heartbeat_failed.set()
+        raise runs.OperationalPaperSessionRunLeaseError()
+
+    monkeypatch.setattr(worker, "_heartbeat_loop", heartbeat)
+    task = asyncio.create_task(worker.run_epoch(epoch.epoch_id))
+    try:
+        assert await asyncio.to_thread(paper.started.wait, 2)
+        await asyncio.wait_for(heartbeat_failed.wait(), 2)
+        assert not task.done()
+    finally:
+        paper.release.set()
+    result = await asyncio.wait_for(task, 3)
+    assert result.exit_code is runs.OperationalPaperSessionRunFailureCode.LEASE_LOST
+    assert result.epoch.observed_state is runs.OperationalPaperSessionRunObservedState.STOPPING
+    assert paper.finished.is_set()
+    assert paper.finalize_calls == 1
+
+
+async def test_recovery_during_finalization_fences_old_worker_without_settling(
+    pg_run_repository: PostgresOperationalPaperSessionRunRepository,
+    pg_pending_epoch: runs.OperationalPaperSessionRunEpoch,
+) -> None:
+    worker_id = uuid4()
+    epoch = await _request_test_stop(pg_run_repository, pg_pending_epoch, "PAUSED", worker_id)
+    paper = _FinalizingPaper(has_state=True, block=True)
+    worker = _functional_worker(
+        pg_run_repository,
+        _PassingControl(),
+        paper,
+        worker_id=worker_id,
+        clock=_StepClock(START_AT + timedelta(seconds=10)),
+    )
+    task = asyncio.create_task(worker.run_epoch(epoch.epoch_id))
+    try:
+        assert await asyncio.to_thread(paper.started.wait, 2)
+        stopping = await pg_run_repository.get(epoch.epoch_id)
+        assert stopping is not None and stopping.worker_claim is not None
+        recovered_at = stopping.worker_claim.lease_expires_at
+        recovered = await pg_run_repository.recover(
+            epoch.epoch_id,
+            expected_record_version=stopping.record_version,
+            worker_id=uuid4(),
+            now=recovered_at,
+            lease_expires_at=recovered_at + timedelta(seconds=30),
+        )
+    finally:
+        paper.release.set()
+    result = await asyncio.wait_for(task, 3)
+    assert result.exit_code is runs.OperationalPaperSessionRunFailureCode.LEASE_LOST
+    assert result.epoch == recovered
+    assert await pg_run_repository.get(epoch.epoch_id) == recovered
+    assert paper.finalize_calls == 1
+    assert paper.finished.is_set()
+
+
+async def test_pending_with_prior_paper_state_cannot_settle_unclaimed(
+    pg_run_repository: PostgresOperationalPaperSessionRunRepository,
+    pg_pending_epoch: runs.OperationalPaperSessionRunEpoch,
+) -> None:
+    worker_id = uuid4()
+    epoch = await _request_test_stop(pg_run_repository, pg_pending_epoch, "PENDING", worker_id)
+    paper = _FinalizingPaper(has_state=True)
+    worker = _functional_worker(
+        pg_run_repository,
+        _PassingControl(),
+        paper,
+        worker_id=worker_id,
+        clock=_StepClock(START_AT + timedelta(seconds=10)),
+    )
+    result = await worker.run_epoch(epoch.epoch_id)
+    assert result.exit_code is runs.OperationalPaperSessionRunFailureCode.LOCAL_STATE_INVALID
+    assert result.epoch == epoch
+    assert paper.finalize_calls == 0

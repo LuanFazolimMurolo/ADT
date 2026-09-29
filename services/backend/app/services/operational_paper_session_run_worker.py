@@ -142,7 +142,10 @@ class OperationalPaperSessionRunWorker:
                     )
 
                 # Fresh eligibility is mandatory before the first and every next cycle.
-                await self._control.validate_execution_eligibility(epoch_id)
+                await self._validate_execution_eligibility_with_heartbeat(
+                    epoch_id,
+                    fence,
+                )
 
                 epoch = await self._latest_owned(epoch_id, fence)
                 if epoch.desired_state is not _Desired.RUNNING:
@@ -260,6 +263,23 @@ class OperationalPaperSessionRunWorker:
         now = self._now()
 
         if epoch.worker_claim is None:
+            if epoch.desired_state is _Desired.STOPPED:
+                has_state = await asyncio.to_thread(
+                    self._paper.has_persisted_state, epoch.session_id
+                )
+                if has_state:
+                    if epoch.observed_state is not _Observed.PAUSED:
+                        raise runs.OperationalPaperSessionRunStateTransitionConflictError(
+                            details={"failure_code": _Code.LOCAL_STATE_INVALID.value}
+                        )
+                    now = self._now()
+                    return await self._repository.claim_for_stopping(
+                        epoch.epoch_id,
+                        expected_record_version=epoch.record_version,
+                        worker_id=self._worker_id,
+                        lease_expires_at=now + self._policy.lease_duration,
+                        now=now,
+                    )
             if epoch.desired_state is not _Desired.RUNNING:
                 return await self._repository.settle_unclaimed(
                     epoch.epoch_id,
@@ -301,7 +321,10 @@ class OperationalPaperSessionRunWorker:
             epoch = await self._mark_starting(epoch.epoch_id, fence)
 
         if epoch.observed_state is _Observed.STARTING:
-            await self._control.validate_execution_eligibility(epoch.epoch_id)
+            await self._validate_execution_eligibility_with_heartbeat(
+                epoch.epoch_id,
+                fence,
+            )
             latest = await self._latest_owned(epoch.epoch_id, fence)
             if latest.desired_state is not _Desired.RUNNING:
                 return await self._settle_control_boundary(latest, fence)
@@ -313,6 +336,54 @@ class OperationalPaperSessionRunWorker:
         raise runs.OperationalPaperSessionRunStateTransitionConflictError(
             details={"failure_code": _Code.LOCAL_STATE_INVALID.value}
         )
+
+    async def _validate_execution_eligibility_with_heartbeat(
+        self,
+        epoch_id: UUID,
+        fence: int,
+    ) -> None:
+        """Keep the worker capability alive during fresh eligibility checks."""
+        stop = asyncio.Event()
+        heartbeat = asyncio.create_task(
+            self._heartbeat_loop(epoch_id, fence, stop)
+        )
+
+        cancelled = False
+        validation_error: BaseException | None = None
+
+        try:
+            try:
+                await self._control.validate_execution_eligibility(epoch_id)
+            except asyncio.CancelledError:
+                cancelled = True
+            except BaseException as error:
+                validation_error = error
+        finally:
+            stop.set()
+
+        heartbeat_error: BaseException | None = None
+        if heartbeat.done():
+            try:
+                heartbeat.result()
+            except BaseException as error:
+                heartbeat_error = error
+        else:
+            heartbeat.cancel()
+            try:
+                await heartbeat
+            except asyncio.CancelledError:
+                pass
+            except BaseException as error:
+                heartbeat_error = error
+
+        if cancelled:
+            raise asyncio.CancelledError
+
+        if heartbeat_error is not None:
+            raise heartbeat_error
+
+        if validation_error is not None:
+            raise validation_error
 
     async def _run_cycle_with_heartbeat(
         self,
@@ -365,6 +436,54 @@ class OperationalPaperSessionRunWorker:
 
         if cycle_error is not None:
             raise cycle_error
+
+    async def _finalize_with_heartbeat(
+        self,
+        epoch_id: UUID,
+        session_id: str,
+        fence: int,
+    ) -> None:
+        """Keep the fence alive until synchronous finalization finishes, even on cancellation."""
+        stop = asyncio.Event()
+        heartbeat = asyncio.create_task(self._heartbeat_loop(epoch_id, fence, stop))
+        finalization = asyncio.create_task(asyncio.to_thread(self._paper.finalize, session_id))
+        cancelled = False
+        finalize_error: BaseException | None = None
+        try:
+            while True:
+                try:
+                    await asyncio.shield(finalization)
+                    break
+                except asyncio.CancelledError:
+                    cancelled = True
+                    # Do not abandon synchronous work, including on repeated cancellation.
+                    if finalization.cancelled():
+                        break
+                except BaseException as error:
+                    finalize_error = error
+                    break
+        finally:
+            stop.set()
+
+        heartbeat_error: BaseException | None = None
+        while True:
+            try:
+                await asyncio.shield(heartbeat)
+                break
+            except asyncio.CancelledError:
+                cancelled = True
+                if heartbeat.cancelled():
+                    break
+            except BaseException as error:
+                heartbeat_error = error
+                break
+
+        if cancelled:
+            raise asyncio.CancelledError
+        if heartbeat_error is not None:
+            raise heartbeat_error
+        if finalize_error is not None:
+            raise finalize_error
 
     async def _heartbeat_loop(
         self,
@@ -582,6 +701,14 @@ class OperationalPaperSessionRunWorker:
 
             if current.observed_state is _Observed.STOPPED:
                 return current
+
+            if current.observed_state is not _Observed.STOPPING:
+                raise runs.OperationalPaperSessionRunStateTransitionConflictError(
+                    details={"failure_code": _Code.LOCAL_STATE_INVALID.value}
+                )
+
+            if await asyncio.to_thread(self._paper.has_persisted_state, current.session_id):
+                await self._finalize_with_heartbeat(current.epoch_id, current.session_id, fence)
 
             for _attempt in range(3):
                 current = await self._latest_owned(

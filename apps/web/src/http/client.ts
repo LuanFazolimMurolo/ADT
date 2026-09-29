@@ -1,3 +1,7 @@
+import type {
+  MLRecommendation,
+  MLRecommendationPage,
+} from "../types/mlRecommendations";
 import { getPublicConfig } from "../config/env";
 import { getSupabaseClient } from "../lib/supabase";
 import { signOutLocally } from "../auth/signOut";
@@ -63,6 +67,7 @@ import type {
   PaperPortfolioTimelinePageResponse,
   PaperTradeJournalPageResponse,
   PaperTradeStatus,
+  PublicOfficialPaperSnapshot,
   PublicSimulationSummary,
   Setting,
   SettingPatchRequest,
@@ -398,6 +403,10 @@ export class ApiClient {
     return this.request("/api/v1/public/simulation", {}, false);
   }
 
+  getPublicOfficialPaper(): Promise<PublicOfficialPaperSnapshot> {
+    return this.request("/api/v1/public/official-paper", {}, false);
+  }
+
   getAppMe(): Promise<AppMe> {
     return this.request("/api/v1/app/me");
   }
@@ -683,6 +692,22 @@ export class ApiClient {
     return this.request(
       `/api/v1/admin/operational-paper-session-profiles/${encodeURIComponent(profileId)}/archive`,
       { method: "POST", body: JSON.stringify(payload) },
+    );
+  }
+
+  listMLRecommendations(limit = 50): Promise<MLRecommendationPage> {
+    const params = new URLSearchParams({
+      limit: String(limit),
+    });
+
+    return this.request(
+      `/api/v1/admin/ml/recommendations?${params.toString()}`,
+    );
+  }
+
+  getMLRecommendation(recommendationId: string): Promise<MLRecommendation> {
+    return this.request(
+      `/api/v1/admin/ml/recommendations/${encodeURIComponent(recommendationId)}`,
     );
   }
 

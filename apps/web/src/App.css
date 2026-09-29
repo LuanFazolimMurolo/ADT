@@ -291,6 +291,131 @@
 .public-simulation-state p {
   color: var(--muted);
 }
+.public-runtime-snapshot {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+}
+
+.public-runtime-snapshot__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  padding: 1.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.public-runtime-snapshot__header > div {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.public-runtime-snapshot__header strong {
+  font-size: clamp(1.25rem, 2.5vw, 1.8rem);
+}
+
+.public-runtime-snapshot__header > span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.public-runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1px;
+  padding: 1px;
+  background: var(--border);
+}
+
+.public-runtime-card {
+  min-width: 0;
+  padding: 1.4rem;
+  border-top: 3px solid var(--border-strong);
+  background: var(--surface);
+}
+
+.public-runtime-card--running {
+  border-top-color: var(--green);
+}
+
+.public-runtime-card--controlled-inactive,
+.public-runtime-card--converging,
+.public-runtime-card--degraded {
+  border-top-color: var(--amber);
+}
+
+.public-runtime-card--failed {
+  border-top-color: var(--red);
+}
+
+.public-runtime-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.public-runtime-card__index,
+.public-runtime-availability {
+  font: 650 0.62rem/1.2 monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.public-runtime-card__index {
+  color: var(--muted);
+}
+
+.public-runtime-availability {
+  color: var(--text);
+  text-align: right;
+}
+
+.public-runtime-card h3 {
+  margin: 1.4rem 0 0.4rem;
+  font-size: 1.25rem;
+}
+
+.public-runtime-card code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.public-runtime-metrics {
+  display: grid;
+  gap: 0;
+  margin: 1.4rem 0 0;
+}
+
+.public-runtime-metrics > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.public-runtime-metrics dt {
+  color: var(--muted);
+  font: 0.62rem/1.4 monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.public-runtime-metrics dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.public-runtime-metrics__failure dd {
+  color: var(--red);
+}
+
 .public-simulation-card {
   border: 1px solid var(--border-strong);
   background: linear-gradient(145deg, #10251a, var(--surface));

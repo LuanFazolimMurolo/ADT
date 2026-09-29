@@ -7,16 +7,21 @@ from typing import Final
 from app.core.config import Settings
 
 _STRUCTURED_FIELDS: Final[tuple[str, ...]] = (
+    "component",
+    "event",
+    "target",
     "request_id",
     "method",
     "path",
     "http_status",
     "duration_ms",
     "error_code",
+    "failure_code",
     "exception_type",
     "operation",
     "provider",
     "attempts",
+    "retry_delay_seconds",
     "used_weight",
 )
 

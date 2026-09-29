@@ -1,0 +1,254 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend quality and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    defaults:
+      run:
+        working-directory: services/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: services/backend/pyproject.toml
+
+      - name: Install PostgreSQL server binaries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql
+
+      - name: Install backend dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Ruff lint
+        run: ruff check app tests
+
+      - name: Ruff format
+        run: ruff format --check app tests
+
+      - name: Compile Python
+        run: python -m compileall -q app
+
+      - name: Backend tests
+        run: pytest -q
+
+  frontend:
+    name: Frontend quality and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: E2E TypeScript
+        run: npm run typecheck:e2e
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test -- --run
+
+      - name: Generated API contract
+        run: npm run check:api
+
+      - name: Production build
+        env:
+          VITE_ADT_API_URL: https://api.example.invalid
+          VITE_SUPABASE_URL: https://project.example.invalid
+          VITE_SUPABASE_PUBLISHABLE_KEY: ci-public-placeholder
+        run: npm run build
+
+      - name: Bundle budget
+        run: npm run check:bundle-budget
+
+  frontend-e2e:
+    name: Frontend E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright
+        run: npm run test:e2e
+
+  production-contracts:
+    name: Production contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Storage bootstrap syntax
+        run: sh -n ops/bootstrap-production-storage.sh
+
+      - name: Production environment boundary
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          env = Path(".env.production.example").read_text()
+
+          required = {
+              "VITE_ADT_API_URL",
+              "VITE_SUPABASE_URL",
+              "VITE_SUPABASE_PUBLISHABLE_KEY",
+              "ADT_IMAGE_TAG",
+              "ADT_LOG_LEVEL",
+              "ADT_CORS_ORIGINS",
+              "SUPABASE_URL",
+              "SUPABASE_PUBLISHABLE_KEY",
+              "SUPABASE_DATABASE_URL",
+          }
+
+          present = {
+              line.split("=", 1)[0]
+              for line in env.splitlines()
+              if line and not line.startswith("#") and "=" in line
+          }
+
+          missing = required - present
+          assert not missing, f"missing production variables: {sorted(missing)}"
+
+          vite = {name for name in present if name.startswith("VITE_")}
+
+          assert vite == {
+              "VITE_ADT_API_URL",
+              "VITE_SUPABASE_URL",
+              "VITE_SUPABASE_PUBLISHABLE_KEY",
+          }
+
+          forbidden_patterns = (
+              r"eyJ[A-Za-z0-9_-]{30,}",
+              r"postgres(?:ql)?://[^:<\s]+:[^@<\s]+@",
+              r"sb_secret_[A-Za-z0-9_-]+",
+          )
+
+          for pattern in forbidden_patterns:
+              assert re.search(pattern, env) is None, pattern
+
+          assert not Path(".env.production").exists()
+
+          print("PASS: production environment contract")
+          PY
+
+      - name: Production topology contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          compose = Path("docker-compose.production.yml").read_text()
+
+          for service in (
+              "api:",
+              "market-supervisor:",
+              "paper-supervisor:",
+              "web:",
+          ):
+              assert service in compose
+
+          assert compose.count("image: adt-backend:") == 3
+          assert "/srv/adt/data" in compose
+          assert 'command: ["python", "-m", "app.main"]' in compose
+          assert "app.runtime.market_data_supervisor" in compose
+          assert "app.runtime.paper_run_supervisor" in compose
+
+          forbidden_runtime_authority = (
+              "BINANCE_" + "API_SECRET",
+              "SERVICE_" + "ROLE",
+              "PRIVATE_" + "KEY",
+          )
+
+          for forbidden in forbidden_runtime_authority:
+              assert forbidden not in compose
+
+          print("PASS: production topology contract")
+          PY
+
+      - name: Docker Compose parse
+        env:
+          ADT_CORS_ORIGINS: https://adt.example.invalid
+          SUPABASE_URL: https://project.example.invalid
+          SUPABASE_PUBLISHABLE_KEY: ci-public-placeholder
+          SUPABASE_DATABASE_URL: postgresql://ci:ci@db.example.invalid:5432/adt?sslmode=require
+          VITE_ADT_API_URL: https://api.example.invalid
+          VITE_SUPABASE_URL: https://project.example.invalid
+          VITE_SUPABASE_PUBLISHABLE_KEY: ci-public-placeholder
+        run: docker compose -f docker-compose.production.yml config >/dev/null
+
+  container-build:
+    name: Production container builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build backend production image
+        run: |
+          docker build             --file services/backend/Dockerfile.production             --tag adt-backend:ci             services/backend
+
+      - name: Build frontend production image
+        run: |
+          docker build             --file apps/web/Dockerfile.production             --build-arg VITE_ADT_API_URL=https://api.example.invalid             --build-arg VITE_SUPABASE_URL=https://project.example.invalid             --build-arg VITE_SUPABASE_PUBLISHABLE_KEY=ci-public-placeholder             --tag adt-web:ci             apps/web
