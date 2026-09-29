@@ -55,6 +55,10 @@ export type SettingsListResponse = ApiSchemas["SettingsListResponse"];
 
 export type PublicSimulationSummary =
   ApiSchemas["PublicSimulationSummaryResponse"];
+export type PublicOfficialPaperItem =
+  ApiSchemas["PublicOfficialPaperItemResponse"];
+export type PublicOfficialPaperSnapshot =
+  ApiSchemas["PublicOfficialPaperSnapshotResponse"];
 export type ApiErrorEnvelope = ApiSchemas["ErrorResponse"];
 
 export type PaperRunnerSessionStatus = ApiSchemas["PaperRunnerSessionStatus"];

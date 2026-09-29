@@ -67,6 +67,7 @@ import type {
   PaperPortfolioTimelinePageResponse,
   PaperTradeJournalPageResponse,
   PaperTradeStatus,
+  PublicOfficialPaperSnapshot,
   PublicSimulationSummary,
   Setting,
   SettingPatchRequest,
@@ -400,6 +401,10 @@ export class ApiClient {
 
   getPublicSimulation(): Promise<PublicSimulationSummary | null> {
     return this.request("/api/v1/public/simulation", {}, false);
+  }
+
+  getPublicOfficialPaper(): Promise<PublicOfficialPaperSnapshot> {
+    return this.request("/api/v1/public/official-paper", {}, false);
   }
 
   getAppMe(): Promise<AppMe> {

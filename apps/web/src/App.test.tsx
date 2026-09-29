@@ -52,6 +52,12 @@ vi.mock("./http/client", async () => {
         timestamp: new Date().toISOString(),
       }),
       getPublicSimulation: vi.fn().mockResolvedValue(null),
+      getPublicOfficialPaper: vi.fn().mockResolvedValue({
+        observed_at: "2026-09-29T20:00:00Z",
+        limit: 20,
+        count: 0,
+        items: [],
+      }),
       getHealth: vi.fn().mockResolvedValue({ status: "healthy" }),
       listOperationalPaperSessionProfiles: vi.fn().mockResolvedValue({
         items: [],
@@ -92,6 +98,9 @@ describe("site público", () => {
     render(<App />);
     await screen.findByText("API operacional");
     await screen.findByText("Nenhuma simulação pública ativa no momento.");
+    await screen.findByText(
+      "Nenhuma sessão PAPER oficial ativa no momento.",
+    );
 
     expect(screen.getByText(/Pesquisa disciplinada/)).toBeDefined();
     expect(
