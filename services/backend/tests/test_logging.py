@@ -126,3 +126,17 @@ def test_formatter_includes_retry_delay_seconds() -> None:
         "list_nonterminal"
     )
     assert payload["retry_delay_seconds"] == 0.25
+
+
+def test_formatter_includes_market_target_failure_fields() -> None:
+    payload = _format(
+        extra={
+            "target": "BTC/USDT:15m",
+            "failure_code": "collection_target_failed",
+        }
+    )
+
+    assert payload["target"] == "BTC/USDT:15m"
+    assert payload["failure_code"] == (
+        "collection_target_failed"
+    )

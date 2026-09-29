@@ -56,7 +56,7 @@ class Database:
             raise ValueError("max_size must be positive and not smaller than min_size")
 
         connection_kwargs: dict[str, Any] = {
-            "autocommit": True,
+            "autocommit": False,
             "row_factory": dict_row,
         }
         self._pool = AsyncConnectionPool[DatabaseConnection](
@@ -90,11 +90,10 @@ class Database:
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[DatabaseConnection]:
-        """Yield one connection inside an explicit database transaction."""
+        """Yield one connection inside a pool-managed database transaction."""
         try:
             async with self._pool.connection() as connection:
-                async with connection.transaction():
-                    yield connection
+                yield connection
         except (InterfaceError, PoolTimeout, PoolClosed) as error:
             raise PersistenceUnavailableError() from error
         except OperationalError as error:
