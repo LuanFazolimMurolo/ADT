@@ -2128,22 +2128,35 @@ production topology must support a continuously available official paper trader
 and safe public read projections without moving execution into HTTP requests.
 
 **Deliverables**:
-- [ ] Production container and environment design
-- [ ] CI/CD pipeline with protected deployment gates
-- [ ] Persistent backend, worker and `ADT_DATA_DIR` topology
-- [ ] Supabase production configuration and reviewed migrations
-- [ ] Database and artifact backups with restore testing
-- [ ] Process supervision, health checks and automatic restart
-- [ ] Monitoring, alerting and error tracking
-- [ ] TLS, CORS, CSP, rate limits and secret management
-- [ ] Performance and cost profiling
-- [ ] Availability and freshness boundaries for the official paper trader
-- [ ] Safe, bounded public projections for implemented ADT Live capabilities
-- [ ] Kubernetes only if measured scale requires it
+- [x] Production container and environment design
+- [x] CI/CD pipeline with protected deployment gates
+- [x] Persistent backend, worker and `ADT_DATA_DIR` topology
+- [x] Supabase production configuration and reviewed migrations
+- [x] Database and artifact backups with restore testing
+- [x] Process supervision, health checks and automatic restart
+- [x] Monitoring, alerting and error tracking
+- [x] TLS, CORS, CSP, rate limits and secret management
+- [x] Performance and cost profiling
+- [x] Availability and freshness boundaries for the official paper trader
+- [x] Safe, bounded public projections for implemented ADT Live capabilities
+- [x] Kubernetes only if measured scale requires it
+
+**Phase 9 closure status**: **COMPLETE / CLOSED LOCALLY**.
+
+This closure records implementation and isolated acceptance of the Phase 9
+production contracts. It does **not** claim that a public production host was
+deployed, that production services were started, or that a public domain/TLS
+edge is live. Those are operational deployment actions requiring separate
+operator authorization and environment-specific evidence.
+
+The conditional Kubernetes deliverable is closed by reviewed decision:
+Kubernetes remains deferred unless measured scale demonstrates a need for it.
 
 **Dependencies**: Phase 8 complete
 **Estimated Duration**: 2+ weeks
-**Blockers**: Hosting and persistent-storage decision
+**Blockers**: Closed by the reviewed production topology and
+persistent-storage decisions. Actual hosted production activation remains a
+separately authorized operational action.
 
 ---
 
